@@ -235,7 +235,7 @@ export class ScraperEngine {
         if (!element) continue
 
         const tagName = await element.evaluate((el: any) => el.tagName.toLowerCase())
-        let text: string | null
+        let text: string | null = null
 
         if (tagName === "meta") {
           text = await element.getAttribute("content")
