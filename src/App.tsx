@@ -2,17 +2,28 @@ import { useState } from "react"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { LoginPage } from "./components/LoginPage"
 import { DashboardLayout } from "./components/DashboardLayout"
-import { DashboardContent } from "./components/DashboardContent"
-import { PlaygroundContent } from "./components/PlaygroundContent"
+
+// Original pages
+import { DashboardContent }     from "./components/DashboardContent"
+import { PlaygroundContent }    from "./components/PlaygroundContent"
 import { ContentLibraryContent } from "./components/ContentLibraryContent"
-import { AIServicesContent } from "./components/AIServicesContent"
+import { AIServicesContent }    from "./components/AIServicesContent"
 import { PostSchedulerContent } from "./components/PostSchedulerContent"
-import { MetaContent } from "./components/MetaContent"
-import { TikTokContent } from "./components/TikTokContent"
-import { YouTubeContent } from "./components/YouTubeContent"
-import { TwitterContent } from "./components/TwitterContent"
-import { ShopifyContent } from "./components/ShopifyContent"
-import { SettingsContent } from "./components/SettingsContent"
+import { MetaContent }          from "./components/MetaContent"
+import { TikTokContent }        from "./components/TikTokContent"
+import { YouTubeContent }       from "./components/YouTubeContent"
+import { TwitterContent }       from "./components/TwitterContent"
+import { ShopifyContent }       from "./components/ShopifyContent"
+import { SettingsContent }      from "./components/SettingsContent"
+
+// RSP / Scraping Engine pages
+import { DiscoveringContent }       from "./components/DiscoveringContent"
+import { PriceBoardContent }        from "./components/PriceBoardContent"
+import { TrackedUrlsContent }       from "./components/TrackedUrlsContent"
+import { ProductsContent }          from "./components/ProductsContent"
+import { CompaniesContent }         from "./components/CompaniesContent"
+import { UsersManagementContent }   from "./components/UsersManagementContent"
+
 import { Skeleton } from "./components/ui/skeleton"
 
 function AppLoader() {
@@ -35,6 +46,7 @@ function AppInner() {
 
   const renderContent = () => {
     switch (currentPage) {
+      // Original pages
       case "dashboard":       return <DashboardContent />
       case "playground":      return <PlaygroundContent />
       case "content-library": return <ContentLibraryContent />
@@ -46,6 +58,15 @@ function AppInner() {
       case "twitter":         return <TwitterContent />
       case "shopify":         return <ShopifyContent />
       case "settings":        return <SettingsContent />
+
+      // RSP / Scraping Engine pages
+      case "discovering":     return <DiscoveringContent />
+      case "price-board":     return <PriceBoardContent />
+      case "tracked-urls":    return <TrackedUrlsContent />
+      case "products":        return <ProductsContent />
+      case "companies":       return <CompaniesContent />
+      case "users":           return <UsersManagementContent />
+
       default:                return <DashboardContent />
     }
   }
