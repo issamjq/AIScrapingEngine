@@ -3,13 +3,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth"
 import { getAnalytics } from "firebase/analytics"
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: "AIzaSyBZt_ZCEUyZOV8ZS4KsnBSzjf_mIE4_FYg",
+  authDomain: "ai-scraping-engine.firebaseapp.com",
+  projectId: "ai-scraping-engine",
+  storageBucket: "ai-scraping-engine.firebasestorage.app",
+  messagingSenderId: "249544421091",
+  appId: "1:249544421091:web:6a7c2cdfa62412997adfd6",
+  measurementId: "G-M8CJ37BQPN",
 }
 
 export const app = initializeApp(firebaseConfig)
