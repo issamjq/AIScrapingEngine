@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: ai-scraping-engine-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npm run db:generate && npm run build
+    startCommand: npm run start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        sync: false        # Set in Render dashboard — from Neon
+      - key: DIRECT_URL
+        sync: false        # Set in Render dashboard — from Neon (direct)
+      - key: FRONTEND_URL
+        sync: false        # e.g. https://your-app.vercel.app
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+    autoDeploy: true

@@ -1,0 +1,40 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - ".github/**"
+
+jobs:
+  bump-version:
+    name: Bump patch version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Bump patch version
+        run: node scripts/bump-version.mjs
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          VERSION=$(node -e "const p=require('./package.json');console.log(p.version)")
+          git commit -m "chore: bump version to v${VERSION} [skip ci]"
+          git push

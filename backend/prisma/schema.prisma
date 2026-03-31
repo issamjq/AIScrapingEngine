@@ -1,0 +1,174 @@
+// Prisma schema for AI Scraping Engine — Neon (PostgreSQL)
+// Run: npx prisma db push  (dev)
+//      npx prisma migrate deploy  (production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Neon requires directUrl for migrations
+  directUrl = env("DIRECT_URL")
+}
+
+// ─────────────────────────────────────────────
+// User (authenticated via Firebase Gmail)
+// ─────────────────────────────────────────────
+model User {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String?
+  avatar      String?
+  firebaseUid String   @unique @map("firebase_uid")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  posts        Post[]
+  campaigns    Campaign[]
+  contentItems ContentItem[]
+  integrations Integration[]
+  aiUsage      AIUsage[]
+  scrapingJobs ScrapingJob[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────
+// Scheduled / Published Posts
+// ─────────────────────────────────────────────
+model Post {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform    String    // meta | tiktok | youtube | twitter | shopify
+  content     String
+  mediaUrl    String?   @map("media_url")
+  status      String    @default("draft") // draft | scheduled | published | failed
+  scheduledAt DateTime? @map("scheduled_at")
+  publishedAt DateTime? @map("published_at")
+  metadata    Json?
+  campaignId  String?   @map("campaign_id")
+  campaign    Campaign? @relation(fields: [campaignId], references: [id])
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("posts")
+}
+
+// ─────────────────────────────────────────────
+// Marketing Campaigns
+// ─────────────────────────────────────────────
+model Campaign {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  status      String    @default("active") // active | paused | completed | archived
+  platforms   String[]
+  startDate   DateTime? @map("start_date")
+  endDate     DateTime? @map("end_date")
+  budget      Float?
+  spend       Float?    @default(0)
+  reach       Int?      @default(0)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  posts Post[]
+
+  @@index([userId])
+  @@map("campaigns")
+}
+
+// ─────────────────────────────────────────────
+// AI-Generated Content Library Items
+// ─────────────────────────────────────────────
+model ContentItem {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // image | video | text | website
+  title     String
+  content   String?  // text content or HTML
+  url       String?  // CDN URL for media
+  aiModel   String?  @map("ai_model") // dalle3 | midjourney | gpt4 | claude | etc.
+  platform  String?  // target platform
+  tags      String[]
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([type])
+  @@map("content_items")
+}
+
+// ─────────────────────────────────────────────
+// Platform Integrations (OAuth tokens)
+// ─────────────────────────────────────────────
+model Integration {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform     String   // meta | tiktok | youtube | twitter | shopify | omnisend
+  connected    Boolean  @default(false)
+  accessToken  String?  @map("access_token")
+  refreshToken String?  @map("refresh_token")
+  tokenExpiry  DateTime? @map("token_expiry")
+  accountId    String?  @map("account_id")
+  accountName  String?  @map("account_name")
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, platform])
+  @@index([userId])
+  @@map("integrations")
+}
+
+// ─────────────────────────────────────────────
+// AI Usage / Credits Tracking
+// ─────────────────────────────────────────────
+model AIUsage {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // text | image | video | scraping
+  model     String   // gpt4 | claude | dalle3 | runway | etc.
+  tokens    Int?
+  credits   Float
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("ai_usage")
+}
+
+// ─────────────────────────────────────────────
+// Web Scraping Jobs
+// ─────────────────────────────────────────────
+model ScrapingJob {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url       String
+  status    String   @default("pending") // pending | running | completed | failed
+  options   Json?    // scraping config (selectors, depth, etc.)
+  result    Json?    // scraped data
+  error     String?
+  startedAt DateTime? @map("started_at")
+  endedAt   DateTime? @map("ended_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@map("scraping_jobs")
+}
