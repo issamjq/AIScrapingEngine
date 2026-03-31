@@ -3,7 +3,7 @@ services:
     name: ai-scraping-engine-backend
     runtime: node
     rootDir: backend
-    buildCommand: npm install && npm run db:generate && npm run build
+    buildCommand: npm install && npx playwright install chromium && npm run db:generate && npm run build
     startCommand: npm run start
     healthCheckPath: /health
     envVars:
