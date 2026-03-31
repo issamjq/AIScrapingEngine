@@ -16,8 +16,7 @@ export const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const analytics = typeof window !== "undefined" ? getAnalytics(app) : null
 
-// Google provider — restricted to Gmail accounts only
+// Google provider — Gmail enforcement is done in AuthContext after sign-in
 export const googleProvider = new GoogleAuthProvider()
-googleProvider.setCustomParameters({ hd: "gmail.com" })
 googleProvider.addScope("email")
 googleProvider.addScope("profile")
