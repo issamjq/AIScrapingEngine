@@ -2,46 +2,132 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
-import { Building2, Plus, CheckCircle } from "lucide-react"
+import { Input } from "./ui/input"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog"
+import { Building2, Plus, CheckCircle, Loader2, AlertCircle, ExternalLink } from "lucide-react"
 import { CardGridSkeleton } from "./PageSkeleton"
+import { useAuth } from "@/context/AuthContext"
 
-const mockStores = [
-  { name: "Amazon AE",     slug: "amazon-ae",     baseUrl: "amazon.ae",          active: true,  products: 12 },
-  { name: "Noon",          slug: "noon",           baseUrl: "noon.com",           active: true,  products: 8  },
-  { name: "Carrefour UAE", slug: "carrefour-uae",  baseUrl: "carrefouruae.com",   active: true,  products: 6  },
-  { name: "Spinneys",      slug: "spinneys",       baseUrl: "spinneys.com",       active: false, products: 0  },
-]
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
+function slugify(name: string) {
+  return name.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "")
+}
+
+function domainFromUrl(url: string) {
+  try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url }
+}
 
 export function CompaniesContent() {
-  const [loading, setLoading] = useState(true)
+  const { user } = useAuth()
+  const [loading, setLoading]     = useState(true)
+  const [companies, setCompanies] = useState<any[]>([])
+  const [fetchError, setFetchError] = useState<string | null>(null)
+
+  // Add Store dialog
+  const [open, setOpen]       = useState(false)
+  const [name, setName]       = useState("")
+  const [baseUrl, setBaseUrl] = useState("")
+  const [saving, setSaving]   = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  async function getToken() {
+    try { return user ? await (user as any).getIdToken() : null } catch { return null }
+  }
+
+  async function fetchCompanies() {
+    try {
+      const token = await getToken()
+      const res = await fetch(`${API}/api/companies?include_inactive=true`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.error?.message || "Failed to load")
+      setCompanies(json.data || [])
+      setFetchError(null)
+    } catch (err: any) {
+      setFetchError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 900)
-    return () => clearTimeout(t)
-  }, [])
+    if (!user) return
+    fetchCompanies()
+  }, [user])
 
-  if (loading) return <CardGridSkeleton count={4} />
+  async function handleAdd() {
+    if (!name.trim()) return
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const token = await getToken()
+      const res = await fetch(`${API}/api/companies`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ name: name.trim(), slug: slugify(name), base_url: baseUrl.trim() || null }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to add store")
+      setOpen(false)
+      setName("")
+      setBaseUrl("")
+      await fetchCompanies()
+    } catch (err: any) {
+      setSaveError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function toggleActive(c: any) {
+    try {
+      const token = await getToken()
+      await fetch(`${API}/api/companies/${c.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ is_active: !c.is_active }),
+      })
+      await fetchCompanies()
+    } catch { /* silent */ }
+  }
+
+  if (loading) return <CardGridSkeleton count={5} />
+
+  const activeCount = companies.filter((c) => c.is_active).length
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold">Stores</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Retailers and marketplaces being monitored.
-          </p>
+          <p className="text-sm text-muted-foreground mt-0.5">Retailers and marketplaces being monitored.</p>
         </div>
-        <Button size="sm" className="gap-1.5 shrink-0">
+        <Button size="sm" className="gap-1.5 shrink-0" onClick={() => { setOpen(true); setSaveError(null) }}>
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add Store</span>
         </Button>
       </div>
 
-      {/* Summary */}
+      {fetchError && (
+        <div className="rounded-md bg-destructive/10 text-destructive text-sm px-4 py-3 flex items-center gap-2">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {fetchError}
+        </div>
+      )}
+
+      {/* Stats */}
       <div className="grid gap-4 grid-cols-2">
         {[
-          { label: "Total Stores",  value: String(mockStores.length) },
-          { label: "Active Stores", value: String(mockStores.filter(s => s.active).length) },
+          { label: "Total Stores",  value: String(companies.length) },
+          { label: "Active Stores", value: String(activeCount) },
         ].map(({ label, value }) => (
           <Card key={label}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -56,38 +142,104 @@ export function CompaniesContent() {
       </div>
 
       {/* Store cards */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-        {mockStores.map((store) => (
-          <Card key={store.slug} className="hover:shadow-md transition-shadow cursor-pointer">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center shrink-0">
-                  <Building2 className="h-5 w-5 text-muted-foreground" />
+      {companies.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <Building2 className="h-10 w-10 text-muted-foreground/40" />
+          <p className="text-sm text-muted-foreground">No stores yet. Add your first store above.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+          {companies.map((c) => (
+            <Card key={c.id} className={`transition-shadow ${c.is_active ? "hover:shadow-md" : "opacity-60"}`}>
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center shrink-0">
+                    <Building2 className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <Badge variant={c.is_active ? "default" : "secondary"} className="text-[10px]">
+                    {c.is_active ? "Active" : "Inactive"}
+                  </Badge>
                 </div>
-                <Badge
-                  variant={store.active ? "default" : "secondary"}
-                  className="text-[10px]"
-                >
-                  {store.active ? "Active" : "Inactive"}
-                </Badge>
+                <CardTitle className="text-base mt-3">{c.name}</CardTitle>
+                <CardDescription className="text-xs flex items-center gap-1">
+                  {c.base_url ? (
+                    <a
+                      href={c.base_url} target="_blank" rel="noopener noreferrer"
+                      className="hover:underline flex items-center gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {domainFromUrl(c.base_url)}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground/50">No URL set</span>
+                  )}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                    {Number(c.url_count) || 0} products tracked
+                  </span>
+                  <Button
+                    variant="ghost" size="sm" className="h-7 text-xs px-2"
+                    onClick={() => toggleActive(c)}
+                  >
+                    {c.is_active ? "Deactivate" : "Activate"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Add Store Dialog */}
+      <Dialog open={open} onOpenChange={(v) => { if (!saving) setOpen(v) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Add Store</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Store Name *</label>
+              <Input
+                placeholder="e.g. Amazon AE"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              />
+              {name && (
+                <p className="text-[10px] text-muted-foreground">Slug: {slugify(name)}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Website URL</label>
+              <Input
+                placeholder="e.g. https://www.amazon.ae"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+              />
+            </div>
+            {saveError && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 text-destructive text-xs px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                {saveError}
               </div>
-              <CardTitle className="text-base mt-3">{store.name}</CardTitle>
-              <CardDescription className="text-xs">{store.baseUrl}</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-                  {store.products} products tracked
-                </span>
-                <Button variant="ghost" size="sm" className="h-7 text-xs px-2">
-                  Configure
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleAdd} disabled={!name.trim() || saving} className="gap-1.5">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {saving ? "Adding…" : "Add Store"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

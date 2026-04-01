@@ -15,13 +15,14 @@ import { useAuth } from "@/context/AuthContext"
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 const FREE_LIMIT = Infinity  // blur temporarily disabled — re-enable by setting to 3
 
-const DEFAULT_RETAILERS = [
-  { label: "Amazon AE",     value: "Amazon AE (amazon.ae)" },
-  { label: "Noon",          value: "Noon (noon.com)" },
-  { label: "Carrefour UAE", value: "Carrefour UAE (carrefouruae.com)" },
-  { label: "Talabat",       value: "Talabat Grocery (talabat.com)" },
-  { label: "Spinneys",      value: "Spinneys UAE (spinneys.com)" },
-]
+function retailerValue(c: any) {
+  try {
+    const domain = new URL(c.base_url).hostname.replace(/^www\./, "")
+    return `${c.name} (${domain})`
+  } catch {
+    return c.name
+  }
+}
 
 interface SearchResult {
   retailer: string
@@ -104,9 +105,7 @@ export function DiscoveringContent() {
   const [companies, setCompanies]                 = useState<any[]>([])
 
   const [query, setQuery]                         = useState("")
-  const [selectedRetailers, setSelectedRetailers] = useState<string[]>(
-    DEFAULT_RETAILERS.slice(0, 3).map((r) => r.value)
-  )
+  const [selectedRetailers, setSelectedRetailers] = useState<string[]>([])
   const [searching, setSearching]                 = useState(false)
   const [searchingLabel, setSearchingLabel]       = useState<string>("")
   const [groups, setGroups]                       = useState<RetailerGroup[]>([])
@@ -144,7 +143,11 @@ export function DiscoveringContent() {
         const token = await (user as any).getIdToken()
         const res = await fetch(`${API}/api/companies`, { headers: { Authorization: `Bearer ${token}` } })
         const json = await res.json()
-        if (!cancelled && json.success) setCompanies(json.data || [])
+        if (!cancelled && json.success) {
+          const active = (json.data || []).filter((c: any) => c.is_active)
+          setCompanies(active)
+          setSelectedRetailers(active.map(retailerValue))
+        }
       } catch { /* silent */ }
       if (!cancelled) setLoading(false)
     }
@@ -351,15 +354,22 @@ export function DiscoveringContent() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-3">
-            {DEFAULT_RETAILERS.map((r) => (
-              <label key={r.value} className="flex items-center gap-1.5 cursor-pointer select-none">
-                <Checkbox
-                  checked={selectedRetailers.includes(r.value)}
-                  onCheckedChange={() => toggleRetailer(r.value)}
-                />
-                <span className="text-sm">{r.label}</span>
-              </label>
-            ))}
+            {companies.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Loading stores…</p>
+            ) : (
+              companies.map((c) => {
+                const value = retailerValue(c)
+                return (
+                  <label key={c.id} className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <Checkbox
+                      checked={selectedRetailers.includes(value)}
+                      onCheckedChange={() => toggleRetailer(value)}
+                    />
+                    <span className="text-sm">{c.name}</span>
+                  </label>
+                )
+              })
+            )}
           </div>
           <div className="flex gap-2">
             <Input

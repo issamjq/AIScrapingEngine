@@ -197,3 +197,15 @@ CREATE INDEX IF NOT EXISTS idx_allowed_users_is_active ON allowed_users(is_activ
 CREATE OR REPLACE TRIGGER set_allowed_users_updated_at
   BEFORE UPDATE ON allowed_users
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- =============================================================
+-- SEED: Default UAE retailers
+-- Safe to re-run (ON CONFLICT DO NOTHING)
+-- =============================================================
+INSERT INTO companies (name, slug, base_url, is_active) VALUES
+  ('Amazon AE',     'amazon-ae',     'https://www.amazon.ae',        true),
+  ('Noon',          'noon',          'https://www.noon.com',         true),
+  ('Carrefour UAE', 'carrefour-uae', 'https://www.carrefouruae.com', true),
+  ('Talabat',       'talabat',       'https://www.talabat.com',      true),
+  ('Spinneys',      'spinneys',      'https://www.spinneys.com',     true)
+ON CONFLICT (slug) DO NOTHING;

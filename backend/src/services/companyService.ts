@@ -6,7 +6,9 @@ export async function getAll({ includeInactive = false } = {}) {
            cc.price_selectors,
            cc.title_selectors,
            cc.availability_selectors,
-           cc.wait_for_selector
+           cc.wait_for_selector,
+           (SELECT COUNT(*) FROM product_company_urls pcu
+            WHERE pcu.company_id = c.id AND pcu.is_active = true) AS url_count
     FROM   companies c
     LEFT JOIN company_configs cc ON cc.company_id = c.id
     ${includeInactive ? "" : "WHERE c.is_active = true"}
