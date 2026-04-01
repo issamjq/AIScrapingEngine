@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -14,7 +14,6 @@ import { PlansModal } from "./PlansModal"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
-const FREE_LIMIT = Infinity  // blur temporarily disabled — re-enable by setting to 3
 
 function retailerValue(c: any) {
   try {
@@ -42,7 +41,9 @@ interface RetailerGroup {
   blurred:  SearchResult[]
 }
 
-function groupByRetailer(results: SearchResult[]): RetailerGroup[] {
+// free plan → 3 visible per retailer, rest blurred
+// trial/paid → all visible
+function groupByRetailer(results: SearchResult[], visibleLimit: number): RetailerGroup[] {
   const map = new Map<string, SearchResult[]>()
   for (const r of results) {
     if (!map.has(r.retailer)) map.set(r.retailer, [])
@@ -50,8 +51,8 @@ function groupByRetailer(results: SearchResult[]): RetailerGroup[] {
   }
   return [...map.entries()].map(([retailer, items]) => ({
     retailer,
-    visible: items.slice(0, FREE_LIMIT),
-    blurred: items.slice(FREE_LIMIT),
+    visible: items.slice(0, visibleLimit),
+    blurred: items.slice(visibleLimit),
   }))
 }
 
@@ -109,7 +110,6 @@ export function DiscoveringContent() {
   const [selectedRetailers, setSelectedRetailers] = useState<string[]>([])
   const [searching, setSearching]                 = useState(false)
   const [searchingLabel, setSearchingLabel]       = useState<string>("")
-  const [groups, setGroups]                       = useState<RetailerGroup[]>([])
   const [allResults, setAllResults]               = useState<SearchResult[]>([])
   const [totalFound, setTotalFound]               = useState(0)
   const [searched, setSearched]                   = useState(false)
@@ -136,6 +136,10 @@ export function DiscoveringContent() {
   const [showPlans, setShowPlans]     = useState(false)
   const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "b2c" })
   const [userProfile, setUserProfile] = useState<{ subscription: string; role: string; daily_searches_used: number; trial_ends_at?: string | null } | null>(null)
+
+  // free → 3 results visible per retailer (rest blurred). trial/paid → all visible.
+  const visiblePerRetailer = userProfile?.subscription === "free" ? 3 : Infinity
+  const groups = useMemo(() => groupByRetailer(allResults, visiblePerRetailer), [allResults, visiblePerRetailer])
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -187,7 +191,6 @@ export function DiscoveringContent() {
     if (!query.trim() || searching) return
     setSearching(true)
     setSearchError(null)
-    setGroups([])
     setAllResults([])
     setTotalFound(0)
     setSearched(false)
@@ -211,7 +214,6 @@ export function DiscoveringContent() {
         throw new Error(json.error?.message || "Search failed")
       }
       const results: SearchResult[] = json.data.results || []
-      setGroups(groupByRetailer(results))
       setAllResults(results)
       setTotalFound(results.length)
       setSearched(true)
@@ -421,7 +423,7 @@ export function DiscoveringContent() {
           {userProfile && !["dev","owner"].includes(userProfile.role) && (
             <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
               <span>
-                {userProfile.daily_searches_used} search{userProfile.daily_searches_used !== 1 ? "es" : ""} used today
+                {userProfile.daily_searches_used} / {userProfile.subscription === "free" ? 10 : userProfile.subscription === "trial" ? 20 : 50} searches this week
                 {" · "}
                 <button className="underline hover:text-foreground" onClick={() => { setPlansData({ used: userProfile.daily_searches_used, limit: 999, subscription: userProfile.subscription, role: userProfile.role, trial_ends_at: userProfile.trial_ends_at }); setShowPlans(true) }}>
                   {userProfile.subscription} plan
@@ -438,7 +440,7 @@ export function DiscoveringContent() {
           <CardTitle className="text-base">Discovery Results</CardTitle>
           <CardDescription className="text-xs">
             {searched && !searchError
-              ? `Found ${totalFound} listing${totalFound !== 1 ? "s" : ""} for "${query}" — showing ${FREE_LIMIT} per retailer`
+              ? `Found ${totalFound} listing${totalFound !== 1 ? "s" : ""} for "${query}"${visiblePerRetailer < Infinity ? ` — free plan shows ${visiblePerRetailer} per retailer` : ""}`
               : "AI-matched product listings from retailer pages"}
           </CardDescription>
         </CardHeader>

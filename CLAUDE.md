@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.23
+**Current version:** v1.0.24
 
 ---
 
@@ -182,20 +182,21 @@ GET  /api/allowed-users          ← User whitelist management
 - `dev`, `owner` → unlimited, always bypass limits
 - `b2b` client, `b2c` user → tier limits apply
 
-**Subscriptions:** `trial` | `free` | `paid`
-
-**Daily limits (searches/day):**
-| Role | trial | free | paid |
-|------|-------|------|------|
-| b2b | 50 (14 days) | 20 | 200 |
-| b2c | 20 (7 days)  | 10 | 50  |
+**Subscriptions + weekly search limits:**
+| Plan | Searches/week | Results visible | Duration |
+|------|--------------|-----------------|----------|
+| trial | 20 | All — no blur | b2b=14d, b2c=7d |
+| free  | 10 | 3 per retailer (rest blurred) | Forever |
+| paid  | 50 | All — no blur | Monthly |
 
 **Behaviour:**
-- New users auto-start on `trial` with `trial_ends_at` set (B2B=14d, B2C=7d)
-- Trial expiry → auto-downgrade to `free` silently
+- New users auto-start on `trial` (full experience, no blur) with `trial_ends_at` auto-set
+- Trial expires → drops to `free` (blur kicks in, fewer searches) → conversion pressure
 - Limit hit → 429 `USAGE_LIMIT_REACHED` → frontend shows `PlansModal`
-- Counter resets daily at midnight UTC
-- Stripe integration = **not yet built** — "Coming soon" button in PlansModal
+- Counter resets every 7 days (rolling window from `last_reset_at`)
+- Blur is dynamic: `userProfile.subscription === 'free'` → 3 visible, else Infinity
+- `FREE_LIMIT` constant removed from DiscoveringContent — blur driven by `userProfile`
+- Stripe = **not yet built** — "Coming soon" in PlansModal
 
 **DB columns added to `allowed_users`** (run in Neon SQL editor if not done):
 ```sql

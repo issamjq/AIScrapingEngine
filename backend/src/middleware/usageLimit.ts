@@ -3,41 +3,36 @@ import { query } from "../db"
 import { AuthRequest } from "./auth"
 
 /**
- * Usage limit middleware for discovery endpoints.
+ * Usage limit middleware — weekly search counter.
  *
  * Roles:
  *   dev   → unlimited always
  *   owner → unlimited always
- *   b2b   → tier limits below
- *   b2c   → tier limits below
+ *   b2b   → weekly limits below
+ *   b2c   → weekly limits below
  *
- * Subscriptions:
- *   trial → time-limited higher allowance (b2b=14 days, b2c=7 days)
- *   free  → standard free tier
- *   paid  → full paid allowance
+ * Subscriptions + weekly limits (searches per week):
+ *   trial → 20/week  (full experience: no blur — handled frontend)
+ *   free  → 10/week  (limited experience: 3 results visible per retailer, rest blurred)
+ *   paid  → 50/week  (full experience: no blur)
  *
- * Daily limits (searches/day):
- *   Role  │ trial │ free │ paid
- *   ──────┼───────┼──────┼──────
- *   b2b   │  50   │  20  │  200
- *   b2c   │  20   │  10  │   50
- *
- * Counter resets daily (compares date of last_reset_at vs today UTC).
+ * Trial duration: b2b=14 days, b2c=7 days
+ * Counter resets every 7 days from last reset.
  */
 
 const UNLIMITED_ROLES = ["dev", "owner"]
 
-const LIMITS: Record<string, Record<string, number>> = {
-  b2b: { trial: 50,  free: 20,  paid: 200 },
-  b2c: { trial: 20,  free: 10,  paid: 50  },
+// Weekly limits — same for b2b and b2c
+const WEEKLY_LIMITS: Record<string, number> = {
+  trial: 20,
+  free:  10,
+  paid:  50,
 }
 
 const TRIAL_DAYS: Record<string, number> = {
   b2b: 14,
   b2c: 7,
 }
-
-const DEFAULT_LIMITS = { trial: 20, free: 10, paid: 50 }
 
 export async function checkUsageLimit(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -57,30 +52,23 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
     // dev / owner → always unlimited
     if (UNLIMITED_ROLES.includes(user.role)) return next()
 
-    const role = user.role || "b2c"
     let subscription: string = user.subscription || "free"
 
-    // If trial has expired → treat as free automatically
+    // If trial has expired → auto-downgrade to free
     if (subscription === "trial" && user.trial_ends_at) {
-      const trialEnd = new Date(user.trial_ends_at)
-      if (trialEnd < new Date()) {
+      if (new Date(user.trial_ends_at) < new Date()) {
         subscription = "free"
-        query(
-          `UPDATE allowed_users SET subscription = 'free' WHERE email = $1`,
-          [email]
-        ).catch(() => {})
+        query(`UPDATE allowed_users SET subscription = 'free' WHERE email = $1`, [email]).catch(() => {})
       }
     }
 
-    const roleLimits = LIMITS[role] || DEFAULT_LIMITS
-    const limit      = roleLimits[subscription] ?? roleLimits.free
+    const limit = WEEKLY_LIMITS[subscription] ?? WEEKLY_LIMITS.free
 
-    // Reset daily counter if it's a new day (UTC)
+    // Reset counter if 7+ days have passed since last reset
     const lastReset = user.last_reset_at ? new Date(user.last_reset_at) : null
-    const today     = new Date()
-    const isNewDay  = !lastReset || lastReset.toUTCString().slice(0, 16) !== today.toUTCString().slice(0, 16)
+    const isNewWeek = !lastReset || (Date.now() - lastReset.getTime()) >= 7 * 24 * 60 * 60 * 1000
 
-    if (isNewDay) {
+    if (isNewWeek) {
       await query(
         `UPDATE allowed_users SET daily_searches_used = 1, last_reset_at = NOW() WHERE email = $1`,
         [email]
@@ -93,12 +81,12 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
       return res.status(429).json({
         success: false,
         error: {
-          message:      `Daily limit reached (${used}/${limit} searches today). ${subscription === "free" ? "Upgrade to paid to continue." : "You've hit your plan limit."}`,
+          message:      `Weekly limit reached (${used}/${limit} searches this week on ${subscription} plan).`,
           code:         "USAGE_LIMIT_REACHED",
           limit,
           used,
           subscription,
-          role,
+          role:          user.role,
           trial_ends_at: user.trial_ends_at || null,
         },
       })
