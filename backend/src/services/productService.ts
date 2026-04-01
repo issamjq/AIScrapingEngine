@@ -104,7 +104,7 @@ export async function bulkImport(items: any[], userEmail: string) {
     const { rows } = await query(
       `INSERT INTO products (internal_name, internal_sku, barcode, brand, image_url, initial_rsp, is_active, user_email)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ON CONFLICT (internal_sku, user_email) DO UPDATE SET
+       ON CONFLICT (internal_sku, user_email) WHERE internal_sku IS NOT NULL AND user_email IS NOT NULL DO UPDATE SET
          internal_name = EXCLUDED.internal_name,
          barcode       = EXCLUDED.barcode,
          brand         = EXCLUDED.brand,

@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.39
+**Current version:** v1.0.40
 
 ---
 
