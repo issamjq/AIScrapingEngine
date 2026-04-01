@@ -229,6 +229,16 @@ CREATE OR REPLACE TRIGGER set_allowed_users_updated_at
   BEFORE UPDATE ON allowed_users
   FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 
+-- Cleanup: drop legacy tables from old social media platform (v1.0.31)
+DROP TABLE IF EXISTS ai_usage      CASCADE;
+DROP TABLE IF EXISTS campaigns     CASCADE;
+DROP TABLE IF EXISTS content_items CASCADE;
+DROP TABLE IF EXISTS integrations  CASCADE;
+DROP TABLE IF EXISTS posts         CASCADE;
+DROP TABLE IF EXISTS scraping_jobs CASCADE;
+DROP TABLE IF EXISTS users         CASCADE;
+ALTER TABLE allowed_users DROP COLUMN IF EXISTS tier;
+
 -- =============================================================
 -- SEED: Default UAE retailers
 -- Safe to re-run (ON CONFLICT DO NOTHING)
