@@ -21,14 +21,19 @@ export async function aiWebSearch(
   const retailerList = retailers.join(", ")
 
   const prompt =
-    `Search for direct product page URLs for this exact product: "${query}"\n` +
-    `Search on: ${retailerList}\n\n` +
-    `INCLUDE a URL only if ALL of these are true:\n` +
+    `Find as many direct product page URLs as possible for: "${query}"\n\n` +
+    `Search on each of these retailers: ${retailerList}\n\n` +
+    `For EACH retailer, search multiple times with different search terms to find ALL available listings.\n` +
+    `- On Amazon, the same product is often listed under multiple ASINs by different sellers — find all of them.\n` +
+    `- On other retailers, search by product name, brand, and SKU variations to find every listing.\n` +
+    `- Aim for up to 10 direct product page URLs per retailer. More results = better.\n\n` +
+    `ONLY include a URL if:\n` +
     `- It is a direct product page (not a search results page or category page)\n` +
-    `- It matches the exact size specified (e.g. if query says "75ml", only include 75ml — never 25ml or 85ml)\n` +
-    `- It matches the exact flavor/variant (e.g. "Classic Mint" means only Classic Mint — Cinnamon Mint, Ginger Mint, Anise Mint are different products, exclude them)\n` +
-    `- It is an individual product (not a bundle, multipack, trio set, or gift set)\n\n` +
-    `Return up to 10 URLs per retailer. If a retailer has no matching product, return nothing for it.\n\n` +
+    `- It matches the EXACT size in the query (e.g. "75ml" → only 75ml, never 25ml or 85ml or any other size)\n` +
+    `- It matches the EXACT variant/flavor (e.g. "Classic Mint" → only Classic Mint; Cinnamon Mint, Ginger Mint, Anise Mint are DIFFERENT products)\n` +
+    `- It is a single individual product, not a bundle, multipack, or gift set\n\n` +
+    `Search aggressively. Do not stop at the first result — keep searching until you have found all available listings.\n` +
+    `If a retailer genuinely has no matching product, return nothing for it.\n\n` +
     `Return ONLY a JSON array, no other text:\n` +
     `[{"retailer": "Amazon AE", "url": "https://...", "title": "product title from the page"}]`
 
@@ -51,8 +56,8 @@ export async function aiWebSearch(
         "anthropic-beta":    "web-search-2025-03-05",
       },
       body: JSON.stringify({
-        model:      "claude-haiku-4-5-20251001",
-        max_tokens: 4096,
+        model:      "claude-sonnet-4-6",
+        max_tokens: 8192,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
