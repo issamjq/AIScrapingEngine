@@ -156,6 +156,7 @@ GET  /api/allowed-users          ← User whitelist management
 
 ## Planned Features (not yet built)
 
+- **Blur on discovery results is temporarily OFF** — `FREE_LIMIT = Infinity` in `DiscoveringContent.tsx`. To re-enable change it back to `3`. The blur/upgrade-CTA code is fully built and works — just the constant controls it.
 - **SQL schema on Neon** — user still needs to paste `backend/sql/schema.sql` into Neon SQL editor
 - **Real data in frontend pages** — PriceBoardContent, TrackedUrlsContent, CompaniesContent still use mock data
 - **Add Product button** in ProductsContent is disabled (placeholder) — not yet implemented

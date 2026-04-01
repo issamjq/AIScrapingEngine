@@ -13,7 +13,7 @@ import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
-const FREE_LIMIT = 3
+const FREE_LIMIT = Infinity  // blur temporarily disabled — re-enable by setting to 3
 
 const DEFAULT_RETAILERS = [
   { label: "Amazon AE",     value: "Amazon AE (amazon.ae)" },
