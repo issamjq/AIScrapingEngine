@@ -53,12 +53,33 @@ function groupByRetailer(results: SearchResult[]): RetailerGroup[] {
   }))
 }
 
-function matchCompany(retailerStr: string, companies: any[]): any | null {
+// Match retailer string + result URL to a company in DB
+// Primary: domain from URL matches company base_url
+// Fallback: keyword matching on name/slug
+function matchCompany(retailerStr: string, companies: any[], url?: string): any | null {
+  // 1. Domain-based match (most reliable)
+  if (url) {
+    try {
+      const domain = new URL(url).hostname.replace(/^www\./, "")
+      const byDomain = companies.find((c) => {
+        const base = (c.base_url || "").replace(/https?:\/\/(www\.)?/, "").split("/")[0].toLowerCase()
+        return base === domain || domain.endsWith(base) || base.endsWith(domain)
+      })
+      if (byDomain) return byDomain
+    } catch { /* invalid URL, fall through */ }
+  }
+
+  // 2. Name/keyword matching
   const name = retailerStr.replace(/\s*\([^)]*\)/, "").trim().toLowerCase()
+  const skipWords = new Set(["ae", "uae", "the", "grocery", "market", "store", "online", "shop"])
+  const keywords = name.split(/\s+/).filter((w) => w.length > 2 && !skipWords.has(w))
+
   return (
     companies.find((c) => c.name.toLowerCase() === name) ||
     companies.find((c) => c.name.toLowerCase().includes(name) || name.includes(c.name.toLowerCase())) ||
-    companies.find((c) => name.split(" ").some((w) => c.slug?.toLowerCase().includes(w))) ||
+    companies.find((c) => keywords.some((w) => c.name.toLowerCase().includes(w))) ||
+    companies.find((c) => keywords.some((w) => c.slug?.toLowerCase().includes(w))) ||
+    companies.find((c) => keywords.some((w) => (c.base_url || "").toLowerCase().includes(w))) ||
     null
   )
 }
@@ -103,6 +124,12 @@ export function DiscoveringContent() {
   const [selected, setSelected]                   = useState<Set<string>>(new Set())
   const [saving, setSaving]                       = useState(false)
   const [saveError, setSaveError]                 = useState<string | null>(null)
+
+  // Catalog picker (for manual product assignment in match dialog)
+  const [catalog, setCatalog]   = useState<{id:number; name:string; brand:string}[]>([])
+  const [pickerUrl, setPickerUrl]     = useState<string | null>(null)
+  const [pickerSearch, setPickerSearch] = useState("")
+  const [overrides, setOverrides] = useState<Map<string, {id:number; name:string; brand:string}>>(new Map())
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -180,11 +207,21 @@ export function DiscoveringContent() {
     setMatchError(null)
     setSaveError(null)
     setSelected(new Set())
+    setOverrides(new Map())
+    setPickerUrl(null)
+    setPickerSearch("")
     setShowMatch(true)
     setMatching(true)
 
     try {
       const token = await getToken()
+
+      // Fetch catalog for manual product picker
+      fetch(`${API}/api/products?limit=500`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+        .then((r) => r.json())
+        .then((j) => { if (j.success) setCatalog(j.data || []) })
+        .catch(() => {})
+
       const res = await fetch(`${API}/api/discovery/ai-match`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -194,8 +231,8 @@ export function DiscoveringContent() {
       if (!res.ok || !json.success) throw new Error(json.error?.message || "Matching failed")
       const results: AiMatchResult[] = json.data
       setMatchResults(results)
-      // Pre-select all that have a match with confidence >= 60%
-      setSelected(new Set(results.filter((r) => r.match && r.confidence >= 0.6).map((r) => r.url)))
+      // Pre-select only high-confidence matches (>= 85%)
+      setSelected(new Set(results.filter((r) => r.match && r.confidence >= 0.85).map((r) => r.url)))
     } catch (err: any) {
       setMatchError(err.message)
     } finally {
@@ -212,7 +249,7 @@ export function DiscoveringContent() {
   }
 
   function selectAll() {
-    setSelected(new Set(matchResults.filter((r) => r.match).map((r) => r.url)))
+    setSelected(new Set(matchResults.filter((r) => overrides.has(r.url) || r.match).map((r) => r.url)))
   }
 
   function deselectAll() {
@@ -220,7 +257,7 @@ export function DiscoveringContent() {
   }
 
   async function handleSave() {
-    const toSave = matchResults.filter((r) => selected.has(r.url) && r.match)
+    const toSave = matchResults.filter((r) => selected.has(r.url))
     if (!toSave.length) return
 
     setSaving(true)
@@ -231,10 +268,12 @@ export function DiscoveringContent() {
     const unmatched: string[] = []
 
     for (const r of toSave) {
-      const company = matchCompany(r.retailer, companies)
+      const effectiveMatch = overrides.get(r.url) ?? r.match
+      if (!effectiveMatch) continue
+      const company = matchCompany(r.retailer, companies, r.url)
       if (!company) { unmatched.push(r.retailer); continue }
       if (!companyGroups.has(company.id)) companyGroups.set(company.id, [])
-      companyGroups.get(company.id)!.push({ product_id: r.match!.id, url: r.url })
+      companyGroups.get(company.id)!.push({ product_id: effectiveMatch.id, url: r.url })
     }
 
     if (companyGroups.size === 0) {
@@ -505,7 +544,7 @@ export function DiscoveringContent() {
                 <div className="flex items-center justify-between pb-1 border-b">
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">
-                      {selected.size} of {matchResults.filter((r) => r.match).length} matched selected
+                      {selected.size} of {matchResults.length} selected
                     </span>
                     <div className="flex gap-2">
                       <button onClick={selectAll} className="text-xs text-primary hover:underline">Select all</button>
@@ -517,29 +556,25 @@ export function DiscoveringContent() {
 
                 {/* Match rows */}
                 <div className="space-y-2">
-                  {matchResults.map((r) => (
+                  {matchResults.map((r) => {
+                    const effectiveMatch = overrides.get(r.url) ?? r.match
+                    const effectiveConfidence = overrides.has(r.url) ? 1.0 : r.confidence
+                    const isHighConfidence = effectiveConfidence >= 0.85
+                    return (
                     <div
                       key={r.url}
-                      className={`rounded-lg border p-3 transition-colors ${
-                        r.match && selected.has(r.url)
-                          ? "border-primary/40 bg-primary/5"
-                          : "hover:bg-muted/30"
-                      } ${!r.match ? "opacity-50" : "cursor-pointer"}`}
-                      onClick={() => r.match && toggleSelected(r.url)}
+                      className={`rounded-lg border p-3 transition-colors cursor-pointer ${
+                        selected.has(r.url) ? "border-primary/40 bg-primary/5" : "hover:bg-muted/30"
+                      }`}
+                      onClick={() => { if (pickerUrl !== r.url) toggleSelected(r.url) }}
                     >
                       <div className="flex items-start gap-3">
-                        {/* Checkbox */}
-                        <div className="mt-0.5 shrink-0">
-                          {r.match ? (
-                            <Checkbox
-                              checked={selected.has(r.url)}
-                              onCheckedChange={() => toggleSelected(r.url)}
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          ) : (
-                            <div className="h-4 w-4 rounded border border-muted-foreground/30" />
-                          )}
-                        </div>
+                        <Checkbox
+                          checked={selected.has(r.url)}
+                          onCheckedChange={() => toggleSelected(r.url)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-0.5 shrink-0"
+                        />
 
                         <div className="flex-1 min-w-0 space-y-2">
                           {/* Retailer listing */}
@@ -558,34 +593,87 @@ export function DiscoveringContent() {
                             </a>
                           </div>
 
-                          {/* Match arrow */}
-                          {r.match ? (
-                            <div className="flex items-center gap-2 pt-1">
-                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          {/* Match / no-match display */}
+                          {effectiveMatch ? (
+                            <div className="flex items-center gap-2 pt-1 flex-wrap">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
                                 <div className="h-px w-4 bg-muted-foreground/30" />
                                 <Bot className="h-3 w-3" />
-                                matched to
+                                {isHighConfidence ? "matched to" : "possible match"}
                               </div>
                               <div className="flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-1.5 flex-1 min-w-0">
                                 <div className="flex-1 min-w-0">
-                                  <span className="text-xs font-medium truncate block">{r.match.name}</span>
-                                  {r.match.brand && (
-                                    <span className="text-[10px] text-muted-foreground">{r.match.brand}</span>
+                                  <span className="text-xs font-medium truncate block">{effectiveMatch.name}</span>
+                                  {effectiveMatch.brand && (
+                                    <span className="text-[10px] text-muted-foreground">{effectiveMatch.brand}</span>
                                   )}
                                 </div>
-                                <ConfidenceBadge confidence={r.confidence} />
+                                <ConfidenceBadge confidence={effectiveConfidence} />
                               </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setPickerUrl(pickerUrl === r.url ? null : r.url); setPickerSearch("") }}
+                                className="text-xs text-muted-foreground hover:text-foreground hover:underline shrink-0"
+                              >
+                                Change
+                              </button>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground pt-1">
-                              <AlertCircle className="h-3 w-3" />
-                              No match found in catalog
+                            <div className="flex items-center gap-2 pt-1">
+                              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                <AlertCircle className="h-3 w-3" />
+                                No match found in catalog
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setPickerUrl(pickerUrl === r.url ? null : r.url); setPickerSearch("") }}
+                                className="text-xs text-primary hover:underline ml-auto shrink-0"
+                              >
+                                Assign product
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Inline product picker */}
+                          {pickerUrl === r.url && (
+                            <div className="mt-1 border rounded-lg p-2 bg-background" onClick={(e) => e.stopPropagation()}>
+                              <Input
+                                placeholder="Search catalog…"
+                                value={pickerSearch}
+                                onChange={(e) => setPickerSearch(e.target.value)}
+                                className="h-7 text-xs mb-1.5"
+                                autoFocus
+                              />
+                              <div className="max-h-36 overflow-y-auto space-y-0.5">
+                                {catalog
+                                  .filter((p) => `${p.name} ${p.brand}`.toLowerCase().includes(pickerSearch.toLowerCase()))
+                                  .slice(0, 20)
+                                  .map((p) => (
+                                    <button
+                                      key={p.id}
+                                      className="w-full text-left px-2 py-1.5 rounded hover:bg-muted text-xs flex items-center gap-2"
+                                      onClick={() => {
+                                        const m = new Map(overrides)
+                                        m.set(r.url, p)
+                                        setOverrides(m)
+                                        setPickerUrl(null)
+                                        setPickerSearch("")
+                                        setSelected((prev) => { const s = new Set(prev); s.add(r.url); return s })
+                                      }}
+                                    >
+                                      <span className="font-medium truncate flex-1">{p.name}</span>
+                                      {p.brand && <span className="text-muted-foreground shrink-0">{p.brand}</span>}
+                                    </button>
+                                  ))}
+                                {catalog.filter((p) => `${p.name} ${p.brand}`.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 && (
+                                  <p className="text-xs text-muted-foreground px-2 py-1">No products found</p>
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
                       </div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </>
             )}

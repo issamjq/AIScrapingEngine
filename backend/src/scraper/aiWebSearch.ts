@@ -21,19 +21,16 @@ export async function aiWebSearch(
   const retailerList = retailers.join(", ")
 
   const prompt =
-    `You are a precise product search assistant. Search for the EXACT product: "${query}"\n\n` +
-    `Search on these retailers: ${retailerList}\n\n` +
-    `CRITICAL RULES — read carefully:\n` +
-    `1. Only return listings that match the EXACT product the user asked for.\n` +
-    `   - If the user asked for "75ml", ONLY return 75ml listings. NEVER return 25ml, 85ml, or other sizes.\n` +
-    `   - If the user asked for "Classic Mint", ONLY return Classic Mint. Not Whitening Mint, not Ginger Mint.\n` +
-    `   - If the user asked for a specific brand, only return that brand.\n` +
-    `2. Do NOT return search results pages — only direct product pages.\n` +
-    `3. Per retailer, return up to 10 direct product page URLs that are this EXACT product.\n` +
-    `   (Multiple sellers/listings of the same exact product on one retailer are OK.)\n` +
-    `4. If the exact product is not found on a retailer, return nothing for that retailer.\n` +
-    `5. Return ONLY a JSON array, no explanation:\n` +
-    `[{"retailer": "Amazon AE", "url": "https://...", "title": "exact product title as shown on the page"}]`
+    `Search for direct product page URLs for this exact product: "${query}"\n` +
+    `Search on: ${retailerList}\n\n` +
+    `INCLUDE a URL only if ALL of these are true:\n` +
+    `- It is a direct product page (not a search results page or category page)\n` +
+    `- It matches the exact size specified (e.g. if query says "75ml", only include 75ml — never 25ml or 85ml)\n` +
+    `- It matches the exact flavor/variant (e.g. "Classic Mint" means only Classic Mint — Cinnamon Mint, Ginger Mint, Anise Mint are different products, exclude them)\n` +
+    `- It is an individual product (not a bundle, multipack, trio set, or gift set)\n\n` +
+    `Return up to 10 URLs per retailer. If a retailer has no matching product, return nothing for it.\n\n` +
+    `Return ONLY a JSON array, no other text:\n` +
+    `[{"retailer": "Amazon AE", "url": "https://...", "title": "product title from the page"}]`
 
   logger.info("[AIWebSearch] Searching", { query, retailers: retailerList })
 

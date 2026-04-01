@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.7
+**Current version:** v1.0.13
 
 ---
 
@@ -145,12 +145,31 @@ GET  /api/allowed-users          ← User whitelist management
 - Takes a screenshot of the product page → sends to Claude → extracts price, title, availability, originalPrice
 - Used in `ScraperEngine.scrape()` when `ANTHROPIC_API_KEY` is set
 
-### Claude Web Search (new — v1.0.5)
+### Claude Web Search (v1.0.5+)
 - File: `backend/src/scraper/aiWebSearch.ts`
 - Uses `claude-haiku-4-5-20251001` with `web_search_20250305` tool + `anthropic-beta: web-search-2025-03-05` header
+- Hard 30-second AbortController timeout
 - Input: product query + list of retailers → Output: `[{retailer, url, title}]`
+- Prompt enforces: exact size match, exact flavor/variant match, no bundle packs, direct product pages only
 - Endpoint: `POST /api/discovery/ai-search`
 - Frontend: `DiscoveringContent.tsx` — retailer checkboxes, search, results, confirm-to-track
+
+### AI Auto-Matching (v1.0.9+)
+- Endpoint: `POST /api/discovery/ai-match` (inline in `backend/src/routes/discovery.ts`)
+- Takes discovered `[{retailer, url, title}]` → fetches product catalog from DB → calls Claude haiku (no web search) → returns each item with `match: {id, name, brand}` and `confidence: 0–1`
+- Frontend match dialog:
+  - Pre-selects only confidence ≥ 85% (green)
+  - 60–84% shown as "possible match" (yellow), not pre-selected
+  - <60% / no match shown as "No match found"
+  - "Change" button on every matched item → inline catalog search picker
+  - "Assign product" button on unmatched items → same inline picker
+  - Select All / Deselect All controls
+  - Saves via `POST /api/discovery/confirm` grouped by company_id
+
+### Company Matching (DiscoveringContent.tsx — `matchCompany()`)
+- When saving confirmed URLs, maps retailer string → company in DB
+- **Primary:** domain from result URL matched against company `base_url` (most reliable)
+- **Fallback:** keyword matching on company name/slug/base_url (skips generic words: ae, uae, grocery, etc.)
 
 ---
 
@@ -160,6 +179,16 @@ GET  /api/allowed-users          ← User whitelist management
 - **SQL schema on Neon** — user still needs to paste `backend/sql/schema.sql` into Neon SQL editor
 - **Real data in frontend pages** — PriceBoardContent, TrackedUrlsContent, CompaniesContent still use mock data
 - **Add Product button** in ProductsContent is disabled (placeholder) — not yet implemented
+
+## Discovery Flow (end-to-end)
+
+1. User types product query + selects retailers → `POST /api/discovery/ai-search`
+2. Claude web-searches → returns `[{retailer, url, title}]` (strict exact-match prompt)
+3. User checks the results they want → clicks "AI Match & Add to Tracked"
+4. `POST /api/discovery/ai-match` → Claude matches titles to catalog → returns confidence scores
+5. Dialog shows: ≥85% pre-selected (green "matched to"), <85% unselected (yellow "possible match"), 0% = "No match"
+6. User can click "Change" / "Assign product" on any row → inline catalog picker opens
+7. User confirms selection → `POST /api/discovery/confirm` per company → saves to `product_company_urls`
 
 ---
 
