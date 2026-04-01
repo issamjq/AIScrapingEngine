@@ -140,7 +140,7 @@ export function PlansContent() {
   const unitLabel   = isB2C ? "credits" : "searches"
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-8">
 
       {/* Header */}
       <div className="text-center space-y-2">
@@ -219,7 +219,7 @@ export function PlansContent() {
       )}
 
       {/* Plan cards — 2 plans only */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {plans.map((plan) => {
           const Icon      = plan.icon
           const isCurrent = (plan.key === "paid" && currentSub === "paid") ||
