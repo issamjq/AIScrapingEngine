@@ -23,14 +23,14 @@ export async function aiWebSearch(
   const prompt =
     `Search for product listings for: "${query}"\n\n` +
     `Find listings on these retailers: ${retailerList}\n\n` +
-    `For each retailer, find up to 3 matching product page URLs ` +
-    `(e.g. different sizes, variants, or sellers of the same product).\n` +
-    `Return up to 10 results total across all retailers.\n\n` +
+    `For each retailer, find up to 10 matching product page URLs ` +
+    `(different sizes, variants, flavors, or packs of the same product).\n\n` +
     `Return ONLY a JSON array in this exact format:\n` +
     `[{"retailer": "Amazon AE", "url": "https://...", "title": "exact product title as shown"}]\n\n` +
     `Rules:\n` +
     `- Only direct product pages (not search results pages)\n` +
     `- title must be the product name as shown on that retailer's page\n` +
+    `- Include up to 10 results PER retailer\n` +
     `- Return [] if nothing found\n` +
     `- Return ONLY the JSON array, no explanation`
 
@@ -54,7 +54,7 @@ export async function aiWebSearch(
       },
       body: JSON.stringify({
         model:      "claude-haiku-4-5-20251001",
-        max_tokens: 1024,
+        max_tokens: 4096,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
@@ -83,7 +83,6 @@ export async function aiWebSearch(
     const parsed: WebSearchResult[] = JSON.parse(match[0])
     const valid = parsed
       .filter((r) => r.retailer && r.url && r.url.startsWith("http") && r.title)
-      .slice(0, 10)
 
     logger.info("[AIWebSearch] Results", { count: valid.length, query })
     return valid
