@@ -5,11 +5,16 @@ import { Input } from "./ui/input"
 import { Badge } from "./ui/badge"
 import { Checkbox } from "./ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog"
-import { Compass, Search, CheckCircle, ExternalLink, Loader2, Plus, AlertCircle } from "lucide-react"
+import {
+  Compass, Search, CheckCircle, ExternalLink,
+  Loader2, Plus, AlertCircle, Lock, Sparkles,
+} from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
+const FREE_LIMIT = 3   // visible per retailer group
 
 const DEFAULT_RETAILERS = [
   { label: "Amazon AE",     value: "Amazon AE (amazon.ae)" },
@@ -25,13 +30,31 @@ interface SearchResult {
   title:    string
 }
 
+interface RetailerGroup {
+  retailer: string
+  visible:  SearchResult[]
+  blurred:  SearchResult[]
+}
+
+function groupByRetailer(results: SearchResult[]): RetailerGroup[] {
+  const map = new Map<string, SearchResult[]>()
+  for (const r of results) {
+    if (!map.has(r.retailer)) map.set(r.retailer, [])
+    map.get(r.retailer)!.push(r)
+  }
+  return [...map.entries()].map(([retailer, items]) => ({
+    retailer,
+    visible: items.slice(0, FREE_LIMIT),
+    blurred: items.slice(FREE_LIMIT),
+  }))
+}
+
 function matchCompany(retailerStr: string, companies: any[]): any | null {
-  // "Amazon AE (amazon.ae)" → "amazon ae"
   const name = retailerStr.replace(/\s*\([^)]*\)/, "").trim().toLowerCase()
   return (
     companies.find((c) => c.name.toLowerCase() === name) ||
     companies.find((c) => c.name.toLowerCase().includes(name) || name.includes(c.name.toLowerCase())) ||
-    companies.find((c) => name.split(" ").some((w) => c.slug.toLowerCase().includes(w))) ||
+    companies.find((c) => name.split(" ").some((w) => c.slug?.toLowerCase().includes(w))) ||
     null
   )
 }
@@ -48,7 +71,8 @@ export function DiscoveringContent() {
     DEFAULT_RETAILERS.slice(0, 3).map((r) => r.value)
   )
   const [searching, setSearching]                 = useState(false)
-  const [results, setResults]                     = useState<SearchResult[]>([])
+  const [groups, setGroups]                       = useState<RetailerGroup[]>([])
+  const [totalFound, setTotalFound]               = useState(0)
   const [searched, setSearched]                   = useState(false)
   const [searchError, setSearchError]             = useState<string | null>(null)
   const [confirmed, setConfirmed]                 = useState<Set<string>>(new Set())
@@ -80,7 +104,7 @@ export function DiscoveringContent() {
         const [cj, pj] = await Promise.all([cr.json(), pr.json()])
         if (cj.success) setCompanies(cj.data || [])
         if (pj.success) setProducts(pj.data || [])
-      } catch { /* silent — search still works */ }
+      } catch { /* silent */ }
       if (!cancelled) setLoading(false)
     }
     load()
@@ -91,7 +115,8 @@ export function DiscoveringContent() {
     if (!query.trim() || searching) return
     setSearching(true)
     setSearchError(null)
-    setResults([])
+    setGroups([])
+    setTotalFound(0)
     setSearched(false)
     setConfirmed(new Set())
     setConfirmSuccess(null)
@@ -107,7 +132,9 @@ export function DiscoveringContent() {
       })
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error?.message || "Search failed")
-      setResults(json.data.results || [])
+      const results: SearchResult[] = json.data.results || []
+      setGroups(groupByRetailer(results))
+      setTotalFound(results.length)
       setSearched(true)
     } catch (err: any) {
       setSearchError(err.message)
@@ -140,21 +167,23 @@ export function DiscoveringContent() {
 
   async function handleAddToTracked() {
     if (!selectedProductId) { setConfirmError("Please select a product."); return }
-    const selectedResults = results.filter((r) => confirmed.has(r.url))
+
+    // Collect all visible confirmed results
+    const allVisible = groups.flatMap((g) => g.visible)
+    const selectedResults = allVisible.filter((r) => confirmed.has(r.url))
     if (!selectedResults.length) return
 
-    // Group by matched company
-    const groups = new Map<number, { company: any; mappings: { url: string }[] }>()
+    const groupsMap = new Map<number, { url: string }[]>()
     const unmatched: string[] = []
 
     for (const r of selectedResults) {
       const company = matchCompany(r.retailer, companies)
       if (!company) { unmatched.push(r.retailer); continue }
-      if (!groups.has(company.id)) groups.set(company.id, { company, mappings: [] })
-      groups.get(company.id)!.mappings.push({ url: r.url })
+      if (!groupsMap.has(company.id)) groupsMap.set(company.id, [])
+      groupsMap.get(company.id)!.push({ url: r.url })
     }
 
-    if (groups.size === 0) {
+    if (groupsMap.size === 0) {
       setConfirmError(
         `Could not match any retailer to a company in your database. ` +
         `Make sure these retailers are added: ${[...new Set(unmatched)].join(", ")}`
@@ -171,7 +200,7 @@ export function DiscoveringContent() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       }
       let totalAdded = 0
-      for (const [companyId, { mappings }] of groups) {
+      for (const [companyId, mappings] of groupsMap) {
         const res = await fetch(`${API}/api/discovery/confirm`, {
           method:  "POST",
           headers: h,
@@ -203,6 +232,8 @@ export function DiscoveringContent() {
     p.internal_sku?.toLowerCase().includes(productSearch.toLowerCase())
   )
 
+  const totalBlurred = groups.reduce((s, g) => s + g.blurred.length, 0)
+
   if (loading) return <PageSkeleton cards={2} rows={4} />
 
   return (
@@ -222,7 +253,7 @@ export function DiscoveringContent() {
             Discover Products
           </CardTitle>
           <CardDescription className="text-xs">
-            Enter a product name — AI will search and find the exact listing on each selected retailer.
+            AI searches up to 10 listings across selected retailers — results in under 30 seconds.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -263,11 +294,12 @@ export function DiscoveringContent() {
           <CardTitle className="text-base">Discovery Results</CardTitle>
           <CardDescription className="text-xs">
             {searched && !searchError
-              ? `Found ${results.length} listing${results.length !== 1 ? "s" : ""} for "${query}"`
+              ? `Found ${totalFound} listing${totalFound !== 1 ? "s" : ""} for "${query}" — showing ${FREE_LIMIT} per retailer`
               : "AI-matched product listings from retailer pages"}
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Success banner */}
           {confirmSuccess && (
             <div className="rounded-md bg-green-500/10 text-green-700 dark:text-green-400 text-sm px-4 py-3 mb-4 flex items-center gap-2">
               <CheckCircle className="h-4 w-4 shrink-0" />
@@ -275,6 +307,7 @@ export function DiscoveringContent() {
             </div>
           )}
 
+          {/* Empty state */}
           {!searched && !searching && (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-3">
               <Compass className="h-10 w-10 text-muted-foreground/40" />
@@ -282,58 +315,114 @@ export function DiscoveringContent() {
             </div>
           )}
 
+          {/* Loading */}
           {searching && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/60" />
               <p className="text-sm text-muted-foreground">Claude is searching across retailers…</p>
+              <p className="text-xs text-muted-foreground/60">Up to 30 seconds</p>
             </div>
           )}
 
+          {/* Error */}
           {searchError && (
             <div className="rounded-md bg-destructive/10 text-destructive text-sm px-4 py-3">
               {searchError}
             </div>
           )}
 
-          {searched && !searchError && results.length === 0 && (
+          {/* No results */}
+          {searched && !searchError && groups.length === 0 && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Compass className="h-10 w-10 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">No listings found. Try a more specific product name.</p>
             </div>
           )}
 
-          {results.length > 0 && (
-            <div className="space-y-3">
-              {results.map((r) => (
-                <div key={r.url} className="flex items-start gap-3 rounded-lg border p-3">
-                  <Checkbox
-                    checked={confirmed.has(r.url)}
-                    onCheckedChange={() => toggleConfirm(r.url)}
-                    className="mt-0.5 shrink-0"
-                  />
-                  <div className="flex-1 min-w-0 space-y-0.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant="secondary" className="text-xs shrink-0">{r.retailer}</Badge>
-                      <span className="text-sm font-medium truncate">{r.title}</span>
-                    </div>
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 truncate"
-                    >
-                      <ExternalLink className="h-3 w-3 shrink-0" />
-                      <span className="truncate">{r.url}</span>
-                    </a>
+          {/* Results grouped by retailer */}
+          {groups.length > 0 && (
+            <div className="space-y-6">
+              {groups.map((group) => (
+                <div key={group.retailer}>
+                  {/* Retailer header */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <Badge variant="outline" className="text-xs font-medium">{group.retailer}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {group.visible.length + group.blurred.length} listing{group.visible.length + group.blurred.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
-                  {confirmed.has(r.url) && (
-                    <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+
+                  {/* Visible results (first 3) */}
+                  <div className="space-y-2 mb-2">
+                    {group.visible.map((r) => (
+                      <div key={r.url} className="flex items-start gap-3 rounded-lg border p-3">
+                        <Checkbox
+                          checked={confirmed.has(r.url)}
+                          onCheckedChange={() => toggleConfirm(r.url)}
+                          className="mt-0.5 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0 space-y-0.5">
+                          <span className="text-sm font-medium line-clamp-1">{r.title}</span>
+                          <a
+                            href={r.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 truncate"
+                          >
+                            <ExternalLink className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{r.url}</span>
+                          </a>
+                        </div>
+                        {confirmed.has(r.url) && (
+                          <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Blurred results (4+) */}
+                  {group.blurred.length > 0 && (
+                    <div className="relative rounded-lg overflow-hidden">
+                      {/* Blur overlay */}
+                      <div className="absolute inset-0 backdrop-blur-sm bg-background/60 z-10 flex items-center justify-center">
+                        <div className="text-center bg-card border shadow-lg rounded-xl px-6 py-5 max-w-xs mx-4">
+                          <div className="flex justify-center mb-2">
+                            <div className="rounded-full bg-primary/10 p-2">
+                              <Lock className="h-5 w-5 text-primary" />
+                            </div>
+                          </div>
+                          <p className="text-sm font-semibold mb-1">
+                            {group.blurred.length} more listing{group.blurred.length !== 1 ? "s" : ""} hidden
+                          </p>
+                          <p className="text-xs text-muted-foreground mb-3">
+                            Upgrade to Pro to unlock all results
+                          </p>
+                          <Button size="sm" className="w-full gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Upgrade to Pro
+                          </Button>
+                        </div>
+                      </div>
+                      {/* Blurred content underneath */}
+                      <div className="space-y-2 opacity-40 pointer-events-none select-none">
+                        {group.blurred.map((r) => (
+                          <div key={r.url} className="flex items-start gap-3 rounded-lg border p-3">
+                            <div className="h-4 w-4 rounded border mt-0.5 shrink-0" />
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <span className="text-sm font-medium line-clamp-1">{r.title}</span>
+                              <span className="text-xs text-muted-foreground truncate block">{r.url}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               ))}
 
+              {/* Confirm button */}
               {confirmed.size > 0 && (
-                <div className="pt-2 flex justify-end">
+                <div className="pt-2 flex justify-end border-t">
                   <Button size="sm" className="gap-1.5" onClick={openConfirmDialog}>
                     <Plus className="h-4 w-4" />
                     Add {confirmed.size} to Tracked URLs
@@ -348,9 +437,9 @@ export function DiscoveringContent() {
       {/* Stats */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
         {[
-          { label: "Products Found",     value: searched ? String(results.length) : "—", icon: Compass },
-          { label: "Retailers Searched", value: searched ? String(selectedRetailers.length) : "—", icon: Search },
-          { label: "Ready to Track",     value: searched ? String(confirmed.size) : "—", icon: CheckCircle },
+          { label: "Listings Found",    value: searched ? String(totalFound) : "—",         icon: Compass },
+          { label: "Retailers Searched", value: searched ? String(groups.length) : "—",     icon: Search },
+          { label: "Locked Results",    value: searched ? String(totalBlurred) : "—",       icon: Lock },
         ].map(({ label, value, icon: Icon }) => (
           <Card key={label}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -372,11 +461,10 @@ export function DiscoveringContent() {
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            {/* Selected URLs preview */}
             <div className="space-y-1.5">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">URLs to add ({confirmed.size})</p>
               <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                {results.filter((r) => confirmed.has(r.url)).map((r) => (
+                {groups.flatMap((g) => g.visible).filter((r) => confirmed.has(r.url)).map((r) => (
                   <div key={r.url} className="flex items-center gap-2 text-xs">
                     <Badge variant="outline" className="text-[10px] shrink-0">{r.retailer}</Badge>
                     <span className="truncate text-muted-foreground">{r.title}</span>
@@ -396,7 +484,7 @@ export function DiscoveringContent() {
               <div className="border rounded-md max-h-40 overflow-y-auto divide-y">
                 {filteredProducts.length === 0 && (
                   <p className="text-xs text-muted-foreground px-3 py-4 text-center">
-                    {products.length === 0 ? "No products in catalog yet." : "No products match your search."}
+                    {products.length === 0 ? "No products in catalog yet." : "No products match."}
                   </p>
                 )}
                 {filteredProducts.slice(0, 30).map((p) => (
