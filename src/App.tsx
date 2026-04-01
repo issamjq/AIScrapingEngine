@@ -28,7 +28,7 @@ import { PlansContent }            from "./components/PlansContent"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
-type AppState = "loading" | "onboarding" | "ready" | "denied"
+type AppState = "loading" | "onboarding" | "ready" | "denied" | "error"
 
 function AppLoader() {
   return (
@@ -61,15 +61,45 @@ function AccessDenied() {
   )
 }
 
+function ConnectionError({ onRetry }: { onRetry: () => void }) {
+  const { logout } = useAuth()
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="text-center space-y-3 max-w-sm px-4">
+        <p className="font-semibold text-lg">Connection error</p>
+        <p className="text-muted-foreground text-sm">
+          Could not reach the server. Check your connection and try again.
+        </p>
+        <div className="flex items-center justify-center gap-4 pt-1">
+          <button
+            onClick={onRetry}
+            className="text-sm underline text-foreground hover:text-muted-foreground"
+          >
+            Retry
+          </button>
+          <button
+            onClick={logout}
+            className="text-sm underline text-muted-foreground hover:text-foreground"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AppInner() {
   const { user, loading } = useAuth()
   const [currentPage, setCurrentPage] = useState("dashboard")
   const [appState, setAppState] = useState<AppState>("loading")
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
     if (loading) return
     if (!user) { setAppState("loading"); return }
 
+    setAppState("loading")
     user.getIdToken().then((token: string) =>
       fetch(`${API}/api/allowed-users/me`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -80,14 +110,15 @@ function AppInner() {
           else if (data.error?.code === "NEW_USER") setAppState("onboarding")
           else setAppState("denied")
         })
-        .catch(() => setAppState("denied"))
+        .catch(() => setAppState("error"))
     )
-  }, [user, loading])
+  }, [user, loading, retryCount])
 
   if (loading || (user && appState === "loading")) return <AppLoader />
   if (!user) return <LoginPage />
   if (appState === "onboarding") return <OnboardingContent onComplete={() => setAppState("ready")} />
   if (appState === "denied") return <AccessDenied />
+  if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />
   if (appState !== "ready") return <AppLoader />
 
   const renderContent = () => {

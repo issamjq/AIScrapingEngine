@@ -1,6 +1,6 @@
 {
   "name": "ai-scraping-engine",
-  "version": "1.0.40",
+  "version": "1.0.41",
   "private": true,
   "type": "module",
   "dependencies": {
