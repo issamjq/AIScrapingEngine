@@ -412,7 +412,7 @@ export function DiscoveringContent() {
               <p className="text-sm text-muted-foreground">
                 {searchingLabel ? `Searching ${searchingLabel}…` : "Starting search…"}
               </p>
-              <p className="text-xs text-muted-foreground/60">Up to 60 seconds</p>
+              <p className="text-xs text-muted-foreground/60">Up to 30 seconds</p>
             </div>
           )}
 

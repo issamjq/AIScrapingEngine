@@ -6,7 +6,7 @@ export interface WebSearchResult {
   title:    string
 }
 
-const TIMEOUT_MS = 60_000
+const TIMEOUT_MS = 30_000
 
 /**
  * Uses Claude with the web_search_20250305 tool to find product page URLs
@@ -56,8 +56,8 @@ export async function aiWebSearch(
         "anthropic-beta":    "web-search-2025-03-05",
       },
       body: JSON.stringify({
-        model:      "claude-sonnet-4-6",
-        max_tokens: 8192,
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 4096,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
         messages: [{ role: "user", content: prompt }],
       }),
@@ -92,7 +92,7 @@ export async function aiWebSearch(
 
   } catch (err: any) {
     if (err.name === "AbortError") {
-      logger.warn("[AIWebSearch] Aborted after 60s timeout")
+      logger.warn("[AIWebSearch] Aborted after 30s timeout")
       return []
     }
     throw err

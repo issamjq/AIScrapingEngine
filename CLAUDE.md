@@ -147,8 +147,8 @@ GET  /api/allowed-users          ← User whitelist management
 
 ### Claude Web Search (v1.0.5+)
 - File: `backend/src/scraper/aiWebSearch.ts`
-- Uses `claude-sonnet-4-6` with `web_search_20250305` tool + `anthropic-beta: web-search-2025-03-05` header
-- Hard 60-second AbortController timeout (Sonnet is slower but finds more results)
+- Uses `claude-haiku-4-5-20251001` with `web_search_20250305` tool + `anthropic-beta: web-search-2025-03-05` header
+- Hard 30-second AbortController timeout (Haiku is fast and cheap)
 - Input: product query + list of retailers → Output: `[{retailer, url, title}]`
 - Prompt enforces: exact size match, exact flavor/variant match, no bundle packs, direct product pages only
 - Endpoint: `POST /api/discovery/ai-search`
