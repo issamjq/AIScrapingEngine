@@ -10,6 +10,7 @@ import {
   Users,
   Settings,
   ChevronDown,
+  CreditCard,
 } from "lucide-react"
 import {
   Sidebar,
@@ -59,8 +60,9 @@ const rspSections = [
     label: "System",
     id: "rsp-system",
     items: [
-      { title: "Users",    icon: Users,    id: "users" },
-      { title: "Settings", icon: Settings, id: "settings" },
+      { title: "Plans",    icon: CreditCard, id: "plans"    },
+      { title: "Users",    icon: Users,      id: "users"    },
+      { title: "Settings", icon: Settings,   id: "settings" },
     ],
   },
 ]

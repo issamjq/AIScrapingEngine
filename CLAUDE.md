@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.24
+**Current version:** v1.0.25
 
 ---
 
@@ -94,6 +94,7 @@ PORT=8080
 | `src/components/DashboardLayout.tsx` | Shell with sidebar — only shows: Dashboard, AI, Monitoring, Catalog, System. Old items (Playground→Shopify, Integrations) are hidden (code still exists in App.tsx switch). |
 | `src/components/DiscoveringContent.tsx` | Market Discovery — AI web search, confirm dialog, usage counter, PlansModal trigger on limit hit |
 | `src/components/PlansModal.tsx` | Plans comparison modal (Trial/Free/Paid) — shown on limit hit or plan link click. Stripe CTA = "Coming soon". |
+| `src/components/PlansContent.tsx` | Full pricing page — Free / Pro ($20) / Business ($50) cards, current plan banner, usage bar, trial countdown. Accessible via sidebar Plans link. |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
 | `src/components/TrackedUrlsContent.tsx` | Tracked product URLs (mock data) |
 | `src/components/CompaniesContent.tsx` | Stores page — real API data, Add Store dialog (name+URL→auto-slug), activate/deactivate toggle |

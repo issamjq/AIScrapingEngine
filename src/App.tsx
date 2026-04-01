@@ -23,6 +23,7 @@ import { TrackedUrlsContent }       from "./components/TrackedUrlsContent"
 import { ProductsContent }          from "./components/ProductsContent"
 import { CompaniesContent }         from "./components/CompaniesContent"
 import { UsersManagementContent }   from "./components/UsersManagementContent"
+import { PlansContent }             from "./components/PlansContent"
 
 import { Skeleton } from "./components/ui/skeleton"
 
@@ -66,6 +67,7 @@ function AppInner() {
       case "products":        return <ProductsContent />
       case "companies":       return <CompaniesContent />
       case "users":           return <UsersManagementContent />
+      case "plans":           return <PlansContent />
 
       default:                return <DashboardContent />
     }
