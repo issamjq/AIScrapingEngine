@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.5
+**Current version:** v1.0.7
 
 ---
 
@@ -90,11 +90,11 @@ PORT=8080
 |------|---------|
 | `src/App.tsx` | Router, sidebar nav |
 | `src/components/DashboardLayout.tsx` | Shell with sidebar |
-| `src/components/DiscoveringContent.tsx` | Market Discovery page — AI web search UI |
-| `src/components/PriceBoardContent.tsx` | Price activity table |
-| `src/components/TrackedUrlsContent.tsx` | Tracked product URLs |
-| `src/components/CompaniesContent.tsx` | Retailers/companies |
-| `src/components/ProductsContent.tsx` | Product catalog |
+| `src/components/DiscoveringContent.tsx` | Market Discovery — AI web search, confirm dialog links results to products via `/api/discovery/confirm` |
+| `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
+| `src/components/TrackedUrlsContent.tsx` | Tracked product URLs (mock data) |
+| `src/components/CompaniesContent.tsx` | Retailers/companies (mock data) |
+| `src/components/ProductsContent.tsx` | Product catalog — real data from API + CSV/TSV import with brand filter dialog |
 | `src/context/AuthContext.tsx` | Firebase auth context (`useAuth()`) |
 | `src/lib/firebase.ts` | Firebase client init |
 | `vite.config.ts` | Injects `__APP_VERSION__` from package.json at build time |
@@ -156,9 +156,9 @@ GET  /api/allowed-users          ← User whitelist management
 
 ## Planned Features (not yet built)
 
-- **"Add to Tracked URLs" button** in DiscoveringContent — wire confirmed results to `POST /api/discovery/confirm`
 - **SQL schema on Neon** — user still needs to paste `backend/sql/schema.sql` into Neon SQL editor
 - **Real data in frontend pages** — PriceBoardContent, TrackedUrlsContent, CompaniesContent still use mock data
+- **Add Product button** in ProductsContent is disabled (placeholder) — not yet implemented
 
 ---
 
