@@ -35,10 +35,38 @@ allowedUsersRouter.get("/me", async (req: AuthRequest, res: Response, next: Next
       })
     }
 
+    // Unknown user — prompt frontend to run onboarding
     return res.status(403).json({
       success: false,
-      error: { message: "Access denied. Your account is not authorised to use this application.", code: "FORBIDDEN" },
+      error: { message: "New user — onboarding required.", code: "NEW_USER" },
     })
+  } catch (err) { next(err) }
+})
+
+// POST /api/allowed-users/signup — called from onboarding screen for new users
+allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const email = req.email
+    if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
+
+    // Reject if user already exists
+    const existing = await getCallerUser(email)
+    if (existing) return res.json({ success: true, data: existing })
+
+    const { name, role } = req.body
+    if (!role || !["b2b", "b2c"].includes(role)) {
+      return next(createError("role must be b2b or b2c", 400, "VALIDATION"))
+    }
+
+    const effectiveTrial = trialEndsAt(role)
+
+    const { rows } = await query(
+      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at)
+       VALUES ($1, $2, $3, true, 'trial', $4)
+       RETURNING *`,
+      [email.toLowerCase().trim(), name || null, role, effectiveTrial]
+    )
+    res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }
 })
 

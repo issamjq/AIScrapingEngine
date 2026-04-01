@@ -99,9 +99,9 @@ export function LoginPage() {
 
         <div className="w-full max-w-sm space-y-8">
           <div className="text-center">
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Welcome back</h2>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Welcome</h2>
             <p className="text-muted-foreground mt-2 text-sm">
-              Sign in with your Gmail account to continue
+              Sign in or create an account with your Gmail
             </p>
           </div>
 
