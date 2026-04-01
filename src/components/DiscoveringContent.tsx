@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -108,6 +108,7 @@ export function DiscoveringContent() {
     DEFAULT_RETAILERS.slice(0, 3).map((r) => r.value)
   )
   const [searching, setSearching]                 = useState(false)
+  const [searchingLabel, setSearchingLabel]       = useState<string>("")
   const [groups, setGroups]                       = useState<RetailerGroup[]>([])
   const [allResults, setAllResults]               = useState<SearchResult[]>([])
   const [totalFound, setTotalFound]               = useState(0)
@@ -150,6 +151,22 @@ export function DiscoveringContent() {
     load()
     return () => { cancelled = true }
   }, [user])
+
+  // Cycle through retailer domains while searching so user sees progress
+  useEffect(() => {
+    if (!searching) { setSearchingLabel(""); return }
+    const domains = selectedRetailers.map((r) => {
+      const m = r.match(/\(([^)]+)\)/)
+      return m ? m[1] : r
+    })
+    let i = 0
+    setSearchingLabel(domains[0] ?? "")
+    const interval = setInterval(() => {
+      i = (i + 1) % domains.length
+      setSearchingLabel(domains[i])
+    }, 4000)
+    return () => clearInterval(interval)
+  }, [searching])
 
   async function handleSearch() {
     if (!query.trim() || searching) return
@@ -392,8 +409,10 @@ export function DiscoveringContent() {
           {searching && (
             <div className="flex flex-col items-center justify-center py-12 gap-3">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/60" />
-              <p className="text-sm text-muted-foreground">Claude is searching across retailers…</p>
-              <p className="text-xs text-muted-foreground/60">Up to 30 seconds</p>
+              <p className="text-sm text-muted-foreground">
+                {searchingLabel ? `Searching ${searchingLabel}…` : "Starting search…"}
+              </p>
+              <p className="text-xs text-muted-foreground/60">Up to 60 seconds</p>
             </div>
           )}
 

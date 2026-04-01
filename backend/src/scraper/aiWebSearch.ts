@@ -6,7 +6,7 @@ export interface WebSearchResult {
   title:    string
 }
 
-const TIMEOUT_MS = 30_000
+const TIMEOUT_MS = 60_000
 
 /**
  * Uses Claude with the web_search_20250305 tool to find product page URLs
@@ -92,7 +92,7 @@ export async function aiWebSearch(
 
   } catch (err: any) {
     if (err.name === "AbortError") {
-      logger.warn("[AIWebSearch] Aborted after 30s timeout")
+      logger.warn("[AIWebSearch] Aborted after 60s timeout")
       return []
     }
     throw err

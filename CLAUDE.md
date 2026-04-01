@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.13
+**Current version:** v1.0.15
 
 ---
 
@@ -89,7 +89,7 @@ PORT=8080
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | Router, sidebar nav |
-| `src/components/DashboardLayout.tsx` | Shell with sidebar |
+| `src/components/DashboardLayout.tsx` | Shell with sidebar — only shows: Dashboard, AI, Monitoring, Catalog, System. Old items (Playground→Shopify, Integrations) are hidden (code still exists in App.tsx switch). |
 | `src/components/DiscoveringContent.tsx` | Market Discovery — AI web search, confirm dialog links results to products via `/api/discovery/confirm` |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
 | `src/components/TrackedUrlsContent.tsx` | Tracked product URLs (mock data) |
@@ -147,8 +147,8 @@ GET  /api/allowed-users          ← User whitelist management
 
 ### Claude Web Search (v1.0.5+)
 - File: `backend/src/scraper/aiWebSearch.ts`
-- Uses `claude-haiku-4-5-20251001` with `web_search_20250305` tool + `anthropic-beta: web-search-2025-03-05` header
-- Hard 30-second AbortController timeout
+- Uses `claude-sonnet-4-6` with `web_search_20250305` tool + `anthropic-beta: web-search-2025-03-05` header
+- Hard 60-second AbortController timeout (Sonnet is slower but finds more results)
 - Input: product query + list of retailers → Output: `[{retailer, url, title}]`
 - Prompt enforces: exact size match, exact flavor/variant match, no bundle packs, direct product pages only
 - Endpoint: `POST /api/discovery/ai-search`

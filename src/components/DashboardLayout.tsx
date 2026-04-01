@@ -2,16 +2,6 @@ import { ReactNode, useState } from "react"
 import {
   BarChart3,
   Home,
-  PlaySquare,
-  FileText,
-  Bot,
-  Calendar,
-  Send,
-  Facebook,
-  Music,
-  Youtube,
-  Twitter,
-  ShoppingCart,
   Compass,
   TrendingUp,
   Link,
@@ -39,29 +29,11 @@ import { Separator } from "./ui/separator"
 
 declare const __APP_VERSION__: string
 
-// ── Original main items ───────────────────────────────────────────
-const mainItems = [
-  { title: "Dashboard",       icon: Home,       id: "dashboard" },
-  { title: "Playground",      icon: PlaySquare, id: "playground" },
-  { title: "Content Library", icon: FileText,   id: "content-library" },
-  { title: "AI Services",     icon: Bot,        id: "ai-services" },
-  { title: "Post Scheduler",  icon: Calendar,   id: "post-scheduler" },
-]
-
-// ── Original integrations ─────────────────────────────────────────
-const integrationItems = [
-  { title: "Omnisend",  icon: Send,         id: "omnisend" },
-  { title: "Meta",      icon: Facebook,     id: "meta" },
-  { title: "TikTok",    icon: Music,        id: "tiktok" },
-  { title: "YouTube",   icon: Youtube,      id: "youtube" },
-  { title: "Twitter/X", icon: Twitter,      id: "twitter" },
-  { title: "Shopify",   icon: ShoppingCart, id: "shopify" },
-]
-
-// ── RSP / Scraping Engine sections ────────────────────────────────
+// ── Navigation sections ───────────────────────────────────────────
 const rspSections = [
   {
     label: "AI",
+
     id: "rsp-ai",
     items: [
       { title: "Market Discovery", icon: Compass, id: "discovering" },
@@ -150,43 +122,17 @@ export function DashboardLayout({ children, currentPage, onNavigate }: Dashboard
 
           <SidebarContent className="overflow-y-auto overflow-x-hidden">
 
-            {/* ── Original main items ── */}
+            {/* ── Dashboard home ── */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {mainItems.map((item) => (
-                    <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
-                  ))}
+                  <NavButton
+                    item={{ title: "Dashboard", icon: Home, id: "dashboard" }}
+                    currentPage={currentPage}
+                    onNavigate={onNavigate}
+                  />
                 </SidebarMenu>
               </SidebarGroupContent>
-            </SidebarGroup>
-
-            <Separator className="mx-4 my-1 w-auto" />
-
-            {/* ── Original Integrations (collapsible) ── */}
-            <SidebarGroup>
-              <SidebarGroupLabel asChild>
-                <button
-                  onClick={() => toggle("integrations")}
-                  className="w-full flex items-center justify-between px-4 py-2 cursor-pointer select-none"
-                >
-                  <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                    Integrations
-                  </span>
-                  <ChevronDown
-                    className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${collapsed["integrations"] ? "-rotate-90" : ""}`}
-                  />
-                </button>
-              </SidebarGroupLabel>
-              {!collapsed["integrations"] && (
-                <SidebarGroupContent>
-                  <SidebarMenu>
-                    {integrationItems.map((item) => (
-                      <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
-                    ))}
-                  </SidebarMenu>
-                </SidebarGroupContent>
-              )}
             </SidebarGroup>
 
             <Separator className="mx-4 my-1 w-auto" />
