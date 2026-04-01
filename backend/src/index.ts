@@ -25,6 +25,9 @@ import { requireAuth }              from "./middleware/auth"
 const app  = express()
 const PORT = process.env.PORT ?? 8080
 
+// Trust Render / reverse-proxy headers so req.ip reflects the real client IP
+app.set("trust proxy", 1)
+
 // Middleware
 app.use(helmet())
 app.use(cors({

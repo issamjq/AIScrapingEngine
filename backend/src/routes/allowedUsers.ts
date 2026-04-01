@@ -9,6 +9,16 @@ export const allowedUsersRouter = Router()
 
 const MANAGEMENT_ROLES = ["dev", "owner", "admin"]
 
+/** Extract real client IP — checks X-Forwarded-For first (set by Render proxy) */
+function getClientIp(req: AuthRequest): string {
+  const forwarded = req.headers["x-forwarded-for"]
+  if (forwarded) {
+    const first = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(",")[0]
+    return first.trim()
+  }
+  return req.ip ?? "unknown"
+}
+
 async function getCallerUser(email: string) {
   const { rows } = await query(
     "SELECT * FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1",
@@ -17,14 +27,36 @@ async function getCallerUser(email: string) {
   return rows[0] || null
 }
 
+async function getUserByUid(uid: string) {
+  const { rows } = await query(
+    "SELECT * FROM allowed_users WHERE firebase_uid = $1 AND is_active = true LIMIT 1",
+    [uid]
+  )
+  return rows[0] || null
+}
+
 // GET /api/allowed-users/me — access check after login
 allowedUsersRouter.get("/me", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const email = req.email
+    const uid   = req.uid
     if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
 
+    // Primary lookup: by email
     const user = await getCallerUser(email)
-    if (user) return res.json({ success: true, data: user })
+    if (user) {
+      // Backfill firebase_uid if missing (existing users pre-v1.0.28)
+      if (uid && !user.firebase_uid) {
+        await query("UPDATE allowed_users SET firebase_uid = $1 WHERE id = $2", [uid, user.id])
+      }
+      return res.json({ success: true, data: user })
+    }
+
+    // Secondary: same Google account but different email (edge case)
+    if (uid) {
+      const byUid = await getUserByUid(uid)
+      if (byUid) return res.json({ success: true, data: byUid })
+    }
 
     // Bootstrap mode: first user gets Super Admin
     const { rows: countRows } = await query("SELECT COUNT(*) FROM allowed_users")
@@ -47,11 +79,42 @@ allowedUsersRouter.get("/me", async (req: AuthRequest, res: Response, next: Next
 allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const email = req.email
+    const uid   = req.uid
     if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
 
-    // Reject if user already exists
+    // Already exists by email — just return existing record
     const existing = await getCallerUser(email)
     if (existing) return res.json({ success: true, data: existing })
+
+    // Same Google account (uid) already registered under a different email
+    if (uid) {
+      const byUid = await getUserByUid(uid)
+      if (byUid) {
+        return res.status(409).json({
+          success: false,
+          error: { message: "A trial account already exists for this Google account.", code: "DUPLICATE_ACCOUNT" },
+        })
+      }
+    }
+
+    // IP-based check: block if same IP already has a trial signup in last 30 days
+    const clientIp = getClientIp(req)
+    if (clientIp !== "unknown") {
+      const { rows: ipRows } = await query(
+        `SELECT id FROM allowed_users
+         WHERE signup_ip = $1
+           AND subscription = 'trial'
+           AND created_at > NOW() - INTERVAL '30 days'
+         LIMIT 1`,
+        [clientIp]
+      )
+      if (ipRows.length > 0) {
+        return res.status(409).json({
+          success: false,
+          error: { message: "A trial account was recently created from this device. Please use your existing account or upgrade.", code: "IP_TRIAL_LIMIT" },
+        })
+      }
+    }
 
     const { name, role } = req.body
     if (!role || !["b2b", "b2c"].includes(role)) {
@@ -61,10 +124,10 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
     const effectiveTrial = trialEndsAt(role)
 
     const { rows } = await query(
-      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at)
-       VALUES ($1, $2, $3, true, 'trial', $4)
+      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at, firebase_uid, signup_ip)
+       VALUES ($1, $2, $3, true, 'trial', $4, $5, $6)
        RETURNING *`,
-      [email.toLowerCase().trim(), name || null, role, effectiveTrial]
+      [email.toLowerCase().trim(), name || null, role, effectiveTrial, uid || null, clientIp]
     )
     res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }

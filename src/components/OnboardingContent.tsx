@@ -35,7 +35,15 @@ export function OnboardingContent({ onComplete }: Props) {
         }),
       })
       const data = await res.json()
-      if (!data.success) throw new Error(data.error?.message || "Signup failed")
+      if (!data.success) {
+        const code = data.error?.code
+        if (code === "DUPLICATE_ACCOUNT" || code === "IP_TRIAL_LIMIT") {
+          setError(data.error.message)
+        } else {
+          throw new Error(data.error?.message || "Signup failed")
+        }
+        return
+      }
       onComplete()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")

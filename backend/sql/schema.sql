@@ -199,8 +199,16 @@ ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS trial_ends_at       TIMESTAMP
 ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS daily_searches_used INTEGER      NOT NULL DEFAULT 0;
 ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS last_reset_at       TIMESTAMPTZ;
 
+-- Trial abuse prevention columns (added v1.0.28)
+-- firebase_uid: unique Google account identifier — prevents same Google account re-registering
+-- signup_ip:    IP at time of signup — blocks multiple trial accounts from same IP
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR(128);
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS signup_ip    VARCHAR(45);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_allowed_users_firebase_uid ON allowed_users(firebase_uid) WHERE firebase_uid IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_allowed_users_email     ON allowed_users(email);
 CREATE INDEX IF NOT EXISTS idx_allowed_users_is_active ON allowed_users(is_active);
+CREATE INDEX IF NOT EXISTS idx_allowed_users_signup_ip ON allowed_users(signup_ip);
 
 CREATE OR REPLACE TRIGGER set_allowed_users_updated_at
   BEFORE UPDATE ON allowed_users
