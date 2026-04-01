@@ -17,7 +17,11 @@ export async function getAll(q: Record<string, any> = {}, userEmail?: string) {
 
   const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
   const { rows: countRows } = await query(
-    `SELECT COUNT(*) FROM product_company_urls pcu ${where}`, params
+    `SELECT COUNT(*)
+     FROM   product_company_urls pcu
+     JOIN   products p  ON p.id  = pcu.product_id
+     JOIN   companies c ON c.id  = pcu.company_id
+     ${where}`, params
   )
 
   params.push(limit, offset)
