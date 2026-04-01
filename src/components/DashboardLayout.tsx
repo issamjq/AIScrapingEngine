@@ -26,6 +26,7 @@ import {
   SidebarProvider,
 } from "./ui/sidebar"
 import { TopNavigation } from "./TopNavigation"
+import { UserMenuButton } from "./UserMenuButton"
 import { Separator } from "./ui/separator"
 
 declare const __APP_VERSION__: string
@@ -172,10 +173,13 @@ export function DashboardLayout({ children, currentPage, onNavigate }: Dashboard
 
           </SidebarContent>
 
-          {/* Footer: version badge */}
-          <SidebarFooter className="pb-3">
+          {/* Footer: user menu + version */}
+          <SidebarFooter className="pb-2">
             <Separator className="mx-4 mb-2 w-auto" />
-            <div className="px-4 pt-1">
+            <div className="px-2">
+              <UserMenuButton onNavigate={onNavigate} />
+            </div>
+            <div className="px-4 pt-1 pb-1">
               <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground select-none">
                 v{__APP_VERSION__}
               </span>
