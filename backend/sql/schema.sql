@@ -191,6 +191,14 @@ CREATE TABLE IF NOT EXISTS allowed_users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Subscription / usage limit columns (added v1.0.21)
+-- subscription: 'trial' | 'free' | 'paid'
+-- Roles: 001=Dev, 002=Owner (unlimited), 010=B2B, 020=B2C
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS subscription        VARCHAR(20)  NOT NULL DEFAULT 'free';
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS trial_ends_at       TIMESTAMPTZ;
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS daily_searches_used INTEGER      NOT NULL DEFAULT 0;
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS last_reset_at       TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_allowed_users_email     ON allowed_users(email);
 CREATE INDEX IF NOT EXISTS idx_allowed_users_is_active ON allowed_users(is_active);
 

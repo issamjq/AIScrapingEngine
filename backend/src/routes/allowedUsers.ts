@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from "express"
 import { query } from "../db"
 import { createError } from "../middleware/validate"
 import { AuthRequest } from "../middleware/auth"
+import { trialEndsAt } from "../middleware/usageLimit"
 
 export const allowedUsersRouter = Router()
 
@@ -66,13 +67,20 @@ allowedUsersRouter.get("/", requireManagement as any, async (_req, res, next) =>
 // POST /api/allowed-users
 allowedUsersRouter.post("/", requireManagement as any, async (req, res, next) => {
   try {
-    const { email, name, role = "008", is_active = true } = req.body
+    const { email, name, role = "020", is_active = true, subscription } = req.body
     if (!email) return next(createError("email is required", 400, "VALIDATION"))
+
+    // Auto-start trial for B2B/B2C roles unless subscription is explicitly provided
+    const effectiveSub    = subscription || "trial"
+    const effectiveTrial  = trialEndsAt(role)  // null for 001/002 roles
+
     const { rows } = await query(
-      `INSERT INTO allowed_users (email, name, role, is_active) VALUES ($1, $2, $3, $4)
-       ON CONFLICT (email) DO UPDATE SET name=$2, role=$3, is_active=$4, updated_at=NOW()
+      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (email) DO UPDATE
+         SET name=$2, role=$3, is_active=$4, subscription=$5, trial_ends_at=$6, updated_at=NOW()
        RETURNING *`,
-      [email.toLowerCase().trim(), name || null, role, is_active]
+      [email.toLowerCase().trim(), name || null, role, is_active, effectiveSub, effectiveTrial]
     )
     res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }

@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.17
+**Current version:** v1.0.22
 
 ---
 
@@ -79,7 +79,9 @@ PORT=8080
 | `backend/src/services/discoveryService.ts` | `discoverProducts()` — Playwright + Claude matching |
 | `backend/src/services/scrapingService.ts` | Bulk scraping jobs |
 | `backend/src/services/syncService.ts` | Price sync runs |
-| `backend/src/routes/discovery.ts` | `/api/discovery/search`, `/ai-search`, `/confirm`, `/probe` |
+| `backend/src/routes/discovery.ts` | `/api/discovery/search`, `/ai-search`, `/confirm`, `/probe` — rate-limited via `checkUsageLimit` |
+| `backend/src/middleware/usageLimit.ts` | Usage limit middleware — role × subscription × trial logic. 001/002 bypass. |
+| `backend/src/routes/allowedUsers.ts` | User whitelist CRUD — auto-sets trial subscription on new B2B/B2C user creation |
 | `backend/tsconfig.json` | Must include `"lib": ["ES2020", "DOM"]` — DOM needed for Playwright page.evaluate() |
 
 ---
@@ -90,7 +92,8 @@ PORT=8080
 |------|---------|
 | `src/App.tsx` | Router, sidebar nav |
 | `src/components/DashboardLayout.tsx` | Shell with sidebar — only shows: Dashboard, AI, Monitoring, Catalog, System. Old items (Playground→Shopify, Integrations) are hidden (code still exists in App.tsx switch). |
-| `src/components/DiscoveringContent.tsx` | Market Discovery — AI web search, confirm dialog links results to products via `/api/discovery/confirm` |
+| `src/components/DiscoveringContent.tsx` | Market Discovery — AI web search, confirm dialog, usage counter, PlansModal trigger on limit hit |
+| `src/components/PlansModal.tsx` | Plans comparison modal (Trial/Free/Paid) — shown on limit hit or plan link click. Stripe CTA = "Coming soon". |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
 | `src/components/TrackedUrlsContent.tsx` | Tracked product URLs (mock data) |
 | `src/components/CompaniesContent.tsx` | Stores page — real API data, Add Store dialog (name+URL→auto-slug), activate/deactivate toggle |
@@ -110,7 +113,7 @@ Key tables:
 - `price_snapshots` — scraped prices (price, original_price, currency, availability, scrape_status, checked_at)
 - `company_configs` — per-company scraper config (selectors, page_options)
 - `sync_runs` — scraping job history
-- `allowed_users` — whitelist of Firebase UIDs allowed to access the app
+- `allowed_users` — whitelist + subscription info (role, subscription, trial_ends_at, daily_searches_used, last_reset_at)
 
 > **Pending:** Schema SQL still needs to be pasted into Neon SQL editor if DB was reset.
 
@@ -173,13 +176,45 @@ GET  /api/allowed-users          ← User whitelist management
 
 ---
 
+## Subscription / Usage Limit System (v1.0.21+)
+
+**Roles:**
+- `001` Dev, `002` Owner → unlimited, always bypass limits
+- `010` B2B client, `020` B2C user → tier limits apply
+
+**Subscriptions:** `trial` | `free` | `paid`
+
+**Daily limits (searches/day):**
+| Role | trial | free | paid |
+|------|-------|------|------|
+| 010 B2B | 50 (14 days) | 20 | 200 |
+| 020 B2C | 20 (7 days)  | 10 | 50  |
+
+**Behaviour:**
+- New users auto-start on `trial` with `trial_ends_at` set (B2B=14d, B2C=7d)
+- Trial expiry → auto-downgrade to `free` silently
+- Limit hit → 429 `USAGE_LIMIT_REACHED` → frontend shows `PlansModal`
+- Counter resets daily at midnight UTC
+- Stripe integration = **not yet built** — "Coming soon" button in PlansModal
+
+**DB columns added to `allowed_users`** (run in Neon SQL editor if not done):
+```sql
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS subscription        VARCHAR(20)  NOT NULL DEFAULT 'free';
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS trial_ends_at       TIMESTAMPTZ;
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS daily_searches_used INTEGER      NOT NULL DEFAULT 0;
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS last_reset_at       TIMESTAMPTZ;
+```
+
+---
+
 ## Planned Features (not yet built)
 
-- **Companies/Stores seeded** — 5 UAE retailers in `backend/sql/schema.sql` seed block (ON CONFLICT DO NOTHING). Must be re-run if DB was reset.
+- **Stripe payment integration** — PlansModal upgrade button shows "Coming soon" placeholder
+- **Companies/Stores seeded** — 8 UAE retailers in `backend/sql/schema.sql` seed block (ON CONFLICT DO NOTHING). Must be re-run if DB was reset.
 - **DiscoveringContent retailer checkboxes** — fetched live from `/api/companies` (active only). No longer hardcoded. New stores added via Stores page appear automatically.
 - **Blur on discovery results is temporarily OFF** — `FREE_LIMIT = Infinity` in `DiscoveringContent.tsx`. To re-enable change it back to `3`. The blur/upgrade-CTA code is fully built and works — just the constant controls it.
 - **SQL schema on Neon** — user still needs to paste `backend/sql/schema.sql` into Neon SQL editor
-- **Real data in frontend pages** — PriceBoardContent, TrackedUrlsContent, CompaniesContent still use mock data
+- **Real data in frontend pages** — PriceBoardContent, TrackedUrlsContent still use mock data
 - **Add Product button** in ProductsContent is disabled (placeholder) — not yet implemented
 
 ## Discovery Flow (end-to-end)

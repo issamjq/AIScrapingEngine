@@ -10,6 +10,7 @@ import {
   Loader2, Plus, AlertCircle, Lock, Sparkles, Bot,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
+import { PlansModal } from "./PlansModal"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -131,6 +132,11 @@ export function DiscoveringContent() {
   const [pickerSearch, setPickerSearch] = useState("")
   const [overrides, setOverrides] = useState<Map<string, {id:number; name:string; brand:string}>>(new Map())
 
+  // Plans modal + user profile (for usage counter)
+  const [showPlans, setShowPlans]     = useState(false)
+  const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "020" })
+  const [userProfile, setUserProfile] = useState<{ subscription: string; role: string; daily_searches_used: number; trial_ends_at?: string | null } | null>(null)
+
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
   }
@@ -141,12 +147,18 @@ export function DiscoveringContent() {
     async function load() {
       try {
         const token = await (user as any).getIdToken()
-        const res = await fetch(`${API}/api/companies`, { headers: { Authorization: `Bearer ${token}` } })
-        const json = await res.json()
-        if (!cancelled && json.success) {
-          const active = (json.data || []).filter((c: any) => c.is_active)
+        const [companiesRes, meRes] = await Promise.all([
+          fetch(`${API}/api/companies`,        { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/allowed-users/me`, { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        const [companiesJson, meJson] = await Promise.all([companiesRes.json(), meRes.json()])
+        if (!cancelled && companiesJson.success) {
+          const active = (companiesJson.data || []).filter((c: any) => c.is_active)
           setCompanies(active)
           setSelectedRetailers(active.map(retailerValue))
+        }
+        if (!cancelled && meJson.success && meJson.data) {
+          setUserProfile(meJson.data)
         }
       } catch { /* silent */ }
       if (!cancelled) setLoading(false)
@@ -189,12 +201,22 @@ export function DiscoveringContent() {
         body: JSON.stringify({ query: query.trim(), retailers: selectedRetailers }),
       })
       const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error?.message || "Search failed")
+      if (!res.ok || !json.success) {
+        if (json.error?.code === "USAGE_LIMIT_REACHED") {
+          setPlansData({ used: json.error.used, limit: json.error.limit, subscription: json.error.subscription, role: json.error.role, trial_ends_at: json.error.trial_ends_at })
+          setShowPlans(true)
+          setSearched(true)
+          return
+        }
+        throw new Error(json.error?.message || "Search failed")
+      }
       const results: SearchResult[] = json.data.results || []
       setGroups(groupByRetailer(results))
       setAllResults(results)
       setTotalFound(results.length)
       setSearched(true)
+      // Update local usage counter after successful search
+      if (userProfile) setUserProfile((p) => p ? { ...p, daily_searches_used: p.daily_searches_used + 1 } : p)
     } catch (err: any) {
       setSearchError(err.message)
       setSearched(true)
@@ -248,7 +270,15 @@ export function DiscoveringContent() {
         body: JSON.stringify({ items: toMatch }),
       })
       const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error?.message || "Matching failed")
+      if (!res.ok || !json.success) {
+        if (json.error?.code === "USAGE_LIMIT_REACHED") {
+          setShowMatch(false)
+          setPlansData({ used: json.error.used, limit: json.error.limit, subscription: json.error.subscription, role: json.error.role, trial_ends_at: json.error.trial_ends_at })
+          setShowPlans(true)
+          return
+        }
+        throw new Error(json.error?.message || "Matching failed")
+      }
       const results: AiMatchResult[] = json.data
       setMatchResults(results)
       // Pre-select only high-confidence matches (>= 85%)
@@ -388,6 +418,17 @@ export function DiscoveringContent() {
               <span className="hidden sm:inline">{searching ? "Searching…" : "Search"}</span>
             </Button>
           </div>
+          {userProfile && !["001","002"].includes(userProfile.role) && (
+            <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
+              <span>
+                {userProfile.daily_searches_used} search{userProfile.daily_searches_used !== 1 ? "es" : ""} used today
+                {" · "}
+                <button className="underline hover:text-foreground" onClick={() => { setPlansData({ used: userProfile.daily_searches_used, limit: 999, subscription: userProfile.subscription, role: userProfile.role, trial_ends_at: userProfile.trial_ends_at }); setShowPlans(true) }}>
+                  {userProfile.subscription} plan
+                </button>
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -540,6 +581,17 @@ export function DiscoveringContent() {
           </Card>
         ))}
       </div>
+
+      {/* Plans modal — shown when usage limit is hit or user clicks plan name */}
+      <PlansModal
+        open={showPlans}
+        onClose={() => setShowPlans(false)}
+        subscription={plansData.subscription}
+        role={plansData.role}
+        used={plansData.used}
+        limit={plansData.limit}
+        trialEndsAt={plansData.trial_ends_at}
+      />
 
       {/* AI Match Dialog */}
       <Dialog open={showMatch} onOpenChange={(open) => { if (!saving) setShowMatch(open) }}>

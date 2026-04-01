@@ -3,12 +3,13 @@ import { discoverProducts, confirmMappings, probeWebsite } from "../services/dis
 import { aiWebSearch } from "../scraper/aiWebSearch"
 import { callClaude } from "../utils/claudeClient"
 import { createError } from "../middleware/validate"
+import { checkUsageLimit } from "../middleware/usageLimit"
 import { logger } from "../utils/logger"
 
 export const discoveryRouter = Router()
 
 // POST /api/discovery/search
-discoveryRouter.post("/search", async (req, res, next) => {
+discoveryRouter.post("/search", checkUsageLimit as any, async (req, res, next) => {
   try {
     const companyId = parseInt(req.body.company_id)
     if (!companyId || isNaN(companyId)) return next(createError("company_id is required", 400, "VALIDATION_ERROR"))
@@ -36,7 +37,7 @@ discoveryRouter.post("/confirm", async (req, res, next) => {
 })
 
 // POST /api/discovery/ai-search
-discoveryRouter.post("/ai-search", async (req, res, next) => {
+discoveryRouter.post("/ai-search", checkUsageLimit as any, async (req, res, next) => {
   try {
     const query = (req.body.query || "").toString().trim()
     if (!query) return next(createError("query is required", 400, "VALIDATION_ERROR"))
@@ -57,7 +58,7 @@ discoveryRouter.post("/ai-search", async (req, res, next) => {
 // POST /api/discovery/ai-match
 // Takes discovered items [{retailer, url, title}] + fetches product catalog,
 // returns each item with AI-matched product + confidence score
-discoveryRouter.post("/ai-match", async (req, res, next) => {
+discoveryRouter.post("/ai-match", checkUsageLimit as any, async (req, res, next) => {
   try {
     const items = req.body.items
     if (!Array.isArray(items) || items.length === 0)
