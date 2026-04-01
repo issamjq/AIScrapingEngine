@@ -1,11 +1,12 @@
 import { query } from "../db"
 import { parsePagination } from "../utils/helpers"
 
-export async function getAll(q: Record<string, any> = {}) {
+export async function getAll(q: Record<string, any> = {}, userEmail?: string) {
   const { limit, offset } = parsePagination(q)
   const filters: string[] = []
   const params: any[]     = []
 
+  if (userEmail) { params.push(userEmail); filters.push(`p.user_email = $${params.length}`) }
   if (q.product_id) { params.push(parseInt(q.product_id)); filters.push(`pcu.product_id = $${params.length}`) }
   if (q.company_id) { params.push(parseInt(q.company_id)); filters.push(`pcu.company_id = $${params.length}`) }
   if (q.is_active !== undefined) {

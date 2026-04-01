@@ -1,12 +1,14 @@
 import { Router } from "express"
 import * as svc from "../services/productCompanyUrlService"
 import { requireBody, validateId, createError } from "../middleware/validate"
+import { AuthRequest } from "../middleware/auth"
 
 export const productCompanyUrlsRouter = Router()
 
 productCompanyUrlsRouter.get("/", async (req, res, next) => {
   try {
-    const result = await svc.getAll(req.query as any)
+    const email  = (req as AuthRequest).email!
+    const result = await svc.getAll(req.query as any, email)
     res.json({ success: true, ...result })
   } catch (err) { next(err) }
 })

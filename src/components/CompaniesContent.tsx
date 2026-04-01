@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "./ui/sheet"
 import { Building2, Plus, CheckCircle, Loader2, AlertCircle, ExternalLink } from "lucide-react"
 import { CardGridSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -24,7 +24,7 @@ export function CompaniesContent() {
   const [companies, setCompanies] = useState<any[]>([])
   const [fetchError, setFetchError] = useState<string | null>(null)
 
-  // Add Store dialog
+  // Add Store sheet
   const [open, setOpen]       = useState(false)
   const [name, setName]       = useState("")
   const [baseUrl, setBaseUrl] = useState("")
@@ -195,15 +195,16 @@ export function CompaniesContent() {
         </div>
       )}
 
-      {/* Add Store Dialog */}
-      <Dialog open={open} onOpenChange={(v) => { if (!saving) setOpen(v) }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Add Store</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
+      {/* Add Store Sheet */}
+      <Sheet open={open} onOpenChange={(v) => { if (!saving) setOpen(v) }}>
+        <SheetContent side="right" className="flex flex-col">
+          <SheetHeader className="border-b pb-4">
+            <SheetTitle>Add Store</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Store Name *</label>
+              <label className="text-sm font-medium">Store Name *</label>
               <Input
                 placeholder="e.g. Amazon AE"
                 value={name}
@@ -211,17 +212,19 @@ export function CompaniesContent() {
                 onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               />
               {name && (
-                <p className="text-[10px] text-muted-foreground">Slug: {slugify(name)}</p>
+                <p className="text-[11px] text-muted-foreground">Slug: {slugify(name)}</p>
               )}
             </div>
+
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Website URL</label>
+              <label className="text-sm font-medium">Website URL</label>
               <Input
                 placeholder="e.g. https://www.amazon.ae"
                 value={baseUrl}
                 onChange={(e) => setBaseUrl(e.target.value)}
               />
             </div>
+
             {saveError && (
               <div className="flex items-start gap-2 rounded-md bg-destructive/10 text-destructive text-xs px-3 py-2">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
@@ -229,17 +232,18 @@ export function CompaniesContent() {
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={saving}>
+
+          <SheetFooter className="border-t pt-4 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleAdd} disabled={!name.trim() || saving} className="gap-1.5">
+            <Button className="flex-1 gap-1.5" onClick={handleAdd} disabled={!name.trim() || saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               {saving ? "Adding…" : "Add Store"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

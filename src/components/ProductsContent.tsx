@@ -4,6 +4,7 @@ import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog"
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "./ui/sheet"
 import { Package, Plus, Search, Upload, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { TableSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -70,6 +71,17 @@ export function ProductsContent() {
   const [search, setSearch]         = useState("")
   const [fetchError, setFetchError] = useState<string | null>(null)
 
+  // Add Product sheet
+  const [addOpen, setAddOpen]         = useState(false)
+  const [addName, setAddName]         = useState("")
+  const [addSku, setAddSku]           = useState("")
+  const [addBrand, setAddBrand]       = useState("")
+  const [addBarcode, setAddBarcode]   = useState("")
+  const [addRsp, setAddRsp]           = useState("")
+  const [addImageUrl, setAddImageUrl] = useState("")
+  const [adding, setAdding]           = useState(false)
+  const [addError, setAddError]       = useState<string | null>(null)
+
   // Import state
   const [parsedRows, setParsedRows]       = useState<ParsedRow[]>([])
   const [brands, setBrands]               = useState<{ name: string; count: number }[]>([])
@@ -115,10 +127,48 @@ export function ProductsContent() {
     return () => clearTimeout(t)
   }, [search])
 
+  function resetAddForm() {
+    setAddName(""); setAddSku(""); setAddBrand("")
+    setAddBarcode(""); setAddRsp(""); setAddImageUrl("")
+    setAddError(null)
+  }
+
+  async function handleAdd() {
+    if (!addName.trim()) return
+    setAdding(true)
+    setAddError(null)
+    try {
+      const token = await getToken()
+      const body: any = { internal_name: addName.trim() }
+      if (addSku.trim())      body.internal_sku = addSku.trim()
+      if (addBrand.trim())    body.brand        = addBrand.trim()
+      if (addBarcode.trim())  body.barcode      = addBarcode.trim()
+      if (addRsp.trim())      body.initial_rsp  = Number(addRsp) || null
+      if (addImageUrl.trim()) body.image_url    = addImageUrl.trim()
+
+      const res = await fetch(`${API}/api/products`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to add product")
+      setAddOpen(false)
+      resetAddForm()
+      await fetchProducts(search)
+    } catch (err: any) {
+      setAddError(err.message)
+    } finally {
+      setAdding(false)
+    }
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    // reset so the same file can be re-selected
     e.target.value = ""
 
     const reader = new FileReader()
@@ -136,7 +186,6 @@ export function ProductsContent() {
 
       if (!data.length) { alert("No valid rows found. Check that your file has Item Name and SKU columns."); return }
 
-      // Extract unique brands with counts
       const brandMap = new Map<string, number>()
       for (const r of data) {
         const b = r.brand || "Unknown"
@@ -177,7 +226,6 @@ export function ProductsContent() {
       const json = await res.json()
       if (!res.ok || !json.success) throw new Error(json.error?.message || "Import failed")
       setImportResult(json.data)
-      // Refresh products list
       await fetchProducts(search)
     } catch (err: any) {
       setImportError(err.message)
@@ -210,7 +258,7 @@ export function ProductsContent() {
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Import</span>
           </Button>
-          <Button size="sm" className="gap-1.5" disabled>
+          <Button size="sm" className="gap-1.5" onClick={() => { resetAddForm(); setAddOpen(true) }}>
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">Add Product</span>
           </Button>
@@ -308,6 +356,89 @@ export function ProductsContent() {
           )}
         </CardContent>
       </Card>
+
+      {/* Add Product Sheet */}
+      <Sheet open={addOpen} onOpenChange={(v) => { if (!adding) setAddOpen(v) }}>
+        <SheetContent side="right" className="flex flex-col">
+          <SheetHeader className="border-b pb-4">
+            <SheetTitle>Add Product</SheetTitle>
+          </SheetHeader>
+
+          <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Product Name *</label>
+              <Input
+                placeholder="e.g. Marvis Classic Mint 75ml"
+                value={addName}
+                onChange={(e) => setAddName(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Brand</label>
+              <Input
+                placeholder="e.g. Marvis"
+                value={addBrand}
+                onChange={(e) => setAddBrand(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">SKU</label>
+              <Input
+                placeholder="e.g. MRV-001"
+                value={addSku}
+                onChange={(e) => setAddSku(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Barcode</label>
+              <Input
+                placeholder="e.g. 8004395110018"
+                value={addBarcode}
+                onChange={(e) => setAddBarcode(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Initial RSP (AED)</label>
+              <Input
+                type="number"
+                placeholder="e.g. 49.00"
+                value={addRsp}
+                onChange={(e) => setAddRsp(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Image URL</label>
+              <Input
+                placeholder="https://…"
+                value={addImageUrl}
+                onChange={(e) => setAddImageUrl(e.target.value)}
+              />
+            </div>
+
+            {addError && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 text-destructive text-xs px-3 py-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                {addError}
+              </div>
+            )}
+          </div>
+
+          <SheetFooter className="border-t pt-4 flex-row gap-2">
+            <Button variant="outline" className="flex-1" onClick={() => setAddOpen(false)} disabled={adding}>
+              Cancel
+            </Button>
+            <Button className="flex-1 gap-1.5" onClick={handleAdd} disabled={!addName.trim() || adding}>
+              {adding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {adding ? "Adding…" : "Add Product"}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
 
       {/* Import Brand Dialog */}
       <Dialog open={importOpen} onOpenChange={(open) => { if (!importing) setImportOpen(open) }}>
