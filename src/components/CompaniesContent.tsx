@@ -4,7 +4,7 @@ import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "./ui/sheet"
-import { Building2, Plus, CheckCircle, Loader2, AlertCircle, ExternalLink } from "lucide-react"
+import { Building2, Plus, CheckCircle, Loader2, AlertCircle, ExternalLink, Pencil } from "lucide-react"
 import { CardGridSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
 
@@ -24,12 +24,29 @@ export function CompaniesContent() {
   const [companies, setCompanies] = useState<any[]>([])
   const [fetchError, setFetchError] = useState<string | null>(null)
 
-  // Add Store sheet
-  const [open, setOpen]       = useState(false)
-  const [name, setName]       = useState("")
-  const [baseUrl, setBaseUrl] = useState("")
-  const [saving, setSaving]   = useState(false)
+  // Add / Edit Store sheet
+  const [open, setOpen]         = useState(false)
+  const [editTarget, setEditTarget] = useState<any | null>(null)
+  const [name, setName]         = useState("")
+  const [baseUrl, setBaseUrl]   = useState("")
+  const [saving, setSaving]     = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  function openAdd() {
+    setEditTarget(null)
+    setName("")
+    setBaseUrl("")
+    setSaveError(null)
+    setOpen(true)
+  }
+
+  function openEdit(c: any) {
+    setEditTarget(c)
+    setName(c.name)
+    setBaseUrl(c.base_url || "")
+    setSaveError(null)
+    setOpen(true)
+  }
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -57,22 +74,27 @@ export function CompaniesContent() {
     fetchCompanies()
   }, [user])
 
-  async function handleAdd() {
+  async function handleSave() {
     if (!name.trim()) return
     setSaving(true)
     setSaveError(null)
     try {
       const token = await getToken()
-      const res = await fetch(`${API}/api/companies`, {
-        method: "POST",
+      const isEdit = !!editTarget
+      const url  = isEdit ? `${API}/api/companies/${editTarget.id}` : `${API}/api/companies`
+      const body = isEdit
+        ? { name: name.trim(), base_url: baseUrl.trim() || null }
+        : { name: name.trim(), slug: slugify(name), base_url: baseUrl.trim() || null }
+      const res = await fetch(url, {
+        method: isEdit ? "PUT" : "POST",
         headers: {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ name: name.trim(), slug: slugify(name), base_url: baseUrl.trim() || null }),
+        body: JSON.stringify(body),
       })
       const json = await res.json()
-      if (!res.ok || !json.success) throw new Error(json.error?.message || "Failed to add store")
+      if (!res.ok || !json.success) throw new Error(json.error?.message || `Failed to ${isEdit ? "update" : "add"} store`)
       setOpen(false)
       setName("")
       setBaseUrl("")
@@ -110,7 +132,7 @@ export function CompaniesContent() {
           <h1 className="text-xl sm:text-2xl font-semibold">Stores</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Retailers and marketplaces being monitored.</p>
         </div>
-        <Button size="sm" className="gap-1.5 shrink-0" onClick={() => { setOpen(true); setSaveError(null) }}>
+        <Button size="sm" className="gap-1.5 shrink-0" onClick={openAdd}>
           <Plus className="h-4 w-4" />
           <span className="hidden sm:inline">Add Store</span>
         </Button>
@@ -164,7 +186,8 @@ export function CompaniesContent() {
                 <CardDescription className="text-xs flex items-center gap-1">
                   {c.base_url ? (
                     <a
-                      href={c.base_url} target="_blank" rel="noopener noreferrer"
+                      href={/^https?:\/\//i.test(c.base_url) ? c.base_url : `https://${c.base_url}`}
+                      target="_blank" rel="noopener noreferrer"
                       className="hover:underline flex items-center gap-1"
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -182,12 +205,21 @@ export function CompaniesContent() {
                     <CheckCircle className="h-3.5 w-3.5 text-green-500" />
                     {Number(c.url_count) || 0} products tracked
                   </span>
-                  <Button
-                    variant="ghost" size="sm" className="h-7 text-xs px-2"
-                    onClick={() => toggleActive(c)}
-                  >
-                    {c.is_active ? "Deactivate" : "Activate"}
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost" size="sm" className="h-7 text-xs px-2 gap-1"
+                      onClick={() => openEdit(c)}
+                    >
+                      <Pencil className="h-3 w-3" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="ghost" size="sm" className="h-7 text-xs px-2"
+                      onClick={() => toggleActive(c)}
+                    >
+                      {c.is_active ? "Deactivate" : "Activate"}
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -195,11 +227,11 @@ export function CompaniesContent() {
         </div>
       )}
 
-      {/* Add Store Sheet */}
+      {/* Add / Edit Store Sheet */}
       <Sheet open={open} onOpenChange={(v) => { if (!saving) setOpen(v) }}>
         <SheetContent side="right" className="flex flex-col">
           <SheetHeader className="border-b pb-4">
-            <SheetTitle>Add Store</SheetTitle>
+            <SheetTitle>{editTarget ? "Edit Store" : "Add Store"}</SheetTitle>
           </SheetHeader>
 
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -209,9 +241,9 @@ export function CompaniesContent() {
                 placeholder="e.g. Amazon AE"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+                onKeyDown={(e) => e.key === "Enter" && handleSave()}
               />
-              {name && (
+              {name && !editTarget && (
                 <p className="text-[11px] text-muted-foreground">Slug: {slugify(name)}</p>
               )}
             </div>
@@ -237,9 +269,9 @@ export function CompaniesContent() {
             <Button variant="outline" className="flex-1" onClick={() => setOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button className="flex-1 gap-1.5" onClick={handleAdd} disabled={!name.trim() || saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {saving ? "Adding…" : "Add Store"}
+            <Button className="flex-1 gap-1.5" onClick={handleSave} disabled={!name.trim() || saving}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editTarget ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+              {saving ? (editTarget ? "Saving…" : "Adding…") : editTarget ? "Save Changes" : "Add Store"}
             </Button>
           </SheetFooter>
         </SheetContent>
