@@ -1,6 +1,8 @@
 import { query } from "../db"
 
-export async function getAll({ includeInactive = false } = {}) {
+export async function getAll(userEmail: string, { includeInactive = false } = {}) {
+  // Global companies (user_email IS NULL = seeded retailers) + user's own stores
+  const activeFilter = includeInactive ? "" : "AND c.is_active = true"
   const sql = `
     SELECT c.*,
            cc.price_selectors,
@@ -11,10 +13,11 @@ export async function getAll({ includeInactive = false } = {}) {
             WHERE pcu.company_id = c.id AND pcu.is_active = true) AS url_count
     FROM   companies c
     LEFT JOIN company_configs cc ON cc.company_id = c.id
-    ${includeInactive ? "" : "WHERE c.is_active = true"}
+    WHERE  (c.user_email = $1 OR c.user_email IS NULL)
+    ${activeFilter}
     ORDER BY c.name ASC
   `
-  const { rows } = await query(sql)
+  const { rows } = await query(sql, [userEmail])
   return rows
 }
 
@@ -51,33 +54,38 @@ export async function getBySlug(slug: string) {
   return rows[0] || null
 }
 
-export async function create(body: any) {
+export async function create(body: any, userEmail: string) {
   const { name, slug, base_url, logo_url, is_active = true } = body
   const { rows } = await query(
-    `INSERT INTO companies (name, slug, base_url, logo_url, is_active)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO companies (name, slug, base_url, logo_url, is_active, user_email)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
-    [name, slug, base_url || null, logo_url || null, is_active]
+    [name, slug, base_url || null, logo_url || null, is_active, userEmail]
   )
   return rows[0]
 }
 
-export async function update(id: number, fields: any) {
+export async function update(id: number, fields: any, userEmail: string) {
   const allowed = ["name", "slug", "base_url", "logo_url", "is_active"]
   const keys    = Object.keys(fields).filter((k) => allowed.includes(k))
   if (!keys.length) return getById(id)
 
-  const sets   = keys.map((k, i) => `${k} = $${i + 2}`).join(", ")
+  const sets   = keys.map((k, i) => `${k} = $${i + 3}`).join(", ")
   const values = keys.map((k) => fields[k])
   const { rows } = await query(
-    `UPDATE companies SET ${sets} WHERE id = $1 RETURNING *`,
-    [id, ...values]
+    // Allow editing own companies OR global ones (for dev/owner via management UI)
+    `UPDATE companies SET ${sets} WHERE id = $1 AND (user_email = $2 OR user_email IS NULL) RETURNING *`,
+    [id, userEmail, ...values]
   )
   return rows[0] || null
 }
 
-export async function remove(id: number) {
-  const { rowCount } = await query("DELETE FROM companies WHERE id = $1", [id])
+export async function remove(id: number, userEmail: string) {
+  // Only allow deleting user-owned companies (not global seeded ones)
+  const { rowCount } = await query(
+    "DELETE FROM companies WHERE id = $1 AND user_email = $2",
+    [id, userEmail]
+  )
   return (rowCount ?? 0) > 0
 }
 

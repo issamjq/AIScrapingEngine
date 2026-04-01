@@ -199,6 +199,21 @@ ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS trial_ends_at       TIMESTAMP
 ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS daily_searches_used INTEGER      NOT NULL DEFAULT 0;
 ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS last_reset_at       TIMESTAMPTZ;
 
+-- Multi-tenant: per-user data isolation (added v1.0.30)
+-- products.user_email  — owner of the product; only that user sees/edits it
+-- companies.user_email — NULL = global seed retailer (visible to all); email = user-created store
+-- internal_sku uniqueness is now scoped per user (drop old global unique constraint)
+ALTER TABLE products  ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS user_email VARCHAR(255);
+
+ALTER TABLE products DROP CONSTRAINT IF EXISTS products_internal_sku_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_user
+  ON products(internal_sku, user_email)
+  WHERE internal_sku IS NOT NULL AND user_email IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_products_user_email  ON products(user_email);
+CREATE INDEX IF NOT EXISTS idx_companies_user_email ON companies(user_email);
+
 -- Trial abuse prevention columns (added v1.0.28)
 -- firebase_uid: unique Google account identifier — prevents same Google account re-registering
 -- signup_ip:    IP at time of signup — blocks multiple trial accounts from same IP

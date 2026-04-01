@@ -7,10 +7,7 @@ import {
   Link,
   Package,
   Building2,
-  Users,
-  Settings,
   ChevronDown,
-  CreditCard,
 } from "lucide-react"
 import {
   Sidebar,
@@ -55,15 +52,6 @@ const rspSections = [
     items: [
       { title: "Products", icon: Package,   id: "products" },
       { title: "Stores",   icon: Building2, id: "companies" },
-    ],
-  },
-  {
-    label: "System",
-    id: "rsp-system",
-    items: [
-      { title: "Plans",    icon: CreditCard, id: "plans"    },
-      { title: "Users",    icon: Users,      id: "users"    },
-      { title: "Settings", icon: Settings,   id: "settings" },
     ],
   },
 ]

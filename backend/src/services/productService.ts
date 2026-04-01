@@ -1,10 +1,10 @@
 import { query } from "../db"
 import { parsePagination } from "../utils/helpers"
 
-export async function getAll(q: Record<string, any> = {}) {
+export async function getAll(q: Record<string, any> = {}, userEmail: string) {
   const { limit, offset } = parsePagination(q)
-  const filters: string[] = []
-  const params: any[]     = []
+  const filters: string[] = ["p.user_email = $1"]
+  const params: any[]     = [userEmail]
 
   if (q.is_active !== undefined) {
     params.push(q.is_active === "true" || q.is_active === true)
@@ -17,7 +17,7 @@ export async function getAll(q: Record<string, any> = {}) {
     filters.push(`(p.internal_name ILIKE $${params.length} OR p.internal_sku ILIKE $${params.length} OR p.barcode ILIKE $${params.length} OR p.brand ILIKE $${params.length})`)
   }
 
-  const where = filters.length ? `WHERE ${filters.join(" AND ")}` : ""
+  const where = `WHERE ${filters.join(" AND ")}`
   const { rows: countRows } = await query(`SELECT COUNT(*) FROM products p ${where}`, params)
 
   params.push(limit, offset)
@@ -60,48 +60,51 @@ export async function getById(id: number) {
   return rows[0] || null
 }
 
-export async function create(body: any) {
+export async function create(body: any, userEmail: string) {
   const { internal_name, internal_sku, barcode, brand, category, image_url, initial_rsp, notes, is_active = true } = body
   const { rows } = await query(
-    `INSERT INTO products (internal_name, internal_sku, barcode, brand, category, image_url, initial_rsp, notes, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO products (internal_name, internal_sku, barcode, brand, category, image_url, initial_rsp, notes, is_active, user_email)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [internal_name, internal_sku || null, barcode || null, brand || null,
      category || null, image_url || null,
      initial_rsp != null ? Number(initial_rsp) : null,
-     notes || null, is_active]
+     notes || null, is_active, userEmail]
   )
   return rows[0]
 }
 
-export async function update(id: number, fields: any) {
+export async function update(id: number, fields: any, userEmail: string) {
   const allowed = ["internal_name", "internal_sku", "barcode", "brand", "category", "image_url", "initial_rsp", "notes", "is_active"]
   const keys    = Object.keys(fields).filter((k) => allowed.includes(k))
   if (!keys.length) return getById(id)
 
-  const sets   = keys.map((k, i) => `${k} = $${i + 2}`).join(", ")
+  const sets   = keys.map((k, i) => `${k} = $${i + 3}`).join(", ")
   const values = keys.map((k) => fields[k])
   const { rows } = await query(
-    `UPDATE products SET ${sets} WHERE id = $1 RETURNING *`,
-    [id, ...values]
+    `UPDATE products SET ${sets} WHERE id = $1 AND user_email = $2 RETURNING *`,
+    [id, userEmail, ...values]
   )
   return rows[0] || null
 }
 
-export async function remove(id: number) {
-  const { rowCount } = await query("DELETE FROM products WHERE id = $1", [id])
+export async function remove(id: number, userEmail: string) {
+  const { rowCount } = await query(
+    "DELETE FROM products WHERE id = $1 AND user_email = $2",
+    [id, userEmail]
+  )
   return (rowCount ?? 0) > 0
 }
 
-export async function bulkImport(items: any[]) {
+export async function bulkImport(items: any[], userEmail: string) {
   let inserted = 0, updated = 0, skipped = 0
   for (const item of items) {
     if (!item.internal_name || !item.internal_sku) { skipped++; continue }
     const rsp = item.initial_rsp != null && item.initial_rsp !== "" ? Number(item.initial_rsp) : null
     const { rows } = await query(
-      `INSERT INTO products (internal_name, internal_sku, barcode, brand, image_url, initial_rsp, is_active)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (internal_sku) DO UPDATE SET
+      `INSERT INTO products (internal_name, internal_sku, barcode, brand, image_url, initial_rsp, is_active, user_email)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (internal_sku, user_email) DO UPDATE SET
          internal_name = EXCLUDED.internal_name,
          barcode       = EXCLUDED.barcode,
          brand         = EXCLUDED.brand,
@@ -120,7 +123,7 @@ export async function bulkImport(items: any[]) {
        RETURNING (xmax = 0) AS inserted`,
       [item.internal_name, String(item.internal_sku),
        item.barcode || null, item.brand || null,
-       item.image_url || null, rsp, item.is_active ?? true]
+       item.image_url || null, rsp, item.is_active ?? true, userEmail]
     )
     if (rows.length === 0) skipped++
     else if (rows[0].inserted) inserted++

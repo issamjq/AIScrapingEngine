@@ -1,19 +1,22 @@
 import { Router } from "express"
 import * as svc from "../services/companyService"
 import { requireBody, validateId, createError } from "../middleware/validate"
+import { AuthRequest } from "../middleware/auth"
 
 export const companiesRouter = Router()
 
 companiesRouter.get("/", async (req, res, next) => {
   try {
-    const data = await svc.getAll({ includeInactive: req.query.include_inactive === "true" })
+    const email = (req as AuthRequest).email!
+    const data  = await svc.getAll(email, { includeInactive: req.query.include_inactive === "true" })
     res.json({ success: true, data })
   } catch (err) { next(err) }
 })
 
 companiesRouter.post("/", requireBody(["name", "slug"]), async (req, res, next) => {
   try {
-    const data = await svc.create(req.body)
+    const email = (req as AuthRequest).email!
+    const data  = await svc.create(req.body, email)
     res.status(201).json({ success: true, data })
   } catch (err: any) {
     if (err.code === "23505") return next(createError("Company slug already exists", 409, "DUPLICATE"))
@@ -31,7 +34,8 @@ companiesRouter.get("/:id", validateId, async (req, res, next) => {
 
 companiesRouter.put("/:id", validateId, async (req, res, next) => {
   try {
-    const data = await svc.update(Number(req.params.id), req.body)
+    const email = (req as AuthRequest).email!
+    const data  = await svc.update(Number(req.params.id), req.body, email)
     if (!data) return next(createError("Company not found", 404, "NOT_FOUND"))
     res.json({ success: true, data })
   } catch (err) { next(err) }
@@ -39,8 +43,9 @@ companiesRouter.put("/:id", validateId, async (req, res, next) => {
 
 companiesRouter.delete("/:id", validateId, async (req, res, next) => {
   try {
-    const ok = await svc.remove(Number(req.params.id))
-    if (!ok) return next(createError("Company not found", 404, "NOT_FOUND"))
+    const email = (req as AuthRequest).email!
+    const ok    = await svc.remove(Number(req.params.id), email)
+    if (!ok) return next(createError("Company not found or not yours", 404, "NOT_FOUND"))
     res.json({ success: true, message: "Company deleted" })
   } catch (err) { next(err) }
 })

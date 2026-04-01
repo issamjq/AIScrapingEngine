@@ -4,6 +4,7 @@ import { aiWebSearch } from "../scraper/aiWebSearch"
 import { callClaude } from "../utils/claudeClient"
 import { createError } from "../middleware/validate"
 import { checkUsageLimit } from "../middleware/usageLimit"
+import { AuthRequest } from "../middleware/auth"
 import { logger } from "../utils/logger"
 
 export const discoveryRouter = Router()
@@ -68,10 +69,11 @@ discoveryRouter.post("/ai-match", checkUsageLimit as any, async (req, res, next)
     if (!apiKey)
       return next(createError("ANTHROPIC_API_KEY not configured", 503, "NOT_CONFIGURED"))
 
-    // Fetch product catalog from DB
+    // Fetch product catalog from DB — scoped to this user
     const { query: dbQuery } = await import("../db")
     const { rows: catalog } = await dbQuery(
-      `SELECT id, internal_name, internal_sku, brand FROM products WHERE is_active = true ORDER BY internal_name`
+      `SELECT id, internal_name, internal_sku, brand FROM products WHERE is_active = true AND user_email = $1 ORDER BY internal_name`,
+      [(req as AuthRequest).email]
     )
 
     if (catalog.length === 0) {
