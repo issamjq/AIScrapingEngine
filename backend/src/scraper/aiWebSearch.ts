@@ -1,4 +1,5 @@
 import { logger } from "../utils/logger"
+import { callClaude } from "../utils/claudeClient"
 
 export interface WebSearchResult {
   retailer: string
@@ -6,57 +7,12 @@ export interface WebSearchResult {
   title:    string
 }
 
-const TIMEOUT_MS  = 30_000
-const RETRY_DELAY = 30_000   // wait 30s on rate-limit then retry once
-
-async function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
-
-async function callClaude(
-  prompt:  string,
-  apiKey:  string,
-  signal:  AbortSignal,
-  attempt: number = 1
-): Promise<any> {
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method:  "POST",
-    signal,
-    headers: {
-      "x-api-key":         apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type":      "application/json",
-      "anthropic-beta":    "web-search-2025-03-05",
-    },
-    body: JSON.stringify({
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      tools: [{ type: "web_search_20250305", name: "web_search" }],
-      messages: [{ role: "user", content: prompt }],
-    }),
-  })
-
-  if (response.status === 429 && attempt === 1) {
-    logger.warn("[AIWebSearch] Rate limit hit — retrying in 30s")
-    await sleep(RETRY_DELAY)
-    return callClaude(prompt, apiKey, signal, 2)
-  }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => "")
-    if (response.status === 429) {
-      throw new Error("RATE_LIMIT")
-    }
-    throw new Error(`Claude API ${response.status}: ${text}`)
-  }
-
-  return response.json()
-}
+const TIMEOUT_MS = 70_000  // covers up to 2 retries
 
 /**
  * Uses Claude with the web_search_20250305 tool to find product page URLs
  * on specified retailers. Returns up to 10 results per retailer.
- * Retries once after 30s on rate-limit. Hard-caps at 70 seconds total.
+ * Uses shared claudeClient for concurrency queuing + auto-retry on 429.
  */
 export async function aiWebSearch(
   query:     string,
@@ -87,11 +43,17 @@ export async function aiWebSearch(
   const controller = new AbortController()
   const timer = setTimeout(() => {
     controller.abort()
-    logger.warn("[AIWebSearch] 70s timeout reached, aborting")
-  }, TIMEOUT_MS + RETRY_DELAY + 10_000)  // 70s to cover retry scenario
+    logger.warn("[AIWebSearch] Timeout reached, aborting")
+  }, TIMEOUT_MS)
 
   try {
-    const data = await callClaude(prompt, apiKey, controller.signal)
+    const data = await callClaude(apiKey, {
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 4096,
+      tools:      [{ type: "web_search_20250305", name: "web_search" }],
+      messages:   [{ role: "user", content: prompt }],
+      beta:       "web-search-2025-03-05",
+    })
 
     const textBlocks: string[] = []
     for (const block of data?.content ?? []) {
@@ -107,8 +69,7 @@ export async function aiWebSearch(
     }
 
     const parsed: WebSearchResult[] = JSON.parse(match[0])
-    const valid = parsed
-      .filter((r) => r.retailer && r.url && r.url.startsWith("http") && r.title)
+    const valid = parsed.filter((r) => r.retailer && r.url && r.url.startsWith("http") && r.title)
 
     logger.info("[AIWebSearch] Results", { count: valid.length, query })
     return valid
@@ -117,9 +78,6 @@ export async function aiWebSearch(
     if (err.name === "AbortError") {
       logger.warn("[AIWebSearch] Aborted after timeout")
       return []
-    }
-    if (err.message === "RATE_LIMIT") {
-      throw new Error("Rate limit reached — please wait 1 minute and try again.")
     }
     throw err
   } finally {

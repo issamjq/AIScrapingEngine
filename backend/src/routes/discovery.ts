@@ -1,6 +1,7 @@
 import { Router } from "express"
 import { discoverProducts, confirmMappings, probeWebsite } from "../services/discoveryService"
 import { aiWebSearch } from "../scraper/aiWebSearch"
+import { callClaude } from "../utils/claudeClient"
 import { createError } from "../middleware/validate"
 import { logger } from "../utils/logger"
 
@@ -101,22 +102,11 @@ discoveryRouter.post("/ai-match", async (req, res, next) => {
       `[{"i": 0, "catalog_id": 5, "confidence": 0.95}]\n` +
       `Include ALL listing indices (even non-matches with confidence 0).`
 
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method:  "POST",
-      headers: {
-        "x-api-key":         apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type":      "application/json",
-      },
-      body: JSON.stringify({
-        model:      "claude-haiku-4-5-20251001",
-        max_tokens: 2048,
-        messages:   [{ role: "user", content: prompt }],
-      }),
+    const aiData = await callClaude(apiKey, {
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 2048,
+      messages:   [{ role: "user", content: prompt }],
     })
-
-    if (!response.ok) throw new Error(`Claude API ${response.status}`)
-    const aiData  = await response.json()
     const rawText = aiData?.content?.[0]?.text || "[]"
     const jm      = rawText.match(/\[[\s\S]*\]/)
     const matches: any[] = jm ? JSON.parse(jm[0]) : []
