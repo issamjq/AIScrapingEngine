@@ -24,7 +24,6 @@ import { PriceBoardContent }       from "./components/PriceBoardContent"
 import { TrackedUrlsContent }      from "./components/TrackedUrlsContent"
 import { ProductsContent }         from "./components/ProductsContent"
 import { CompaniesContent }        from "./components/CompaniesContent"
-import { UsersManagementContent }  from "./components/UsersManagementContent"
 import { PlansContent }            from "./components/PlansContent"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -112,7 +111,7 @@ function AppInner() {
       case "tracked-urls":    return <TrackedUrlsContent />
       case "products":        return <ProductsContent />
       case "companies":       return <CompaniesContent />
-      case "users":           return <UsersManagementContent />
+
       case "plans":           return <PlansContent />
 
       default:                return <DashboardContent />

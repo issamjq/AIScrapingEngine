@@ -1,6 +1,5 @@
-import { Bell, Coins, LogOut, Settings, User } from "lucide-react"
+import { Coins, LogOut, Settings, User } from "lucide-react"
 import { Button } from "./ui/button"
-import { Badge } from "./ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import {
   DropdownMenu,
@@ -44,15 +43,7 @@ export function TopNavigation() {
           <span className="text-xs sm:text-sm font-medium whitespace-nowrap">2,500 credits</span>
         </div>
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative h-8 w-8 sm:h-9 sm:w-9">
-          <Bell className="h-4 w-4" />
-          <Badge className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center p-0 text-[10px] sm:text-xs">
-            3
-          </Badge>
-        </Button>
-
-        {/* User dropdown */}
+{/* User dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 rounded-full p-0">

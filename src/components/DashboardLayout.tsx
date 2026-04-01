@@ -8,6 +8,8 @@ import {
   Package,
   Building2,
   ChevronDown,
+  Facebook,
+  Music2,
 } from "lucide-react"
 import {
   Sidebar,
@@ -52,6 +54,14 @@ const rspSections = [
     items: [
       { title: "Products", icon: Package,   id: "products" },
       { title: "Stores",   icon: Building2, id: "companies" },
+    ],
+  },
+  {
+    label: "Social",
+    id: "rsp-social",
+    items: [
+      { title: "Meta",    icon: Facebook, id: "meta"   },
+      { title: "TikTok",  icon: Music2,   id: "tiktok" },
     ],
   },
 ]
