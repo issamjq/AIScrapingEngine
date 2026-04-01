@@ -214,6 +214,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_products_sku_user
 CREATE INDEX IF NOT EXISTS idx_products_user_email  ON products(user_email);
 CREATE INDEX IF NOT EXISTS idx_companies_user_email ON companies(user_email);
 
+-- companies.slug uniqueness is per-user (not global) so each user can have amazon-ae, noon, etc.
+ALTER TABLE companies DROP CONSTRAINT IF EXISTS companies_slug_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_companies_slug_user ON companies(slug, user_email) WHERE user_email IS NOT NULL;
+
 -- Trial abuse prevention columns (added v1.0.28)
 -- firebase_uid: unique Google account identifier — prevents same Google account re-registering
 -- signup_ip:    IP at time of signup — blocks multiple trial accounts from same IP

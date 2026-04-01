@@ -4,6 +4,7 @@ import { query } from "../db"
 import { createError } from "../middleware/validate"
 import { AuthRequest } from "../middleware/auth"
 import { trialEndsAt } from "../middleware/usageLimit"
+import { copyGlobalStoresToUser } from "../services/companyService"
 
 export const allowedUsersRouter = Router()
 
@@ -129,6 +130,10 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
        RETURNING *`,
       [email.toLowerCase().trim(), name || null, role, effectiveTrial, uid || null, clientIp]
     )
+
+    // Seed the 8 default UAE stores for this new user
+    await copyGlobalStoresToUser(email.toLowerCase().trim())
+
     res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }
 })

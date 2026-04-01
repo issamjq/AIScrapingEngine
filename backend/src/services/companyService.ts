@@ -1,7 +1,6 @@
 import { query } from "../db"
 
 export async function getAll(userEmail: string, { includeInactive = false } = {}) {
-  // Global companies (user_email IS NULL = seeded retailers) + user's own stores
   const activeFilter = includeInactive ? "" : "AND c.is_active = true"
   const sql = `
     SELECT c.*,
@@ -13,12 +12,27 @@ export async function getAll(userEmail: string, { includeInactive = false } = {}
             WHERE pcu.company_id = c.id AND pcu.is_active = true) AS url_count
     FROM   companies c
     LEFT JOIN company_configs cc ON cc.company_id = c.id
-    WHERE  (c.user_email = $1 OR c.user_email IS NULL)
+    WHERE  c.user_email = $1
     ${activeFilter}
     ORDER BY c.name ASC
   `
   const { rows } = await query(sql, [userEmail])
   return rows
+}
+
+/** Called at signup — copies the 8 global template stores (user_email IS NULL) to the new user */
+export async function copyGlobalStoresToUser(userEmail: string) {
+  const { rows: globals } = await query(
+    "SELECT name, slug, base_url, logo_url, is_active FROM companies WHERE user_email IS NULL"
+  )
+  for (const s of globals) {
+    await query(
+      `INSERT INTO companies (name, slug, base_url, logo_url, is_active, user_email)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT DO NOTHING`,
+      [s.name, s.slug, s.base_url, s.logo_url, s.is_active, userEmail]
+    )
+  }
 }
 
 export async function getById(id: number) {
