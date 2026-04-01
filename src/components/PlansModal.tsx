@@ -1,82 +1,77 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
-import { CheckCircle, XCircle, Sparkles, Zap, Crown, type LucideIcon } from "lucide-react"
+import { CheckCircle, XCircle, Sparkles, Zap, type LucideIcon } from "lucide-react"
 
 interface PlansModalProps {
   open:         boolean
   onClose:      () => void
-  subscription: string   // 'trial' | 'free' | 'paid'
-  role:         string   // '010' B2B | '020' B2C | other
+  subscription: string           // 'trial' | 'free' | 'paid'
+  role:         string           // 'b2b' | 'b2c' | other
   used:         number
   limit:        number
   trialEndsAt?: string | null
 }
 
-const IS_B2B = (role: string) => role === "b2b"
-
 interface PlanDef {
-  key:         string
-  label:       string
-  icon:        LucideIcon
-  searches:    number
-  trialDays?:  number
-  price:       string
-  features:    { text: string; included: boolean }[]
+  key:        string
+  label:      string
+  icon:       LucideIcon
+  limitLine:  string
+  trialDays?: number
+  price:      string
+  features:   { text: string; included: boolean }[]
 }
 
-function getPlans(isB2B: boolean): PlanDef[] {
+function getPlans(isB2C: boolean): PlanDef[] {
   return [
     {
       key:       "trial",
       label:     "Trial",
       icon:      Zap,
-      searches:  20,
-      trialDays: isB2B ? 14 : 7,
+      limitLine: isB2C ? "30 credits / month" : "20 searches / week",
+      trialDays: isB2C ? 7 : 14,
       price:     "Free",
       features: [
-        { text: "20 searches/week",                     included: true  },
-        { text: `${isB2B ? 14 : 7}-day trial`,          included: true  },
-        { text: "All results visible — no blur",         included: true  },
-        { text: "AI Discovery",                          included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "Export Data",                           included: false },
-        { text: "Priority Support",                      included: false },
+        { text: isB2C ? "30 credits / month"    : "20 searches / week",    included: true  },
+        { text: isB2C ? "7-day trial"           : "14-day trial",          included: true  },
+        { text: "All results visible — no blur",                            included: true  },
+        { text: "AI Market Discovery",                                      included: true  },
+        { text: "AI Product Matching",                                      included: true  },
+        { text: "Price Tracking",                                           included: true  },
+        { text: "Priority Support",                                         included: false },
       ],
     },
     {
       key:      "free",
       label:    "Free",
       icon:     CheckCircle,
-      searches: 10,
+      limitLine: isB2C ? "15 credits / month" : "10 searches / week",
       price:    "$0 / month",
       features: [
-        { text: "10 searches/week",                     included: true  },
-        { text: "Unlimited time",                       included: true  },
-        { text: "3 results per retailer (rest blurred)", included: true  },
-        { text: "AI Discovery",                          included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "Export Data",                           included: false },
-        { text: "Priority Support",                      included: false },
+        { text: isB2C ? "15 credits / month"    : "10 searches / week",    included: true  },
+        { text: "Unlimited time",                                           included: true  },
+        { text: "3 results per retailer (rest blurred)",                    included: true  },
+        { text: "AI Market Discovery",                                      included: true  },
+        { text: "AI Product Matching",                                      included: true  },
+        { text: "Price Tracking",                                           included: true  },
+        { text: "Priority Support",                                         included: false },
       ],
     },
     {
       key:      "paid",
-      label:    "Paid",
-      icon:     Crown,
-      searches: 50,
+      label:    "Pro",
+      icon:     Sparkles,
+      limitLine: isB2C ? "150 credits / month" : "50 searches / week",
       price:    "$20 / month",
       features: [
-        { text: "50 searches/week",                     included: true  },
-        { text: "Unlimited time",                       included: true  },
-        { text: "All results visible — no blur",         included: true  },
-        { text: "AI Discovery",                          included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "Export Data",                           included: true  },
-        { text: "Priority Support",                      included: true  },
+        { text: isB2C ? "150 credits / month"   : "50 searches / week",    included: true  },
+        { text: "All results visible — no blur",                            included: true  },
+        { text: "AI Market Discovery",                                      included: true  },
+        { text: "AI Product Matching",                                      included: true  },
+        { text: "Price Tracking",                                           included: true  },
+        { text: "Price Alerts",                                             included: true  },
+        { text: "Priority Support",                                         included: true  },
       ],
     },
   ]
@@ -89,17 +84,19 @@ function daysLeft(trialEndsAt: string | null | undefined): number | null {
 }
 
 export function PlansModal({ open, onClose, subscription, role, used, limit, trialEndsAt }: PlansModalProps) {
-  const isB2B = IS_B2B(role)
-  const plans = getPlans(isB2B)
-  const days  = daysLeft(trialEndsAt)
+  const isB2C  = role === "b2c"
+  const plans  = getPlans(isB2C)
+  const days   = daysLeft(trialEndsAt)
+  const unitLabel   = isB2C ? "credits" : "searches"
+  const periodLabel = isB2C ? "this month" : "this week"
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
+    <Dialog open={open} onOpenChange={(o: boolean) => { if (!o) onClose() }}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Sparkles className="h-5 w-5 text-primary" />
-            {used >= limit ? "Daily limit reached — choose your plan" : "Your Plan"}
+            {used >= limit ? `Limit reached — choose your plan` : "Your Plan"}
           </DialogTitle>
         </DialogHeader>
 
@@ -107,11 +104,11 @@ export function PlansModal({ open, onClose, subscription, role, used, limit, tri
         <div className="rounded-lg bg-muted/60 px-4 py-3 text-sm flex items-center justify-between">
           <span>
             <span className="font-semibold">{used}</span>
-            <span className="text-muted-foreground"> / {limit} searches used today</span>
+            <span className="text-muted-foreground"> / {limit} {unitLabel} used {periodLabel}</span>
           </span>
           <div className="flex items-center gap-2">
             <Badge variant={subscription === "paid" ? "default" : "secondary"} className="capitalize">
-              {subscription}
+              {subscription === "paid" ? "Pro" : subscription}
             </Badge>
             {subscription === "trial" && days !== null && (
               <span className="text-xs text-muted-foreground">{days} day{days !== 1 ? "s" : ""} left</span>
@@ -122,10 +119,10 @@ export function PlansModal({ open, onClose, subscription, role, used, limit, tri
         {/* Plan cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
           {plans.map((plan) => {
-            const Icon       = plan.icon
-            const isCurrent  = plan.key === subscription
-            const isExpired  = plan.key === "trial" && subscription !== "trial"
-            const isUpgrade  = plan.key === "paid" && subscription !== "paid"
+            const Icon      = plan.icon
+            const isCurrent = plan.key === subscription
+            const isExpired = plan.key === "trial" && subscription !== "trial"
+            const isUpgrade = plan.key === "paid" && subscription !== "paid"
 
             return (
               <div
@@ -144,24 +141,24 @@ export function PlansModal({ open, onClose, subscription, role, used, limit, tri
                     <Icon className={`h-4 w-4 ${isCurrent ? "text-primary" : "text-muted-foreground"}`} />
                     <span className="font-semibold text-sm">{plan.label}</span>
                   </div>
-                  {isCurrent && <Badge className="text-[10px] px-1.5 py-0.5">Current</Badge>}
+                  {isCurrent  && <Badge className="text-[10px] px-1.5 py-0.5">Current</Badge>}
                   {isExpired  && <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">Expired</Badge>}
                 </div>
+
+                {/* Limit line */}
+                <p className="text-xs text-primary font-medium">{plan.limitLine}</p>
 
                 {/* Price */}
                 <div>
                   <span className="text-2xl font-bold">
-                    {plan.price === "Contact us" ? "" : plan.price.split(" ")[0]}
+                    {plan.price === "Free" ? "Free" : plan.price.split(" ")[0]}
                   </span>
-                  {plan.price !== "Contact us" && plan.price !== "Free" && (
+                  {plan.price !== "Free" && (
                     <span className="text-xs text-muted-foreground ml-1">
                       {plan.price.split(" ").slice(1).join(" ")}
                     </span>
                   )}
-                  {plan.price === "Contact us" && (
-                    <span className="text-sm font-medium text-primary">Contact us</span>
-                  )}
-                  {plan.price === "Free" && (
+                  {plan.price === "Free" && plan.trialDays && (
                     <span className="text-xs text-muted-foreground ml-1">
                       {plan.trialDays}-day trial
                     </span>
@@ -191,7 +188,7 @@ export function PlansModal({ open, onClose, subscription, role, used, limit, tri
                     <Button variant="outline" size="sm" className="w-full" onClick={onClose}>
                       Continue with Free
                     </Button>
-                  ) : plan.key === "paid" ? (
+                  ) : isUpgrade ? (
                     <Button size="sm" className="w-full gap-1.5" disabled>
                       <Sparkles className="h-3.5 w-3.5" />
                       Coming soon
@@ -204,7 +201,8 @@ export function PlansModal({ open, onClose, subscription, role, used, limit, tri
         </div>
 
         <p className="text-xs text-muted-foreground text-center pt-1">
-          Paid plans coming soon. Limits reset daily at midnight UTC.
+          Paid plans coming soon via Stripe.{" "}
+          {isB2C ? "Credits reset monthly." : "Searches reset weekly."}
         </p>
       </DialogContent>
     </Dialog>
