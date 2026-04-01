@@ -205,7 +205,10 @@ CREATE OR REPLACE TRIGGER set_allowed_users_updated_at
 INSERT INTO companies (name, slug, base_url, is_active) VALUES
   ('Amazon AE',     'amazon-ae',     'https://www.amazon.ae',        true),
   ('Noon',          'noon',          'https://www.noon.com',         true),
+  ('Noon Minutes',  'noon-minutes',  'https://www.noonminutes.com',  true),
   ('Carrefour UAE', 'carrefour-uae', 'https://www.carrefouruae.com', true),
   ('Talabat',       'talabat',       'https://www.talabat.com',      true),
-  ('Spinneys',      'spinneys',      'https://www.spinneys.com',     true)
+  ('Spinneys',      'spinneys',      'https://www.spinneys.com',     true),
+  ('Dubizzle',      'dubizzle',      'https://www.dubizzle.com',     true),
+  ('OLX Lebanon',   'olx-lb',        'https://www.olx.com.lb',       true)
 ON CONFLICT (slug) DO NOTHING;
