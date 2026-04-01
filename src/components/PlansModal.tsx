@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
 import { Button } from "./ui/button"
 import { Badge } from "./ui/badge"
-import { CheckCircle, XCircle, Sparkles, Zap, Crown } from "lucide-react"
+import { CheckCircle, XCircle, Sparkles, Zap, Crown, type LucideIcon } from "lucide-react"
 
 interface PlansModalProps {
   open:         boolean
@@ -13,12 +13,12 @@ interface PlansModalProps {
   trialEndsAt?: string | null
 }
 
-const IS_B2B = (role: string) => role === "010"
+const IS_B2B = (role: string) => role === "b2b"
 
 interface PlanDef {
   key:         string
   label:       string
-  icon:        React.ElementType
+  icon:        LucideIcon
   searches:    number
   trialDays?:  number
   price:       string

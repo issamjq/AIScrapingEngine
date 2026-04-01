@@ -134,7 +134,7 @@ export function DiscoveringContent() {
 
   // Plans modal + user profile (for usage counter)
   const [showPlans, setShowPlans]     = useState(false)
-  const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "020" })
+  const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "b2c" })
   const [userProfile, setUserProfile] = useState<{ subscription: string; role: string; daily_searches_used: number; trial_ends_at?: string | null } | null>(null)
 
   async function getToken() {
@@ -418,7 +418,7 @@ export function DiscoveringContent() {
               <span className="hidden sm:inline">{searching ? "Searching…" : "Search"}</span>
             </Button>
           </div>
-          {userProfile && !["001","002"].includes(userProfile.role) && (
+          {userProfile && !["dev","owner"].includes(userProfile.role) && (
             <div className="flex items-center justify-between text-xs text-muted-foreground pt-1">
               <span>
                 {userProfile.daily_searches_used} search{userProfile.daily_searches_used !== 1 ? "es" : ""} used today

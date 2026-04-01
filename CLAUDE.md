@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.22
+**Current version:** v1.0.23
 
 ---
 
@@ -80,7 +80,7 @@ PORT=8080
 | `backend/src/services/scrapingService.ts` | Bulk scraping jobs |
 | `backend/src/services/syncService.ts` | Price sync runs |
 | `backend/src/routes/discovery.ts` | `/api/discovery/search`, `/ai-search`, `/confirm`, `/probe` — rate-limited via `checkUsageLimit` |
-| `backend/src/middleware/usageLimit.ts` | Usage limit middleware — role × subscription × trial logic. 001/002 bypass. |
+| `backend/src/middleware/usageLimit.ts` | Usage limit middleware — role × subscription × trial logic. dev/owner bypass. |
 | `backend/src/routes/allowedUsers.ts` | User whitelist CRUD — auto-sets trial subscription on new B2B/B2C user creation |
 | `backend/tsconfig.json` | Must include `"lib": ["ES2020", "DOM"]` — DOM needed for Playwright page.evaluate() |
 
@@ -179,16 +179,16 @@ GET  /api/allowed-users          ← User whitelist management
 ## Subscription / Usage Limit System (v1.0.21+)
 
 **Roles:**
-- `001` Dev, `002` Owner → unlimited, always bypass limits
-- `010` B2B client, `020` B2C user → tier limits apply
+- `dev`, `owner` → unlimited, always bypass limits
+- `b2b` client, `b2c` user → tier limits apply
 
 **Subscriptions:** `trial` | `free` | `paid`
 
 **Daily limits (searches/day):**
 | Role | trial | free | paid |
 |------|-------|------|------|
-| 010 B2B | 50 (14 days) | 20 | 200 |
-| 020 B2C | 20 (7 days)  | 10 | 50  |
+| b2b | 50 (14 days) | 20 | 200 |
+| b2c | 20 (7 days)  | 10 | 50  |
 
 **Behaviour:**
 - New users auto-start on `trial` with `trial_ends_at` set (B2B=14d, B2C=7d)

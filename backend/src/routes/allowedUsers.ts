@@ -7,7 +7,7 @@ import { trialEndsAt } from "../middleware/usageLimit"
 
 export const allowedUsersRouter = Router()
 
-const MANAGEMENT_ROLES = ["001", "003", "004"]
+const MANAGEMENT_ROLES = ["dev", "owner", "admin"]
 
 async function getCallerUser(email: string) {
   const { rows } = await query(
@@ -67,7 +67,7 @@ allowedUsersRouter.get("/", requireManagement as any, async (_req, res, next) =>
 // POST /api/allowed-users
 allowedUsersRouter.post("/", requireManagement as any, async (req, res, next) => {
   try {
-    const { email, name, role = "020", is_active = true, subscription } = req.body
+    const { email, name, role = "b2c", is_active = true, subscription } = req.body
     if (!email) return next(createError("email is required", 400, "VALIDATION"))
 
     // Auto-start trial for B2B/B2C roles unless subscription is explicitly provided

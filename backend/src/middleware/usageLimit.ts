@@ -6,38 +6,37 @@ import { AuthRequest } from "./auth"
  * Usage limit middleware for discovery endpoints.
  *
  * Roles:
- *   001 = Dev        → unlimited always
- *   002 = Owner      → unlimited always
- *   010 = B2B client → tier limits below
- *   020 = B2C user   → tier limits below
+ *   dev   → unlimited always
+ *   owner → unlimited always
+ *   b2b   → tier limits below
+ *   b2c   → tier limits below
  *
  * Subscriptions:
- *   trial → time-limited higher allowance (B2B=14 days, B2C=7 days)
+ *   trial → time-limited higher allowance (b2b=14 days, b2c=7 days)
  *   free  → standard free tier
  *   paid  → full paid allowance
  *
  * Daily limits (searches/day):
  *   Role  │ trial │ free │ paid
  *   ──────┼───────┼──────┼──────
- *   010   │  50   │  20  │  200
- *   020   │  20   │  10  │   50
+ *   b2b   │  50   │  20  │  200
+ *   b2c   │  20   │  10  │   50
  *
  * Counter resets daily (compares date of last_reset_at vs today UTC).
  */
 
-const UNLIMITED_ROLES = ["001", "002"]
+const UNLIMITED_ROLES = ["dev", "owner"]
 
 const LIMITS: Record<string, Record<string, number>> = {
-  "010": { trial: 50,  free: 20,  paid: 200 },
-  "020": { trial: 20,  free: 10,  paid: 50  },
+  b2b: { trial: 50,  free: 20,  paid: 200 },
+  b2c: { trial: 20,  free: 10,  paid: 50  },
 }
 
 const TRIAL_DAYS: Record<string, number> = {
-  "010": 14,
-  "020": 7,
+  b2b: 14,
+  b2c: 7,
 }
 
-// Default for unknown roles (fall back to B2C free limits)
 const DEFAULT_LIMITS = { trial: 20, free: 10, paid: 50 }
 
 export async function checkUsageLimit(req: AuthRequest, res: Response, next: NextFunction) {
@@ -53,12 +52,12 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
       [email]
     )
     const user = rows[0]
-    if (!user) return next()  // Not in allowed_users — let requireAuth handle it
+    if (!user) return next()
 
-    // 001 / 002 → always unlimited
+    // dev / owner → always unlimited
     if (UNLIMITED_ROLES.includes(user.role)) return next()
 
-    const role = user.role || "020"
+    const role = user.role || "b2c"
     let subscription: string = user.subscription || "free"
 
     // If trial has expired → treat as free automatically
@@ -66,7 +65,6 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
       const trialEnd = new Date(user.trial_ends_at)
       if (trialEnd < new Date()) {
         subscription = "free"
-        // Downgrade in DB silently
         query(
           `UPDATE allowed_users SET subscription = 'free' WHERE email = $1`,
           [email]
@@ -106,7 +104,6 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
       })
     }
 
-    // Increment and proceed
     await query(
       `UPDATE allowed_users SET daily_searches_used = daily_searches_used + 1 WHERE email = $1`,
       [email]
