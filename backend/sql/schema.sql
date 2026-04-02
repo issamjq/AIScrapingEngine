@@ -267,7 +267,8 @@ CREATE TABLE IF NOT EXISTS plans (
   key           VARCHAR(50)  NOT NULL UNIQUE,   -- 'trial' | 'free' | 'pro' | 'enterprise'
   name          VARCHAR(100) NOT NULL,
   tagline       TEXT,
-  price_usd     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  price_usd_b2b NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2B price in USD
+  price_usd_b2c NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2C price in USD
   price_note    VARCHAR(100),                    -- 'forever' | 'per month' | etc.
   trial_days_b2b INTEGER,                        -- null = not applicable
   trial_days_b2c INTEGER,
@@ -324,30 +325,47 @@ CREATE INDEX IF NOT EXISTS idx_wallet_tx_email      ON wallet_transactions(user_
 CREATE INDEX IF NOT EXISTS idx_wallet_tx_created_at ON wallet_transactions(created_at DESC);
 
 -- =============================================================
+-- TABLE: currency_rates
+-- Exchange rates used for price display (USD base).
+-- =============================================================
+CREATE TABLE IF NOT EXISTS currency_rates (
+  id            SERIAL PRIMARY KEY,
+  from_currency VARCHAR(10) NOT NULL,
+  to_currency   VARCHAR(10) NOT NULL,
+  rate          NUMERIC(12,6) NOT NULL,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(from_currency, to_currency)
+);
+
+INSERT INTO currency_rates (from_currency, to_currency, rate)
+VALUES ('USD', 'AED', 3.65)
+ON CONFLICT (from_currency, to_currency) DO UPDATE SET rate = EXCLUDED.rate, updated_at = NOW();
+
+-- =============================================================
 -- SEED: Plans
 -- =============================================================
-INSERT INTO plans (key, name, tagline, price_usd, price_note, trial_days_b2b, trial_days_b2c, credits_b2b, credits_b2c, features_b2b, features_b2c, is_active, is_coming_soon, sort_order)
+INSERT INTO plans (key, name, tagline, price_usd_b2b, price_usd_b2c, price_note, trial_days_b2b, trial_days_b2c, credits_b2b, credits_b2c, features_b2b, features_b2c, is_active, is_coming_soon, sort_order)
 VALUES
   (
-    'trial', 'Trial', 'Full access, no restrictions', 0, NULL, 14, 7, 20, 30,
+    'trial', 'Trial', 'Full access, no restrictions', 0, 0, NULL, 14, 7, 20, 30,
     '[{"text":"20 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Priority Support","included":false}]',
     '[{"text":"30 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":false}]',
     true, false, 1
   ),
   (
-    'free', 'Free', 'Basic access, forever free', 0, 'forever', NULL, NULL, 10, 15,
+    'free', 'Free', 'Basic access, forever free', 0, 0, 'forever', NULL, NULL, 10, 15,
     '[{"text":"10 credits per month","included":true},{"text":"3 results shown (rest blurred)","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"All results unlocked","included":false},{"text":"Export data (CSV)","included":false},{"text":"Priority Support","included":false}]',
     '[{"text":"15 credits per month","included":true},{"text":"3 results shown (rest blurred)","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"All results unlocked","included":false},{"text":"Price drop alerts","included":false},{"text":"Priority Support","included":false}]',
     true, false, 2
   ),
   (
-    'pro', 'Pro', 'For professionals & growing teams', 20, 'per month', NULL, NULL, 50, 150,
+    'pro', 'Pro', 'For professionals & growing teams', 20, 20, 'per month', NULL, NULL, 50, 150,
     '[{"text":"50 credits per month","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":true}]',
     '[{"text":"150 credits per month","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":true},{"text":"Export data (CSV)","included":false}]',
     true, true, 3
   ),
   (
-    'enterprise', 'Enterprise', 'Custom solutions for large teams', 0, 'contact us', NULL, NULL, NULL, NULL,
+    'enterprise', 'Enterprise', 'Custom solutions for large teams', 0, 0, 'contact us', NULL, NULL, NULL, NULL,
     '[{"text":"Unlimited credits","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Price drop alerts","included":true},{"text":"Dedicated Account Manager","included":true},{"text":"Custom Integrations","included":true},{"text":"Priority Support","included":true}]',
     '[{"text":"Unlimited credits","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Dedicated Account Manager","included":true},{"text":"Custom Integrations","included":true},{"text":"Priority Support","included":true}]',
     true, true, 4

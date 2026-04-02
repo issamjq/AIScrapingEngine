@@ -4,6 +4,8 @@ import { Button } from "./ui/button"
 import { CheckCircle2, XCircle, Sparkles, Crown, Loader2, AlertCircle, Wallet, BarChart3 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 
+type Currency = "USD" | "AED"
+
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
 interface PlanRow {
@@ -11,7 +13,8 @@ interface PlanRow {
   key: string
   name: string
   tagline: string
-  price_usd: number
+  price_usd_b2b: number
+  price_usd_b2c: number
   price_note: string | null
   credits_b2b: number | null
   credits_b2c: number | null
@@ -19,6 +22,12 @@ interface PlanRow {
   features_b2c: { text: string; included: boolean }[]
   is_coming_soon: boolean
   sort_order: number
+}
+
+interface CurrencyRate {
+  from_currency: string
+  to_currency: string
+  rate: number
 }
 
 interface UserProfile {
@@ -48,11 +57,13 @@ function daysLeft(trialEndsAt: string | null): number | null {
 
 export function PlansContent() {
   const { user } = useAuth()
-  const [plans, setPlans]       = useState<PlanRow[]>([])
-  const [profile, setProfile]   = useState<UserProfile | null>(null)
-  const [wallet, setWallet]     = useState<WalletData | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState<string | null>(null)
+  const [plans, setPlans]           = useState<PlanRow[]>([])
+  const [profile, setProfile]       = useState<UserProfile | null>(null)
+  const [wallet, setWallet]         = useState<WalletData | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState<string | null>(null)
+  const [currency, setCurrency]     = useState<Currency>("USD")
+  const [aedRate, setAedRate]       = useState<number>(3.65)
 
   useEffect(() => {
     if (!user) return
@@ -61,18 +72,23 @@ export function PlansContent() {
       try {
         const token = await (user as any).getIdToken()
         const headers = { Authorization: `Bearer ${token}` }
-        const [plansRes, meRes, walletRes] = await Promise.all([
+        const [plansRes, meRes, walletRes, ratesRes] = await Promise.all([
           fetch(`${API}/api/plans`,             { headers }),
           fetch(`${API}/api/allowed-users/me`,  { headers }),
           fetch(`${API}/api/wallet`,            { headers }),
+          fetch(`${API}/api/currency-rates`,    { headers }),
         ])
-        const [plansJson, meJson, walletJson] = await Promise.all([
-          plansRes.json(), meRes.json(), walletRes.json(),
+        const [plansJson, meJson, walletJson, ratesJson] = await Promise.all([
+          plansRes.json(), meRes.json(), walletRes.json(), ratesRes.json(),
         ])
         if (!cancelled) {
           if (plansJson.success)  setPlans(plansJson.data)
           if (meJson.success)     setProfile(meJson.data)
           if (walletJson.success) setWallet(walletJson.data?.wallet ?? null)
+          if (ratesJson.success) {
+            const usdAed = (ratesJson.data as CurrencyRate[]).find(r => r.from_currency === "USD" && r.to_currency === "AED")
+            if (usdAed) setAedRate(Number(usdAed.rate))
+          }
         }
       } catch {
         if (!cancelled) setError("Could not load plan information.")
@@ -83,6 +99,12 @@ export function PlansContent() {
     load()
     return () => { cancelled = true }
   }, [user])
+
+  function formatPrice(usdPrice: number): string {
+    if (usdPrice === 0) return currency === "USD" ? "$0" : "AED 0"
+    if (currency === "AED") return `AED ${Math.round(usdPrice * aedRate)}`
+    return `$${usdPrice}`
+  }
 
   const isUnlimited = ["dev", "owner"].includes(profile?.role || "")
   const isB2C       = profile?.role === "b2c"
@@ -100,9 +122,24 @@ export function PlansContent() {
     <div className="space-y-8">
 
       {/* Header */}
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">Choose Your Plan</h1>
         <p className="text-muted-foreground">Start free, upgrade when you need more. Cancel anytime.</p>
+        {/* Currency toggle */}
+        <div className="inline-flex items-center rounded-full border bg-muted/50 p-1 gap-1">
+          <button
+            onClick={() => setCurrency("USD")}
+            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "USD" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            $ USD
+          </button>
+          <button
+            onClick={() => setCurrency("AED")}
+            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "AED" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            AED
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -171,9 +208,10 @@ export function PlansContent() {
       {/* Plan cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {plans.map((plan) => {
-          const Icon     = PLAN_ICONS[plan.key] ?? Sparkles
-          const features = isB2C ? plan.features_b2c : plan.features_b2b
-          const credits  = isB2C ? plan.credits_b2c  : plan.credits_b2b
+          const Icon      = PLAN_ICONS[plan.key] ?? Sparkles
+          const features  = isB2C ? plan.features_b2c : plan.features_b2b
+          const credits   = isB2C ? plan.credits_b2c  : plan.credits_b2b
+          const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
           const isCurrent = plan.key === currentSub || (plan.key === "pro" && currentSub === "paid")
           const isEnterprise = plan.key === "enterprise"
 
@@ -225,7 +263,7 @@ export function PlansContent() {
                 <div className="mb-4">
                   <div className="flex items-end gap-1">
                     <span className="text-4xl font-extrabold tracking-tight">
-                      {plan.price_usd === 0 ? "$0" : `$${plan.price_usd}`}
+                      {formatPrice(priceUsd)}
                     </span>
                     {plan.price_note && (
                       <span className="text-sm text-muted-foreground mb-1.5">/{plan.price_note}</span>

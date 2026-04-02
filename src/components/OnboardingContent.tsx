@@ -104,7 +104,8 @@ interface PlanRow {
   key: string
   name: string
   tagline: string
-  price_usd: number
+  price_usd_b2b: number
+  price_usd_b2c: number
   price_note: string | null
   trial_days_b2b: number | null
   trial_days_b2c: number | null
@@ -115,6 +116,7 @@ interface PlanRow {
   is_coming_soon: boolean
   sort_order: number
 }
+
 
 const PLAN_ICONS: Record<string, React.ElementType> = {
   trial:      BarChart3,
@@ -137,6 +139,8 @@ function PlanPicker({
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
   const [error, setError]       = useState<string | null>(null)
+  const [currency, setCurrency] = useState<"USD" | "AED">("USD")
+  const [aedRate, setAedRate]   = useState<number>(3.65)
 
   useEffect(() => {
     if (!user) return
@@ -144,11 +148,19 @@ function PlanPicker({
     async function fetchPlans() {
       try {
         const token = await (user as any).getIdToken()
-        const res = await fetch(`${API}/api/plans`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
-        if (!cancelled && data.success) setPlans(data.data)
+        const headers = { Authorization: `Bearer ${token}` }
+        const [plansRes, ratesRes] = await Promise.all([
+          fetch(`${API}/api/plans`,          { headers }),
+          fetch(`${API}/api/currency-rates`, { headers }),
+        ])
+        const [plansData, ratesData] = await Promise.all([plansRes.json(), ratesRes.json()])
+        if (!cancelled) {
+          if (plansData.success) setPlans(plansData.data)
+          if (ratesData.success) {
+            const usdAed = ratesData.data.find((r: any) => r.from_currency === "USD" && r.to_currency === "AED")
+            if (usdAed) setAedRate(Number(usdAed.rate))
+          }
+        }
       } catch {
         if (!cancelled) setError("Could not load plans. Please try again.")
       } finally {
@@ -158,6 +170,12 @@ function PlanPicker({
     fetchPlans()
     return () => { cancelled = true }
   }, [user])
+
+  function formatPrice(usdPrice: number): string {
+    if (usdPrice === 0) return currency === "USD" ? "$0" : "AED 0"
+    if (currency === "AED") return `AED ${Math.round(usdPrice * aedRate)}`
+    return `$${usdPrice}`
+  }
 
   async function signup() {
     if (!user) return
@@ -197,7 +215,22 @@ function PlanPicker({
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
           Start with a trial or free plan. Upgrade anytime — no credit card required.
         </p>
-        <div className="mt-4 inline-flex items-center gap-2 rounded-full border bg-muted/50 px-4 py-1.5">
+        {/* Currency toggle */}
+        <div className="mt-3 inline-flex items-center rounded-full border bg-muted/50 p-1 gap-1">
+          <button
+            onClick={() => setCurrency("USD")}
+            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "USD" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            $ USD
+          </button>
+          <button
+            onClick={() => setCurrency("AED")}
+            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "AED" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            AED
+          </button>
+        </div>
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full border bg-muted/50 px-4 py-1.5">
           {role === "b2b"
             ? <Building2 className="h-3.5 w-3.5 text-primary" />
             : <User className="h-3.5 w-3.5 text-primary" />
@@ -220,8 +253,9 @@ function PlanPicker({
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 w-full max-w-7xl mb-6 mt-6">
           {plans.map((plan) => {
             const Icon     = PLAN_ICONS[plan.key] ?? Sparkles
-            const features = isB2C ? plan.features_b2c : plan.features_b2b
-            const credits  = isB2C ? plan.credits_b2c : plan.credits_b2b
+            const features  = isB2C ? plan.features_b2c : plan.features_b2b
+            const credits   = isB2C ? plan.credits_b2c : plan.credits_b2b
+            const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
             const trialDays = isB2C ? plan.trial_days_b2c : plan.trial_days_b2b
             const priceNote = trialDays ? `for ${trialDays} days` : (plan.price_note ?? "forever")
             const isEnterprise = plan.key === "enterprise"
@@ -272,7 +306,7 @@ function PlanPicker({
                   <div className="mb-4">
                     <div className="flex items-end gap-1">
                       <span className="text-4xl font-extrabold tracking-tight">
-                        {plan.price_usd === 0 ? "$0" : `$${plan.price_usd}`}
+                        {formatPrice(priceUsd)}
                       </span>
                       <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>
                     </div>
