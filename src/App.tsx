@@ -41,21 +41,51 @@ function AppLoader() {
   )
 }
 
-function AccessDenied() {
+function AccessDenied({ onChoosePlan }: { onChoosePlan: () => void }) {
   const { logout } = useAuth()
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="text-center space-y-3 max-w-sm px-4">
-        <p className="font-semibold text-lg">Access denied</p>
-        <p className="text-muted-foreground text-sm">
-          Your account is not authorised to use this application.
-        </p>
-        <button
-          onClick={logout}
-          className="text-sm underline text-muted-foreground hover:text-foreground"
-        >
-          Sign out
-        </button>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-sm bg-card border rounded-2xl shadow-sm p-8 flex flex-col items-center gap-6 text-center">
+
+        {/* Icon */}
+        <div className="h-14 w-14 rounded-full bg-destructive/10 flex items-center justify-center">
+          <svg className="h-7 w-7 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+          </svg>
+        </div>
+
+        {/* Text */}
+        <div className="space-y-2">
+          <h2 className="text-xl font-bold">No Subscription Found</h2>
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            We could not find a subscription attached to your account. Please choose a plan to get started or contact support to resolve this issue.
+          </p>
+        </div>
+
+        {/* Actions */}
+        <div className="w-full space-y-3">
+          <button
+            onClick={onChoosePlan}
+            className="w-full h-11 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            View Plans &amp; Get Started
+          </button>
+          <button
+            onClick={logout}
+            className="w-full h-11 rounded-lg border text-sm font-medium hover:bg-muted/50 transition-colors"
+          >
+            Back to Login
+          </button>
+        </div>
+
+        {/* Support */}
+        <span className="text-xs text-muted-foreground">
+          Need help?{" "}
+          <span className="underline underline-offset-2 cursor-pointer hover:text-foreground">
+            Contact Support
+          </span>
+        </span>
+
       </div>
     </div>
   )
@@ -94,6 +124,7 @@ function AppInner() {
   const [currentPage, setCurrentPage] = useState("dashboard")
   const [appState, setAppState] = useState<AppState>("loading")
   const [retryCount, setRetryCount] = useState(0)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
     if (loading) return
@@ -106,18 +137,29 @@ function AppInner() {
       })
         .then((r) => r.json())
         .then((data) => {
-          if (data.success) setAppState("ready")
-          else if (data.error?.code === "NEW_USER") setAppState("onboarding")
+          if (data.success) {
+            setUserRole(data.data?.role ?? null)
+            setAppState("ready")
+          }
+          else if (data.error?.code === "NEW_USER") setAppState("denied")
           else setAppState("denied")
         })
         .catch(() => setAppState("error"))
     )
   }, [user, loading, retryCount])
 
+  const isB2C = userRole === "b2c"
+
+  function navigate(page: string) {
+    // B2C cannot access catalog pages
+    if (isB2C && (page === "products" || page === "companies")) return
+    setCurrentPage(page)
+  }
+
   if (loading || (user && appState === "loading")) return <AppLoader />
   if (!user) return <LoginPage />
   if (appState === "onboarding") return <OnboardingContent onComplete={() => setAppState("ready")} />
-  if (appState === "denied") return <AccessDenied />
+  if (appState === "denied") return <AccessDenied onChoosePlan={() => setAppState("onboarding")} />
   if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />
   if (appState !== "ready") return <AppLoader />
 
@@ -140,8 +182,8 @@ function AppInner() {
       case "discovering":     return <DiscoveringContent />
       case "price-board":     return <PriceBoardContent />
       case "tracked-urls":    return <TrackedUrlsContent />
-      case "products":        return <ProductsContent />
-      case "companies":       return <CompaniesContent />
+      case "products":        return isB2C ? <DashboardContent /> : <ProductsContent />
+      case "companies":       return isB2C ? <DashboardContent /> : <CompaniesContent />
 
       case "plans":           return <PlansContent />
 
@@ -150,7 +192,7 @@ function AppInner() {
   }
 
   return (
-    <DashboardLayout currentPage={currentPage} onNavigate={setCurrentPage}>
+    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"}>
       {renderContent()}
     </DashboardLayout>
   )

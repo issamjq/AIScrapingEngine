@@ -70,6 +70,7 @@ interface DashboardLayoutProps {
   children: ReactNode
   currentPage: string
   onNavigate: (page: string) => void
+  userRole?: string
 }
 
 function NavButton({
@@ -100,7 +101,8 @@ function NavButton({
   )
 }
 
-export function DashboardLayout({ children, currentPage, onNavigate }: DashboardLayoutProps) {
+export function DashboardLayout({ children, currentPage, onNavigate, userRole }: DashboardLayoutProps) {
+  const isB2C = userRole === "b2c"
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const toggle = (id: string) =>
@@ -139,7 +141,7 @@ export function DashboardLayout({ children, currentPage, onNavigate }: Dashboard
             <Separator className="mx-4 my-1 w-auto" />
 
             {/* ── RSP sections (collapsible) ── */}
-            {rspSections.map((section) => {
+            {rspSections.filter(s => !(isB2C && s.id === "rsp-catalog")).map((section) => {
               const isOpen = !collapsed[section.id]
               return (
                 <SidebarGroup key={section.id}>

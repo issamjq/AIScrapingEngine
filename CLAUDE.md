@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.42
+**Current version:** v1.0.44
 
 ---
 
@@ -83,7 +83,11 @@ PORT=8080
 | `backend/src/services/productService.ts` | All functions scoped by `userEmail`. bulkImport uses `(internal_sku, user_email)` unique index. |
 | `backend/src/services/productCompanyUrlService.ts` | `getAll()` scoped by `user_email` via joined products table. |
 | `backend/src/routes/discovery.ts` | `/api/discovery/search`, `/ai-search`, `/confirm`, `/probe` — rate-limited via `checkUsageLimit` |
-| `backend/src/middleware/usageLimit.ts` | B2B: `{trial:20, free:10, paid:50}` weekly. B2C: `{trial:30, free:15, paid:150}` monthly. dev/owner bypass. |
+| `backend/src/middleware/usageLimit.ts` | Deducts 1 credit from user wallet per search. dev/owner bypass. Returns 429 `USAGE_LIMIT_REACHED` if balance=0. |
+| `backend/src/services/plansService.ts` | `getAllPlans()`, `getPlanByKey()` — reads from `plans` DB table. |
+| `backend/src/services/walletService.ts` | `getWallet()`, `createWallet()`, `deductCredit()`, `addCredits()`, `getTransactions()`. |
+| `backend/src/routes/plans.ts` | `GET /api/plans` — returns all active plans from DB. |
+| `backend/src/routes/wallet.ts` | `GET /api/wallet` (balance + transactions), `POST /api/wallet/add` (manual top-up). |
 | `backend/src/routes/allowedUsers.ts` | `GET /me` (returns NEW_USER for unknowns), `POST /signup` (creates trial user, copies stores, checks UID+IP dupe), CRUD for management roles. |
 | `backend/tsconfig.json` | Must include `"lib": ["ES2020", "DOM"]` — DOM needed for Playwright page.evaluate() |
 
@@ -103,7 +107,10 @@ PORT=8080
 | `src/components/PlansContent.tsx` | Full pricing page — Free / Pro cards, current plan banner with usage bar, trial countdown. Full width (no max-width constraint). |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
 | `src/components/TrackedUrlsContent.tsx` | Tracked URLs — **real API data** from `/api/product-company-urls`. Add URL via right-side Sheet with product+store dropdowns. |
-| `src/components/CompaniesContent.tsx` | Stores — real API data, Add Store + **Edit Store** via right-side Sheet (name+URL→auto-slug), activate/deactivate toggle. External link fixed to always prepend `https://` if missing. |
+| `src/components/CompaniesContent.tsx` | Stores — real API data, Add Store + **Edit Store** via right-side Sheet (name+URL→auto-slug), activate/deactivate toggle. External link fixed to always prepend `https://` if missing. B2C users cannot see this page. |
+| `src/components/OnboardingContent.tsx` | 2-step: (1) B2B vs B2C picker, (2) Plan picker — **fetches plans from `/api/plans`**, no hardcoded features. |
+| `src/components/PlansContent.tsx` | Full pricing page — **fetches plans from `/api/plans`**, shows live wallet balance from `/api/wallet`. |
+| `src/components/UserMenuButton.tsx` | Shows live credit balance from `/api/wallet` in sidebar footer + dropdown. |
 | `src/components/ProductsContent.tsx` | Products — real data, Add Product via right-side Sheet (Name/Brand/SKU/Barcode/RSP/Image), CSV/TSV import with brand filter dialog. |
 | `src/components/ui/sheet.tsx` | shadcn Sheet — right side, `w-[90%] sm:w-[33vw] sm:min-w-[380px]`, overlay has `backdrop-blur-sm`. Used for all add/edit forms. |
 | `src/context/AuthContext.tsx` | Firebase auth context (`useAuth()`) |
@@ -121,7 +128,10 @@ Key tables:
 - `price_snapshots` — scraped prices (price, original_price, currency, availability, scrape_status, checked_at)
 - `company_configs` — per-company scraper config (selectors, page_options)
 - `sync_runs` — scraping job history
-- `allowed_users` — whitelist + subscription info (role, subscription, trial_ends_at, daily_searches_used, last_reset_at, **firebase_uid**, **signup_ip**)
+- `allowed_users` — whitelist + subscription info (role, subscription, trial_ends_at, **firebase_uid**, **signup_ip**)
+- `plans` — all plan definitions (key, name, price_usd, credits_b2b, credits_b2c, features_b2b JSONB, features_b2c JSONB, is_coming_soon, sort_order). Frontend never hardcodes plans.
+- `user_wallet` — one row per user (balance, total_added, total_used). All usage costs 1 credit.
+- `wallet_transactions` — immutable log of every credit change (amount, balance_after, type, description)
 
 **Multi-tenancy:** `user_email` column on `products` and `companies`. Global seed stores have `user_email IS NULL` — these are copied to each new user on signup via `copyGlobalStoresToUser()`. Slug uniqueness is per-user: `(slug, user_email)` unique index. SKU uniqueness: `(internal_sku, user_email)`.
 
@@ -155,6 +165,9 @@ POST /api/scraper/scrape         ← Scrape a single URL
 POST /api/sync-runs              ← Trigger bulk sync
 GET  /api/stats                  ← Dashboard stats (user_email scoped)
 GET  /api/allowed-users          ← User whitelist management (management roles only)
+GET  /api/plans                  ← All active plans from DB (auth required)
+GET  /api/wallet                 ← Current user's balance + last 20 transactions
+POST /api/wallet/add             ← Manually add credits (dev/admin use)
 ```
 
 ---
@@ -183,21 +196,26 @@ GET  /api/allowed-users          ← User whitelist management (management roles
 
 ---
 
-## Subscription / Usage Limit System (v1.0.21+)
+## Credit / Wallet System (v1.0.44+)
 
-**Roles:** `dev`, `owner` → unlimited. `b2b`, `b2c` → limits apply.
+**All users (b2b + b2c) use credits.** No more searches/week vs credits/month split.
 
-| Plan  | B2B (searches/week) | B2C (credits/month) | Results visible | Duration |
-|-------|--------------------|--------------------|-----------------|----------|
-| trial | 20                 | 30                 | All — no blur   | b2b=14d, b2c=7d |
-| free  | 10                 | 15                 | 3 per retailer (blurred) | Forever |
-| paid  | 50                 | 150                | All — no blur   | Monthly |
+**Roles:** `dev`, `owner` → unlimited (bypass wallet). `b2b`, `b2c` → deduct 1 credit per search.
 
-- New users → `trial` (full access, no blur) with `trial_ends_at` auto-set
-- Trial expires → `free` (blur + lower limits) → conversion pressure
-- Limit hit → 429 `USAGE_LIMIT_REACHED` → frontend shows `PlansModal`
-- B2B resets every 7 days, B2C resets every 30 days (both use `last_reset_at`)
-- Stripe = **not yet built** — "Coming soon" in PlansModal/PlansContent
+| Plan       | B2B credits | B2C credits | Results visible          | Trial duration |
+|------------|-------------|-------------|--------------------------|----------------|
+| trial      | 20          | 30          | All — no blur            | b2b=14d, b2c=7d |
+| free       | 10          | 15          | 3 per retailer (blurred) | Forever         |
+| pro        | 50          | 150         | All — no blur            | Monthly         |
+| enterprise | Unlimited   | Unlimited   | All — no blur            | Coming soon     |
+
+- Plan definitions live in `plans` DB table — frontend fetches `/api/plans`, never hardcodes
+- Signup → creates `user_wallet` with trial credits seeded from `plans.credits_b2b/b2c`
+- Each search deducts 1 credit from `user_wallet.balance` (atomic SQL update)
+- All transactions logged in `wallet_transactions` (immutable audit log)
+- Balance = 0 → 429 `USAGE_LIMIT_REACHED` → frontend shows `PlansModal`
+- Stripe top-up = **not yet built** — "Coming soon"
+- B2C users cannot see Products or Stores pages (sidebar hidden, route guarded in App.tsx)
 
 ---
 

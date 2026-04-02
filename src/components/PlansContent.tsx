@@ -1,94 +1,43 @@
 import { useEffect, useState } from "react"
 import { Badge } from "./ui/badge"
 import { Button } from "./ui/button"
-import { CheckCircle, XCircle, Sparkles, Zap, Crown, BarChart3, AlertCircle } from "lucide-react"
+import { CheckCircle2, XCircle, Sparkles, Crown, Loader2, AlertCircle, Wallet, BarChart3 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
+interface PlanRow {
+  id: number
+  key: string
+  name: string
+  tagline: string
+  price_usd: number
+  price_note: string | null
+  credits_b2b: number | null
+  credits_b2c: number | null
+  features_b2b: { text: string; included: boolean }[]
+  features_b2c: { text: string; included: boolean }[]
+  is_coming_soon: boolean
+  sort_order: number
+}
+
 interface UserProfile {
-  role:                 string
-  subscription:        string
-  trial_ends_at:       string | null
-  daily_searches_used: number
+  role:           string
+  subscription:   string
+  trial_ends_at:  string | null
 }
 
-interface PlanFeature { text: string; included: boolean }
-
-interface Plan {
-  key:       string
-  name:      string
-  tagline:   string
-  price:     string
-  priceNote: string
-  icon:      React.ElementType
-  popular:   boolean
-  limitLine: string   // role-specific, set at render time
-  features:  PlanFeature[]
+interface WalletData {
+  balance:     number
+  total_added: number
+  total_used:  number
 }
 
-function getPlans(isB2C: boolean): Plan[] {
-  return [
-    {
-      key:       "free",
-      name:      "Free",
-      tagline:   "Try it out, no commitment",
-      price:     "$0",
-      priceNote: "forever",
-      icon:      Zap,
-      popular:   false,
-      limitLine: isB2C ? "15 credits / month" : "10 searches / week",
-      features: isB2C ? [
-        { text: "15 credits per month",                  included: true  },
-        { text: "3 results per retailer (rest blurred)", included: true  },
-        { text: "AI Market Discovery",                   included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "All results unlocked",                  included: false },
-        { text: "Price Alerts",                          included: false },
-        { text: "Priority Support",                      included: false },
-      ] : [
-        { text: "10 searches per week",                  included: true  },
-        { text: "3 results per retailer (rest blurred)", included: true  },
-        { text: "AI Market Discovery",                   included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "All results unlocked",                  included: false },
-        { text: "Export data (CSV)",                     included: false },
-        { text: "Price Alerts",                          included: false },
-        { text: "Priority Support",                      included: false },
-      ],
-    },
-    {
-      key:       "paid",
-      name:      "Pro",
-      tagline:   isB2C ? "For serious shoppers & deal hunters" : "For professionals & growing teams",
-      price:     "$20",
-      priceNote: "per month",
-      icon:      Sparkles,
-      popular:   true,
-      limitLine: isB2C ? "150 credits / month" : "50 searches / week",
-      features: isB2C ? [
-        { text: "150 credits per month",                 included: true  },
-        { text: "All results unlocked — no blur",        included: true  },
-        { text: "AI Market Discovery",                   included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "Price Alerts",                          included: true  },
-        { text: "Priority Support",                      included: true  },
-        { text: "Export data (CSV)",                     included: false },
-      ] : [
-        { text: "50 searches per week",                  included: true  },
-        { text: "All results unlocked — no blur",        included: true  },
-        { text: "AI Market Discovery",                   included: true  },
-        { text: "AI Product Matching",                   included: true  },
-        { text: "Price Tracking",                        included: true  },
-        { text: "Export data (CSV)",                     included: true  },
-        { text: "Price Alerts",                          included: true  },
-        { text: "Priority Support",                      included: true  },
-      ],
-    },
-  ]
+const PLAN_ICONS: Record<string, React.ElementType> = {
+  trial:      BarChart3,
+  free:       Sparkles,
+  pro:        Sparkles,
+  enterprise: Crown,
 }
 
 function daysLeft(trialEndsAt: string | null): number | null {
@@ -99,9 +48,11 @@ function daysLeft(trialEndsAt: string | null): number | null {
 
 export function PlansContent() {
   const { user } = useAuth()
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
+  const [plans, setPlans]       = useState<PlanRow[]>([])
+  const [profile, setProfile]   = useState<UserProfile | null>(null)
+  const [wallet, setWallet]     = useState<WalletData | null>(null)
+  const [loading, setLoading]   = useState(true)
+  const [error, setError]       = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -109,13 +60,22 @@ export function PlansContent() {
     async function load() {
       try {
         const token = await (user as any).getIdToken()
-        const res   = await fetch(`${API}/api/allowed-users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const json  = await res.json()
-        if (!cancelled && json.success) setProfile(json.data)
+        const headers = { Authorization: `Bearer ${token}` }
+        const [plansRes, meRes, walletRes] = await Promise.all([
+          fetch(`${API}/api/plans`,             { headers }),
+          fetch(`${API}/api/allowed-users/me`,  { headers }),
+          fetch(`${API}/api/wallet`,            { headers }),
+        ])
+        const [plansJson, meJson, walletJson] = await Promise.all([
+          plansRes.json(), meRes.json(), walletRes.json(),
+        ])
+        if (!cancelled) {
+          if (plansJson.success)  setPlans(plansJson.data)
+          if (meJson.success)     setProfile(meJson.data)
+          if (walletJson.success) setWallet(walletJson.data?.wallet ?? null)
+        }
       } catch {
-        if (!cancelled) setError("Could not load your plan info.")
+        if (!cancelled) setError("Could not load plan information.")
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -124,20 +84,17 @@ export function PlansContent() {
     return () => { cancelled = true }
   }, [user])
 
-  const currentSub = profile?.subscription || "free"
-  const isOwnerDev = ["dev", "owner"].includes(profile?.role || "")
-  const isB2C      = profile?.role === "b2c"
-  const days       = daysLeft(profile?.trial_ends_at || null)
-  const used       = profile?.daily_searches_used || 0
-  const plans      = getPlans(isB2C)
+  const isUnlimited = ["dev", "owner"].includes(profile?.role || "")
+  const isB2C       = profile?.role === "b2c"
+  const currentSub  = profile?.subscription || "free"
+  const days        = daysLeft(profile?.trial_ends_at ?? null)
 
-  // Limits per role type
-  const LIMITS: Record<string, number> = isB2C
-    ? { trial: 30, free: 15, paid: 150 }
-    : { trial: 20, free: 10, paid: 50  }
-  const limit       = LIMITS[currentSub] ?? LIMITS.free
-  const periodLabel = isB2C ? "this month" : "this week"
-  const unitLabel   = isB2C ? "credits" : "searches"
+  if (loading) return (
+    <div className="flex items-center justify-center py-24 gap-3 text-muted-foreground">
+      <Loader2 className="h-5 w-5 animate-spin" />
+      <span className="text-sm">Loading plans…</span>
+    </div>
+  )
 
   return (
     <div className="space-y-8">
@@ -145,14 +102,19 @@ export function PlansContent() {
       {/* Header */}
       <div className="text-center space-y-2">
         <h1 className="text-3xl font-bold tracking-tight">Choose Your Plan</h1>
-        <p className="text-muted-foreground">
-          Start free, upgrade when you need more. Cancel anytime.
-        </p>
+        <p className="text-muted-foreground">Start free, upgrade when you need more. Cancel anytime.</p>
       </div>
 
-      {/* Current plan banner */}
-      {!loading && profile && !isOwnerDev && (
-        <div className="rounded-xl border bg-muted/40 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      {error && (
+        <div className="rounded-lg bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2 text-sm">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {error}
+        </div>
+      )}
+
+      {/* Wallet + current plan banner */}
+      {!isUnlimited && profile && (
+        <div className="rounded-xl border bg-muted/40 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
               <BarChart3 className="h-4 w-4 text-primary" />
@@ -169,26 +131,25 @@ export function PlansContent() {
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {used} / {limit} {unitLabel} used {periodLabel}
+                {isB2C ? "Personal" : "Business"} account
               </p>
             </div>
           </div>
-          {/* Usage bar */}
-          <div className="sm:w-48 w-full">
-            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${used / limit > 0.8 ? "bg-red-500" : "bg-primary"}`}
-                style={{ width: `${Math.min(100, (used / limit) * 100)}%` }}
-              />
+
+          {/* Wallet balance */}
+          {wallet && (
+            <div className="flex items-center gap-3 rounded-lg border bg-background px-4 py-2.5">
+              <Wallet className="h-4 w-4 text-primary shrink-0" />
+              <div>
+                <p className="text-sm font-bold">{wallet.balance} credits</p>
+                <p className="text-[10px] text-muted-foreground">{wallet.total_used} used · {wallet.total_added} total added</p>
+              </div>
             </div>
-            <p className="text-[10px] text-muted-foreground mt-1 text-right">
-              {Math.round((used / limit) * 100)}% used
-            </p>
-          </div>
+          )}
         </div>
       )}
 
-      {isOwnerDev && (
+      {isUnlimited && (
         <div className="rounded-xl border border-primary/30 bg-primary/5 px-5 py-4 flex items-center gap-3">
           <Crown className="h-5 w-5 text-primary shrink-0" />
           <span className="text-sm font-medium">
@@ -197,45 +158,38 @@ export function PlansContent() {
         </div>
       )}
 
-      {error && (
-        <div className="rounded-lg bg-destructive/10 text-destructive px-4 py-3 flex items-center gap-2 text-sm">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          {error}
-        </div>
-      )}
-
-      {/* Trial banner */}
-      {currentSub === "trial" && !isOwnerDev && (
+      {/* Trial expiry warning */}
+      {currentSub === "trial" && !isUnlimited && days !== null && days <= 3 && (
         <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 px-5 py-3 flex items-center gap-3">
-          <Zap className="h-4 w-4 text-yellow-500 shrink-0" />
+          <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />
           <p className="text-sm">
-            You're on a <strong>free trial</strong> — enjoy full access with no blur.{" "}
-            {days !== null && days <= 3
-              ? <span className="text-yellow-600 font-semibold">Only {days} day{days !== 1 ? "s" : ""} left!</span>
-              : <span className="text-muted-foreground">Upgrade before it ends to keep full access.</span>
-            }
+            <span className="text-yellow-600 font-semibold">Only {days} day{days !== 1 ? "s" : ""} left</span> in your trial. Upgrade to keep full access.
           </p>
         </div>
       )}
 
-      {/* Plan cards — 2 plans only */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         {plans.map((plan) => {
-          const Icon      = plan.icon
-          const isCurrent = (plan.key === "paid" && currentSub === "paid") ||
-                            (plan.key === "free" && (currentSub === "free" || currentSub === "trial"))
+          const Icon     = PLAN_ICONS[plan.key] ?? Sparkles
+          const features = isB2C ? plan.features_b2c : plan.features_b2b
+          const credits  = isB2C ? plan.credits_b2c  : plan.credits_b2b
+          const isCurrent = plan.key === currentSub || (plan.key === "pro" && currentSub === "paid")
+          const isEnterprise = plan.key === "enterprise"
 
           return (
             <div
               key={plan.key}
-              className={`relative rounded-2xl border flex flex-col transition-all duration-200 ${
-                plan.popular
-                  ? "border-primary shadow-lg shadow-primary/10 scale-[1.02]"
-                  : "border-border hover:border-muted-foreground/40 hover:shadow-md"
+              className={`relative rounded-2xl border flex flex-col transition-all ${
+                plan.key === "pro"
+                  ? "border-primary shadow-lg shadow-primary/10"
+                  : isEnterprise
+                  ? "border-dashed border-muted-foreground/30"
+                  : "border-border"
               }`}
             >
-              {plan.popular && (
-                <div className="absolute -top-3.5 left-0 right-0 flex justify-center">
+              {plan.key === "pro" && (
+                <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
                   <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
                     <Sparkles className="h-3 w-3" />
                     Most Popular
@@ -243,58 +197,70 @@ export function PlansContent() {
                 </div>
               )}
 
+              {isEnterprise && (
+                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-sm rounded-2xl">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
+                    <Crown className="h-3.5 w-3.5" />
+                    Coming Soon
+                  </span>
+                  <p className="text-xs text-muted-foreground px-6 text-center">Enterprise plan is under construction</p>
+                </div>
+              )}
+
               <div className="p-6 flex flex-col flex-1">
-                {/* Plan header */}
                 <div className="flex items-center justify-between mb-1">
                   <div className="flex items-center gap-2">
-                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center ${plan.popular ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${plan.key === "pro" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
                       <Icon className="h-4 w-4" />
                     </div>
                     <span className="font-bold text-base">{plan.name}</span>
                   </div>
-                  {isCurrent && !isOwnerDev && (
+                  {isCurrent && !isUnlimited && (
                     <Badge variant="secondary" className="text-[10px]">Current</Badge>
                   )}
                 </div>
 
-                <p className="text-xs text-muted-foreground mb-5">{plan.tagline}</p>
+                <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
 
-                {/* Price */}
-                <div className="mb-5">
+                <div className="mb-4">
                   <div className="flex items-end gap-1">
-                    <span className="text-4xl font-extrabold tracking-tight">{plan.price}</span>
-                    <span className="text-sm text-muted-foreground mb-1.5">/{plan.priceNote}</span>
+                    <span className="text-4xl font-extrabold tracking-tight">
+                      {plan.price_usd === 0 ? "$0" : `$${plan.price_usd}`}
+                    </span>
+                    {plan.price_note && (
+                      <span className="text-sm text-muted-foreground mb-1.5">/{plan.price_note}</span>
+                    )}
                   </div>
-                  <p className="text-xs text-primary font-medium mt-1">{plan.limitLine}</p>
+                  {credits != null && (
+                    <p className="text-xs text-primary font-medium mt-1">{credits} credits / cycle</p>
+                  )}
                 </div>
 
-                {/* CTA */}
-                <div className="mb-6">
-                  {isCurrent && !isOwnerDev ? (
+                <div className="mb-5">
+                  {isCurrent && !isUnlimited ? (
                     <Button variant="outline" className="w-full" disabled>Current plan</Button>
-                  ) : plan.key === "free" ? (
-                    <Button variant="outline" className="w-full" disabled={isCurrent}>
-                      {isCurrent ? "Current plan" : "Downgrade to Free"}
-                    </Button>
-                  ) : (
+                  ) : plan.is_coming_soon ? (
                     <Button className="w-full gap-2" disabled>
                       <Sparkles className="h-3.5 w-3.5" />
                       Coming soon
                     </Button>
+                  ) : (
+                    <Button variant="outline" className="w-full" disabled>
+                      {currentSub === "paid" && plan.key === "free" ? "Downgrade to Free" : "Select Plan"}
+                    </Button>
                   )}
                 </div>
 
-                <div className="border-t mb-5" />
+                <div className="border-t mb-4" />
 
-                {/* Features */}
                 <ul className="space-y-2.5 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f.text} className="flex items-start gap-2.5 text-sm">
+                  {features.map((f) => (
+                    <li key={f.text} className="flex items-start gap-2.5 min-w-0">
                       {f.included
-                        ? <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />
-                        : <XCircle    className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
+                        ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                        : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
                       }
-                      <span className={f.included ? "" : "text-muted-foreground/50"}>{f.text}</span>
+                      <span className={`text-sm whitespace-nowrap ${f.included ? "" : "text-muted-foreground/50"}`}>{f.text}</span>
                     </li>
                   ))}
                 </ul>
@@ -304,11 +270,9 @@ export function PlansContent() {
         })}
       </div>
 
-      {/* Footer note */}
       <p className="text-center text-xs text-muted-foreground pb-4">
-        All plans include a free trial. Paid plans coming soon via Stripe. Questions? Contact us anytime.
+        All plans include a free trial. Paid plans coming soon. Questions? Contact us anytime.
       </p>
-
     </div>
   )
 }

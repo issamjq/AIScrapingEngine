@@ -11,7 +11,7 @@ import {
 } from "./ui/dropdown-menu"
 import {
   Settings, Globe, HelpCircle, Sparkles,
-  Info, LogOut, ChevronUp,
+  Info, LogOut, ChevronUp, Wallet,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -20,7 +20,7 @@ const PLAN_LABELS: Record<string, string> = {
   trial:    "Trial plan",
   free:     "Free plan",
   paid:     "Pro plan",
-  business: "Business plan",
+  pro:      "Pro plan",
   dev:      "Developer",
   owner:    "Owner",
 }
@@ -40,6 +40,7 @@ export function UserMenuButton({ onNavigate }: Props) {
   const { user, logout } = useAuth()
   const [subscription, setSubscription] = useState<string>("free")
   const [role, setRole]                 = useState<string>("b2c")
+  const [balance, setBalance]           = useState<number | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -47,13 +48,17 @@ export function UserMenuButton({ onNavigate }: Props) {
     async function fetchProfile() {
       try {
         const token = await (user as any).getIdToken()
-        const res   = await fetch(`${API}/api/allowed-users/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const json  = await res.json()
-        if (!cancelled && json.success && json.data) {
-          setSubscription(json.data.subscription || "free")
-          setRole(json.data.role || "b2c")
+        const [meRes, walletRes] = await Promise.all([
+          fetch(`${API}/api/allowed-users/me`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/wallet`,           { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        const [me, wallet] = await Promise.all([meRes.json(), walletRes.json()])
+        if (!cancelled && me.success && me.data) {
+          setSubscription(me.data.subscription || "free")
+          setRole(me.data.role || "b2c")
+        }
+        if (!cancelled && wallet.success && wallet.data?.wallet) {
+          setBalance(wallet.data.wallet.balance)
         }
       } catch { /* silent */ }
     }
@@ -64,9 +69,9 @@ export function UserMenuButton({ onNavigate }: Props) {
   const displayName = user?.displayName || user?.email || "User"
   const email       = user?.email || ""
   const initials    = getInitials(user?.displayName || null)
+  const isUnlimited = ["dev", "owner"].includes(role)
 
-  // Plan label: dev/owner roles override subscription label
-  const planLabel = ["dev", "owner"].includes(role)
+  const planLabel = isUnlimited
     ? PLAN_LABELS[role]
     : PLAN_LABELS[subscription] ?? "Free plan"
 
@@ -81,7 +86,12 @@ export function UserMenuButton({ onNavigate }: Props) {
           </Avatar>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate leading-tight">{displayName}</p>
-            <p className="text-[11px] text-muted-foreground truncate leading-tight">{planLabel}</p>
+            <p className="text-[11px] text-muted-foreground truncate leading-tight">
+              {planLabel}
+              {!isUnlimited && balance !== null && (
+                <span className="ml-1.5 text-primary font-semibold">· {balance} credits</span>
+              )}
+            </p>
           </div>
           <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0 opacity-60 group-hover:opacity-100 transition-opacity" />
         </button>
@@ -93,6 +103,20 @@ export function UserMenuButton({ onNavigate }: Props) {
         <DropdownMenuLabel className="font-normal text-xs text-muted-foreground px-3 py-2">
           {email}
         </DropdownMenuLabel>
+
+        {/* Wallet balance */}
+        {!isUnlimited && balance !== null && (
+          <>
+            <DropdownMenuSeparator />
+            <div className="flex items-center gap-2.5 px-3 py-2">
+              <Wallet className="h-4 w-4 text-primary shrink-0" />
+              <div>
+                <p className="text-xs font-semibold">{balance} credits remaining</p>
+                <p className="text-[10px] text-muted-foreground">Top up coming soon</p>
+              </div>
+            </div>
+          </>
+        )}
 
         <DropdownMenuSeparator />
 

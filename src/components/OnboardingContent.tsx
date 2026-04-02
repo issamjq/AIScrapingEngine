@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useAuth } from "@/context/AuthContext"
-import { Building2, User, BarChart3, ArrowRight, CheckCircle2 } from "lucide-react"
+import { Building2, User, BarChart3, ArrowRight, CheckCircle2, XCircle, Sparkles, Crown, Loader2 } from "lucide-react"
 import { Button } from "./ui/button"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -11,46 +11,10 @@ interface Props {
 
 type Role = "b2b" | "b2c"
 
-export function OnboardingContent({ onComplete }: Props) {
-  const { user } = useAuth()
-  const [selected, setSelected] = useState<Role | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+// ─── Step 1: Role picker ───────────────────────────────────────────────────
 
-  const handleContinue = async () => {
-    if (!selected || !user) return
-    setSaving(true)
-    setError(null)
-    try {
-      const token = await user.getIdToken()
-      const res = await fetch(`${API}/api/allowed-users/signup`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          role: selected,
-          name: user.displayName || user.email,
-        }),
-      })
-      const data = await res.json()
-      if (!data.success) {
-        const code = data.error?.code
-        if (code === "DUPLICATE_ACCOUNT" || code === "IP_TRIAL_LIMIT") {
-          setError(data.error.message)
-        } else {
-          throw new Error(data.error?.message || "Signup failed")
-        }
-        return
-      }
-      onComplete()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
-    } finally {
-      setSaving(false)
-    }
-  }
+function RolePicker({ onNext }: { onNext: (role: Role) => void }) {
+  const [selected, setSelected] = useState<Role | null>(null)
 
   const options: { role: Role; icon: typeof Building2; title: string; desc: string; bullets: string[] }[] = [
     {
@@ -59,7 +23,7 @@ export function OnboardingContent({ onComplete }: Props) {
       title: "For My Business",
       desc: "I represent a company tracking competitor prices",
       bullets: [
-        "Monitor prices across UAE retailers",
+        "Search web + your product catalog",
         "Track multiple product categories",
         "14-day full trial",
       ],
@@ -70,24 +34,15 @@ export function OnboardingContent({ onComplete }: Props) {
       title: "For Personal Use",
       desc: "I want to track prices on products I buy",
       bullets: [
+        "Search any product across the web",
         "Get alerts when prices drop",
-        "Compare prices across stores",
         "7-day full trial",
       ],
     },
   ]
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-      {/* Logo */}
-      <div className="flex items-center gap-2 mb-10">
-        <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
-          <BarChart3 className="h-5 w-5 text-primary-foreground" />
-        </div>
-        <span className="text-xl font-bold">AI Scraping Engine</span>
-      </div>
-
-      {/* Heading */}
+    <>
       <div className="text-center mb-8 max-w-md">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">How will you use it?</h1>
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
@@ -95,7 +50,6 @@ export function OnboardingContent({ onComplete }: Props) {
         </p>
       </div>
 
-      {/* Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-2xl mb-8">
         {options.map(({ role, icon: Icon, title, desc, bullets }) => {
           const isSelected = selected === role
@@ -131,35 +85,284 @@ export function OnboardingContent({ onComplete }: Props) {
         })}
       </div>
 
-      {/* Error */}
+      <Button
+        onClick={() => selected && onNext(selected)}
+        disabled={!selected}
+        className="w-full max-w-xs h-12 text-sm font-medium gap-2"
+      >
+        Continue
+        <ArrowRight className="h-4 w-4" />
+      </Button>
+    </>
+  )
+}
+
+// ─── Step 2: Plan picker ───────────────────────────────────────────────────
+
+interface PlanRow {
+  id: number
+  key: string
+  name: string
+  tagline: string
+  price_usd: number
+  price_note: string | null
+  trial_days_b2b: number | null
+  trial_days_b2c: number | null
+  credits_b2b: number | null
+  credits_b2c: number | null
+  features_b2b: { text: string; included: boolean }[]
+  features_b2c: { text: string; included: boolean }[]
+  is_coming_soon: boolean
+  sort_order: number
+}
+
+const PLAN_ICONS: Record<string, React.ElementType> = {
+  trial:      BarChart3,
+  free:       ArrowRight,
+  pro:        Sparkles,
+  enterprise: Crown,
+}
+
+function PlanPicker({
+  role,
+  onBack,
+  onComplete,
+}: {
+  role: Role
+  onBack: () => void
+  onComplete: () => void
+}) {
+  const { user } = useAuth()
+  const [plans, setPlans]       = useState<PlanRow[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [saving, setSaving]     = useState(false)
+  const [error, setError]       = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    async function fetchPlans() {
+      try {
+        const token = await (user as any).getIdToken()
+        const res = await fetch(`${API}/api/plans`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (!cancelled && data.success) setPlans(data.data)
+      } catch {
+        if (!cancelled) setError("Could not load plans. Please try again.")
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    fetchPlans()
+    return () => { cancelled = true }
+  }, [user])
+
+  async function signup() {
+    if (!user) return
+    setSaving(true)
+    setError(null)
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`${API}/api/allowed-users/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ role, name: user.displayName || user.email }),
+      })
+      const data = await res.json()
+      if (!data.success) {
+        const code = data.error?.code
+        if (code === "DUPLICATE_ACCOUNT" || code === "IP_TRIAL_LIMIT") {
+          setError(data.error.message)
+        } else {
+          throw new Error(data.error?.message || "Signup failed")
+        }
+        return
+      }
+      onComplete()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Please try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isB2C = role === "b2c"
+
+  return (
+    <>
+      <div className="text-center mb-8 max-w-lg">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Choose Your Plan</h1>
+        <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
+          Start with a trial or free plan. Upgrade anytime — no credit card required.
+        </p>
+        <div className="mt-4 inline-flex items-center gap-2 rounded-full border bg-muted/50 px-4 py-1.5">
+          {role === "b2b"
+            ? <Building2 className="h-3.5 w-3.5 text-primary" />
+            : <User className="h-3.5 w-3.5 text-primary" />
+          }
+          <span className="text-xs font-medium">
+            {role === "b2b" ? "For My Business" : "For Personal Use"}
+          </span>
+          <span className="text-[10px] text-muted-foreground border-l pl-2">
+            {role === "b2b" ? "Business account" : "Personal account"}
+          </span>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-3 text-muted-foreground py-16">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Loading plans…</span>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 w-full max-w-7xl mb-6 mt-6">
+          {plans.map((plan) => {
+            const Icon     = PLAN_ICONS[plan.key] ?? Sparkles
+            const features = isB2C ? plan.features_b2c : plan.features_b2b
+            const credits  = isB2C ? plan.credits_b2c : plan.credits_b2b
+            const trialDays = isB2C ? plan.trial_days_b2c : plan.trial_days_b2b
+            const priceNote = trialDays ? `for ${trialDays} days` : (plan.price_note ?? "forever")
+            const isEnterprise = plan.key === "enterprise"
+
+            return (
+              <div
+                key={plan.key}
+                className={`relative rounded-2xl border flex flex-col transition-all ${
+                  plan.key === "pro"
+                    ? "border-primary shadow-lg shadow-primary/10"
+                    : isEnterprise
+                    ? "border-dashed border-muted-foreground/30"
+                    : "border-border"
+                }`}
+              >
+                {/* Most Popular badge */}
+                {plan.key === "pro" && (
+                  <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
+                      <Sparkles className="h-3 w-3" />
+                      Most Popular
+                    </span>
+                  </div>
+                )}
+
+                {/* Enterprise blur overlay */}
+                {isEnterprise && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-sm rounded-2xl">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
+                      <Crown className="h-3.5 w-3.5" />
+                      Coming Soon
+                    </span>
+                    <p className="text-xs text-muted-foreground px-6 text-center">Enterprise plan is under construction</p>
+                  </div>
+                )}
+
+                <div className="p-5 flex flex-col flex-1">
+                  {/* Header */}
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${plan.key === "pro" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <span className="font-bold text-lg">{plan.name}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
+
+                  {/* Price */}
+                  <div className="mb-4">
+                    <div className="flex items-end gap-1">
+                      <span className="text-4xl font-extrabold tracking-tight">
+                        {plan.price_usd === 0 ? "$0" : `$${plan.price_usd}`}
+                      </span>
+                      <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>
+                    </div>
+                    {credits != null && (
+                      <p className="text-xs text-primary font-medium mt-1">{credits} credits included</p>
+                    )}
+                  </div>
+
+                  {/* CTA */}
+                  <Button
+                    className="w-full mb-4 gap-1.5"
+                    variant={plan.key === "pro" ? "default" : "outline"}
+                    disabled={plan.is_coming_soon || saving}
+                    onClick={plan.is_coming_soon ? undefined : signup}
+                  >
+                    {saving && !plan.is_coming_soon ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Setting up…</>
+                    ) : plan.is_coming_soon ? (
+                      "Coming Soon"
+                    ) : plan.key === "trial" ? (
+                      <><ArrowRight className="h-3.5 w-3.5" /> Start Free Trial</>
+                    ) : (
+                      <><ArrowRight className="h-3.5 w-3.5" /> Choose This Plan</>
+                    )}
+                  </Button>
+
+                  <div className="border-t mb-4" />
+
+                  {/* Features */}
+                  <ul className="space-y-2 flex-1">
+                    {features.map((f) => (
+                      <li key={f.text} className="flex items-start gap-2 min-w-0">
+                        {f.included
+                          ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                          : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
+                        }
+                        <span className={`text-sm whitespace-nowrap ${f.included ? "" : "text-muted-foreground/40"}`}>{f.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       {error && (
-        <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive text-center max-w-md w-full">
+        <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive text-center max-w-xl w-full">
           {error}
         </div>
       )}
 
-      {/* CTA */}
-      <Button
-        onClick={handleContinue}
-        disabled={!selected || saving}
-        className="w-full max-w-xs h-12 text-sm font-medium gap-2"
+      <button
+        onClick={onBack}
+        className="text-sm text-muted-foreground hover:text-foreground underline underline-offset-2"
       >
-        {saving ? (
-          <>
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-            Setting up your account…
-          </>
-        ) : (
-          <>
-            Start Free Trial
-            <ArrowRight className="h-4 w-4" />
-          </>
-        )}
-      </Button>
+        ← Back
+      </button>
+    </>
+  )
+}
 
-      <p className="mt-4 text-xs text-muted-foreground text-center max-w-xs leading-relaxed">
-        No credit card required. Your trial includes full access with no restrictions.
-      </p>
+// ─── Main component ────────────────────────────────────────────────────────
+
+export function OnboardingContent({ onComplete }: Props) {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [role, setRole] = useState<Role | null>(null)
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-12">
+      {/* Logo */}
+      <div className="flex items-center gap-2 mb-10">
+        <div className="h-9 w-9 rounded-lg bg-primary flex items-center justify-center">
+          <BarChart3 className="h-5 w-5 text-primary-foreground" />
+        </div>
+        <span className="text-xl font-bold">AI Scraping Engine</span>
+      </div>
+
+      {step === 1 && (
+        <RolePicker onNext={(r) => { setRole(r); setStep(2) }} />
+      )}
+
+      {step === 2 && role && (
+        <PlanPicker
+          role={role}
+          onBack={() => setStep(1)}
+          onComplete={onComplete}
+        />
+      )}
     </div>
   )
 }

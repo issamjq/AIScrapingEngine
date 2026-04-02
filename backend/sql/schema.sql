@@ -257,3 +257,99 @@ INSERT INTO companies (name, slug, base_url, is_active) VALUES
   ('Dubizzle',      'dubizzle',      'https://www.dubizzle.com',     true),
   ('OLX Lebanon',   'olx-lb',        'https://www.olx.com.lb',       true)
 ON CONFLICT (slug) DO NOTHING;
+
+-- =============================================================
+-- TABLE: plans
+-- All plan definitions served from DB — frontend never hardcodes plans.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS plans (
+  id            SERIAL PRIMARY KEY,
+  key           VARCHAR(50)  NOT NULL UNIQUE,   -- 'trial' | 'free' | 'pro' | 'enterprise'
+  name          VARCHAR(100) NOT NULL,
+  tagline       TEXT,
+  price_usd     NUMERIC(10,2) NOT NULL DEFAULT 0,
+  price_note    VARCHAR(100),                    -- 'forever' | 'per month' | etc.
+  trial_days_b2b INTEGER,                        -- null = not applicable
+  trial_days_b2c INTEGER,
+  credits_b2b   INTEGER,                         -- credits granted on this plan for b2b
+  credits_b2c   INTEGER,                         -- credits granted on this plan for b2c
+  features_b2b  JSONB NOT NULL DEFAULT '[]',     -- [{text, included}]
+  features_b2c  JSONB NOT NULL DEFAULT '[]',
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  is_coming_soon BOOLEAN NOT NULL DEFAULT false,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE OR REPLACE TRIGGER set_plans_updated_at
+  BEFORE UPDATE ON plans
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- =============================================================
+-- TABLE: user_wallet
+-- One row per user — tracks credit balance.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS user_wallet (
+  id            SERIAL PRIMARY KEY,
+  user_email    VARCHAR(255) NOT NULL UNIQUE REFERENCES allowed_users(email) ON DELETE CASCADE,
+  balance       INTEGER NOT NULL DEFAULT 0,  -- current credits available
+  total_added   INTEGER NOT NULL DEFAULT 0,  -- lifetime credits added
+  total_used    INTEGER NOT NULL DEFAULT 0,  -- lifetime credits spent
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_wallet_email ON user_wallet(user_email);
+
+CREATE OR REPLACE TRIGGER set_user_wallet_updated_at
+  BEFORE UPDATE ON user_wallet
+  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+
+-- =============================================================
+-- TABLE: wallet_transactions
+-- Immutable log of every credit change.
+-- =============================================================
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id            SERIAL PRIMARY KEY,
+  user_email    VARCHAR(255) NOT NULL REFERENCES allowed_users(email) ON DELETE CASCADE,
+  amount        INTEGER NOT NULL,             -- positive = credit, negative = debit
+  balance_after INTEGER NOT NULL,
+  type          VARCHAR(50) NOT NULL,         -- 'signup_bonus' | 'usage' | 'purchase' | 'adjustment'
+  description   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_email      ON wallet_transactions(user_email);
+CREATE INDEX IF NOT EXISTS idx_wallet_tx_created_at ON wallet_transactions(created_at DESC);
+
+-- =============================================================
+-- SEED: Plans
+-- =============================================================
+INSERT INTO plans (key, name, tagline, price_usd, price_note, trial_days_b2b, trial_days_b2c, credits_b2b, credits_b2c, features_b2b, features_b2c, is_active, is_coming_soon, sort_order)
+VALUES
+  (
+    'trial', 'Trial', 'Full access, no restrictions', 0, NULL, 14, 7, 20, 30,
+    '[{"text":"20 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Priority Support","included":false}]',
+    '[{"text":"30 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":false}]',
+    true, false, 1
+  ),
+  (
+    'free', 'Free', 'Basic access, forever free', 0, 'forever', NULL, NULL, 10, 15,
+    '[{"text":"10 credits per month","included":true},{"text":"3 results shown (rest blurred)","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"All results unlocked","included":false},{"text":"Export data (CSV)","included":false},{"text":"Priority Support","included":false}]',
+    '[{"text":"15 credits per month","included":true},{"text":"3 results shown (rest blurred)","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"All results unlocked","included":false},{"text":"Price drop alerts","included":false},{"text":"Priority Support","included":false}]',
+    true, false, 2
+  ),
+  (
+    'pro', 'Pro', 'For professionals & growing teams', 20, 'per month', NULL, NULL, 50, 150,
+    '[{"text":"50 credits per month","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":true}]',
+    '[{"text":"150 credits per month","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Priority Support","included":true},{"text":"Export data (CSV)","included":false}]',
+    true, true, 3
+  ),
+  (
+    'enterprise', 'Enterprise', 'Custom solutions for large teams', 0, 'contact us', NULL, NULL, NULL, NULL,
+    '[{"text":"Unlimited credits","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search web + your product catalog","included":true},{"text":"Auto-match results to your products","included":true},{"text":"Live price tracking across retailers","included":true},{"text":"Export data (CSV)","included":true},{"text":"Price drop alerts","included":true},{"text":"Dedicated Account Manager","included":true},{"text":"Custom Integrations","included":true},{"text":"Priority Support","included":true}]',
+    '[{"text":"Unlimited credits","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Search any product across the web","included":true},{"text":"Auto-match results to best price","included":true},{"text":"Live price tracking across stores","included":true},{"text":"Price drop alerts","included":true},{"text":"Dedicated Account Manager","included":true},{"text":"Custom Integrations","included":true},{"text":"Priority Support","included":true}]',
+    true, true, 4
+  )
+ON CONFLICT (key) DO NOTHING;

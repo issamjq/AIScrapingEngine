@@ -20,6 +20,8 @@ import { scraperRouter }            from "./routes/scraper"
 import { discoveryRouter }          from "./routes/discovery"
 import { statsRouter }              from "./routes/stats"
 import { allowedUsersRouter }       from "./routes/allowedUsers"
+import { plansRouter }              from "./routes/plans"
+import { walletRouter }             from "./routes/wallet"
 import { requireAuth }              from "./middleware/auth"
 
 const app  = express()
@@ -67,6 +69,8 @@ app.use("/api/scraper",              requireAuth, scraperRouter)
 app.use("/api/discovery",            requireAuth, discoveryRouter)
 app.use("/api/stats",                requireAuth, statsRouter)
 app.use("/api/allowed-users",        requireAuth, allowedUsersRouter)
+app.use("/api/plans",                requireAuth, plansRouter)
+app.use("/api/wallet",               requireAuth, walletRouter)
 
 // 404
 app.use((_req, res) => {

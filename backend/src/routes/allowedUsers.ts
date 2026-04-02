@@ -5,6 +5,8 @@ import { createError } from "../middleware/validate"
 import { AuthRequest } from "../middleware/auth"
 import { trialEndsAt } from "../middleware/usageLimit"
 import { copyGlobalStoresToUser } from "../services/companyService"
+import { createWallet } from "../services/walletService"
+import { getPlanByKey } from "../services/plansService"
 
 export const allowedUsersRouter = Router()
 
@@ -133,6 +135,13 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
 
     // Seed the 8 default UAE stores for this new user
     await copyGlobalStoresToUser(email.toLowerCase().trim())
+
+    // Create wallet and seed trial credits from plans table
+    const trialPlan = await getPlanByKey("trial")
+    const initialCredits = role === "b2b"
+      ? (trialPlan?.credits_b2b ?? 20)
+      : (trialPlan?.credits_b2c ?? 30)
+    await createWallet(email.toLowerCase().trim(), initialCredits)
 
     res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }
