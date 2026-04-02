@@ -35,7 +35,7 @@ function RolePicker({ onNext }: { onNext: (role: Role) => void }) {
       desc: "I want to track prices on products I buy",
       bullets: [
         "Search any product across the web",
-        "Get alerts when prices drop",
+        "Track price history over time",
         "7-day full trial",
       ],
     },
@@ -106,7 +106,8 @@ interface PlanRow {
   tagline: string
   price_usd_b2b: number
   price_usd_b2c: number
-  price_note: string | null
+  price_note_b2b: string | null
+  price_note_b2c: string | null
   trial_days_b2b: number | null
   trial_days_b2c: number | null
   credits_b2b: number | null
@@ -256,14 +257,15 @@ function PlanPicker({
             const features  = isB2C ? plan.features_b2c : plan.features_b2b
             const credits   = isB2C ? plan.credits_b2c : plan.credits_b2b
             const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
-            const trialDays = isB2C ? plan.trial_days_b2c : plan.trial_days_b2b
-            const priceNote = trialDays ? `for ${trialDays} days` : (plan.price_note ?? "forever")
+            const trialDays  = isB2C ? plan.trial_days_b2c : plan.trial_days_b2b
+            const baseNote   = isB2C ? plan.price_note_b2c : plan.price_note_b2b
+            const priceNote  = trialDays ? `for ${trialDays} days` : (baseNote ?? "forever")
             const isEnterprise = plan.key === "enterprise"
 
             return (
               <div
                 key={plan.key}
-                className={`relative rounded-2xl border flex flex-col transition-all ${
+                className={`relative rounded-2xl border flex flex-col transition-all select-none ${
                   plan.key === "pro"
                     ? "border-primary shadow-lg shadow-primary/10"
                     : isEnterprise

@@ -15,7 +15,8 @@ interface PlanRow {
   tagline: string
   price_usd_b2b: number
   price_usd_b2c: number
-  price_note: string | null
+  price_note_b2b: string | null
+  price_note_b2c: string | null
   credits_b2b: number | null
   credits_b2c: number | null
   features_b2b: { text: string; included: boolean }[]
@@ -212,13 +213,14 @@ export function PlansContent() {
           const features  = isB2C ? plan.features_b2c : plan.features_b2b
           const credits   = isB2C ? plan.credits_b2c  : plan.credits_b2b
           const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
+          const priceNote = isB2C ? plan.price_note_b2c : plan.price_note_b2b
           const isCurrent = plan.key === currentSub || (plan.key === "pro" && currentSub === "paid")
           const isEnterprise = plan.key === "enterprise"
 
           return (
             <div
               key={plan.key}
-              className={`relative rounded-2xl border flex flex-col transition-all ${
+              className={`relative rounded-2xl border flex flex-col transition-all select-none ${
                 plan.key === "pro"
                   ? "border-primary shadow-lg shadow-primary/10"
                   : isEnterprise
@@ -265,8 +267,8 @@ export function PlansContent() {
                     <span className="text-4xl font-extrabold tracking-tight">
                       {formatPrice(priceUsd)}
                     </span>
-                    {plan.price_note && (
-                      <span className="text-sm text-muted-foreground mb-1.5">/{plan.price_note}</span>
+                    {priceNote && (
+                      <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>
                     )}
                   </div>
                   {credits != null && (

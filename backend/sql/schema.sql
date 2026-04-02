@@ -267,9 +267,10 @@ CREATE TABLE IF NOT EXISTS plans (
   key           VARCHAR(50)  NOT NULL UNIQUE,   -- 'trial' | 'free' | 'pro' | 'enterprise'
   name          VARCHAR(100) NOT NULL,
   tagline       TEXT,
-  price_usd_b2b NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2B price in USD
-  price_usd_b2c NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2C price in USD
-  price_note    VARCHAR(100),                    -- 'forever' | 'per month' | etc.
+  price_usd_b2b  NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2B price in USD
+  price_usd_b2c  NUMERIC(10,2) NOT NULL DEFAULT 0,  -- B2C price in USD
+  price_note_b2b VARCHAR(100),                       -- 'forever' | 'per month' | etc.
+  price_note_b2c VARCHAR(100),
   trial_days_b2b INTEGER,                        -- null = not applicable
   trial_days_b2c INTEGER,
   credits_b2b   INTEGER,                         -- credits granted on this plan for b2b
