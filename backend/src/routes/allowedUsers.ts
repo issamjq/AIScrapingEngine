@@ -153,6 +153,52 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
   } catch (err) { next(err) }
 })
 
+// PUT /api/allowed-users/me — update own name / company_name
+allowedUsersRouter.put("/me", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const email = req.email
+    if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
+    const { name, company_name } = req.body
+    const { rows } = await query(
+      `UPDATE allowed_users SET
+         name         = COALESCE($2, name),
+         company_name = COALESCE($3, company_name),
+         updated_at   = NOW()
+       WHERE email = $1 RETURNING *`,
+      [email, name ?? null, company_name ?? null]
+    )
+    if (!rows.length) return next(createError("User not found", 404, "NOT_FOUND"))
+    res.json({ success: true, data: rows[0] })
+  } catch (err) { next(err) }
+})
+
+// DELETE /api/allowed-users/me — permanently delete account + all user data
+allowedUsersRouter.delete("/me", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const email = req.email
+    if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
+
+    // Delete in FK-safe order
+    await query(`
+      DELETE FROM price_snapshots
+      WHERE url_id IN (
+        SELECT pcu.id FROM product_company_urls pcu
+        JOIN products p ON p.id = pcu.product_id
+        WHERE p.user_email = $1
+      )`, [email])
+    await query(`
+      DELETE FROM product_company_urls
+      WHERE product_id IN (SELECT id FROM products WHERE user_email = $1)`, [email])
+    await query(`DELETE FROM products       WHERE user_email = $1`, [email])
+    await query(`DELETE FROM companies      WHERE user_email = $1`, [email])
+    await query(`DELETE FROM wallet_transactions WHERE user_email = $1`, [email])
+    await query(`DELETE FROM user_wallet    WHERE user_email = $1`, [email])
+    await query(`DELETE FROM allowed_users  WHERE email = $1`, [email])
+
+    res.json({ success: true })
+  } catch (err) { next(err) }
+})
+
 // Management middleware
 async function requireManagement(req: AuthRequest, res: Response, next: NextFunction) {
   try {

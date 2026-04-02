@@ -178,7 +178,7 @@ function AppInner() {
       case "youtube":         return <YouTubeContent role={role} />
       case "twitter":         return <TwitterContent role={role} />
       case "shopify":         return <ShopifyContent role={role} />
-      case "settings":        return <SettingsContent role={role} />
+      case "settings":        return <SettingsContent role={role} onNavigate={navigate} />
 
       // RSP / Scraping Engine pages
       case "discovering":     return <DiscoveringContent role={role} />

@@ -23,6 +23,7 @@ import { allowedUsersRouter }       from "./routes/allowedUsers"
 import { plansRouter }              from "./routes/plans"
 import { walletRouter }             from "./routes/wallet"
 import { currencyRatesRouter }      from "./routes/currencyRates"
+import { exportRouter }             from "./routes/export"
 import { requireAuth }              from "./middleware/auth"
 
 const app  = express()
@@ -73,6 +74,7 @@ app.use("/api/allowed-users",        requireAuth, allowedUsersRouter)
 app.use("/api/plans",                requireAuth, plansRouter)
 app.use("/api/wallet",               requireAuth, walletRouter)
 app.use("/api/currency-rates",       requireAuth, currencyRatesRouter)
+app.use("/api/export",               requireAuth, exportRouter)
 
 // 404
 app.use((_req, res) => {
