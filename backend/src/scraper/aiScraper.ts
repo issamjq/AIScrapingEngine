@@ -6,7 +6,8 @@ const CLAUDE_API = "https://api.anthropic.com/v1/messages"
 export async function extractWithVision(
   page: Page,
   currency = "AED",
-  apiKey: string
+  apiKey: string,
+  searchQuery?: string
 ): Promise<{
   price: number | null
   originalPrice: number | null
@@ -30,8 +31,11 @@ export async function extractWithVision(
   const base64Image = screenshotBuffer.toString("base64")
   const pageUrl = page.url()
 
-  const prompt = `You are analyzing a product page screenshot from an e-commerce website (${pageUrl}).
+  const queryLine = searchQuery
+    ? `\nTarget product being searched: "${searchQuery}"\n`
+    : ""
 
+  const prompt = `You are analyzing a product page screenshot from an e-commerce website (${pageUrl}).${queryLine}
 Extract the following fields from what you see on screen and return ONLY a JSON object:
 
 {
@@ -48,7 +52,7 @@ Rules:
 - original_price: ONLY set if a strikethrough/was-price is visibly shown next to the current price; otherwise null
 - title: the main product heading, include size/variant (e.g. "Marvis Classic Strong Mint 75ml")
 - availability: "in_stock" if Add to Cart / Buy Now is active, "out_of_stock" if sold out, else "unknown"
-- IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results), extract the price and title from the FIRST or CHEAPEST visible listing card. Do NOT return null just because multiple items are visible — always pick the most prominent one.
+- IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results)${searchQuery ? ` and you know the target product is "${searchQuery}"` : ""}, find the listing card that BEST MATCHES the target product and extract its price and title. Do NOT pick a random card — look for the exact model/variant. If none match exactly, pick the closest match. Never return null just because multiple items are shown.
 - Return ONLY the JSON object, no explanation, no markdown`
 
   const response = await fetch(CLAUDE_API, {

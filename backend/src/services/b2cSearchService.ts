@@ -125,17 +125,30 @@ async function b2cWebSearch(
 
     const valid = normalized.filter((r: any) => r.retailer && r.url?.startsWith("http") && r.title)
 
-    // Deduplicate: keep only the first result per domain, cap at 5 unique sites
-    // Country-hint sites naturally appear first since Claude prioritises them
-    const seenDomains = new Set<string>()
-    const deduped = valid.filter((r: any) => {
+    // Sort: country-hint matching domains rise to the top before dedup
+    // Claude may return them anywhere in the list, but we always prioritise them
+    const countrySlug = countryHint.toLowerCase().replace(/\s+/g, "")
+    const withPriority = valid.map((r: any) => {
       try {
-        const domain = new URL(r.url).hostname.replace("www.", "")
-        if (seenDomains.has(domain)) return false
-        seenDomains.add(domain)
-        return seenDomains.size <= 5   // hard cap: 5 unique websites max
-      } catch { return false }
+        const domain = new URL(r.url).hostname.toLowerCase()
+        const isLocalSite = countrySlug && domain.includes(countrySlug)
+        return { r, priority: isLocalSite ? 0 : 1 }
+      } catch { return { r, priority: 1 } }
     })
+    withPriority.sort((a, b) => a.priority - b.priority)
+
+    // Deduplicate: keep only the first result per domain, cap at 5 unique sites
+    const seenDomains = new Set<string>()
+    const deduped = withPriority
+      .map(({ r }) => r)
+      .filter((r: any) => {
+        try {
+          const domain = new URL(r.url).hostname.replace("www.", "")
+          if (seenDomains.has(domain)) return false
+          seenDomains.add(domain)
+          return seenDomains.size <= 5   // hard cap: 5 unique websites max
+        } catch { return false }
+      })
 
     logger.info("[B2CSearch] Web search done", { total: parsed.length, valid: valid.length, sites: deduped.length })
     return deduped
@@ -208,13 +221,15 @@ async function drillIntoSearchPages(
 async function scrapeUrls(
   items:  Array<{ retailer: string; url: string; title: string; condition: string }>,
   apiKey: string,
-  engine: ScraperEngine
+  engine: ScraperEngine,
+  query:  string
 ): Promise<B2CResult[]> {
   const tasks = items.map((item) => async (): Promise<B2CResult> => {
     try {
       const result = await engine.scrape(item.url, {}, {
         timeout:        20_000,
         blockResources: ["font", "media"],   // keep images for Vision AI
+        searchQuery:    query,               // tells Vision AI which listing card to pick
       })
       return {
         retailer:      item.retailer,
@@ -267,7 +282,7 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
     // Step 2b: Scrape individual listings for price + details
     let scraped: B2CResult[]
     try {
-      scraped = await scrapeUrls(listings, apiKey, engine)
+      scraped = await scrapeUrls(listings, apiKey, engine, query)
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
       scraped = listings.map((item) => ({

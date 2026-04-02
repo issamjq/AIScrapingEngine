@@ -16,6 +16,7 @@ export interface ScrapeOptions {
   currency?:       string
   pageOptions?:    Record<string, any>
   blockResources?: string[]
+  searchQuery?:    string   // passed to Vision AI to find the right listing card
 }
 
 export interface ScrapeResult {
@@ -65,6 +66,7 @@ export class ScraperEngine {
     const currency       = options.currency || "AED"
     const pageOptions    = { waitUntil: "domcontentloaded" as const, timeout, ...(options.pageOptions || {}) }
     const blockResources = options.blockResources || ["image", "font", "media"]
+    const searchQuery    = options.searchQuery
 
     const priceSelectors        = selectors.price        || []
     const titleSelectors        = selectors.title        || []
@@ -141,7 +143,7 @@ export class ScraperEngine {
 
       if (aiApiKey && !preferSelectors) {
         logger.info("[Scraper] Using Claude Vision for extraction", { url })
-        const aiResult = await extractWithVision(page, currency, aiApiKey).catch((err: any) => {
+        const aiResult = await extractWithVision(page, currency, aiApiKey, searchQuery).catch((err: any) => {
           logger.warn("[Scraper] Vision failed, falling back to selectors", { error: err.message })
           return null
         })
@@ -176,7 +178,7 @@ export class ScraperEngine {
 
         if (price === null && aiApiKey) {
           logger.info("[Scraper] Selectors found no price, trying Claude Vision fallback", { url })
-          const aiResult = await extractWithVision(page, currency, aiApiKey).catch(() => null)
+          const aiResult = await extractWithVision(page, currency, aiApiKey, searchQuery).catch(() => null)
           if (aiResult && aiResult.price !== null) {
             rawPriceText        = aiResult.rawPriceText
             rawTitleText        = aiResult.rawTitleText        || rawTitleText
@@ -250,9 +252,9 @@ export class ScraperEngine {
       })
 
       const page = await context.newPage()
-      await page.goto(url, { timeout: 15_000, waitUntil: "domcontentloaded" }).catch(() => {})
+      await page.goto(url, { timeout: 20_000, waitUntil: "domcontentloaded" }).catch(() => {})
 
-      const links: string[] = await page.evaluate(
+      const evalLinks = () => page.evaluate(
         ({ pageUrl, keywords }: { pageUrl: string; keywords: string[] }) => {
           try {
             const baseHost = new URL(pageUrl).hostname
@@ -275,7 +277,7 @@ export class ScraperEngine {
 
                 // Must match at least one query keyword in the URL path
                 // OR have a numeric listing ID (4+ consecutive digits) in the path
-                const hasKeyword  = keywords.length > 0 && keywords.some((k) => pathLower.includes(k))
+                const hasKeyword   = keywords.length > 0 && keywords.some((k) => pathLower.includes(k))
                 const hasNumericId = /\/\d{4,}/.test(pathLower)
 
                 if (!hasKeyword && !hasNumericId) continue
@@ -289,6 +291,18 @@ export class ScraperEngine {
         },
         { pageUrl: url, keywords: queryKeywords }
       )
+
+      let links: string[] = await evalLinks()
+
+      // JS-rendered sites (OLX, Dubizzle) may not have rendered cards yet on domcontentloaded.
+      // If we found 0 links, wait an extra 3s for JS to finish then retry once.
+      if (links.length === 0) {
+        await page.waitForTimeout(3000).catch(() => {})
+        links = await evalLinks()
+        if (links.length > 0) {
+          logger.info("[B2CSearch] getListingUrls JS-render retry succeeded", { url, found: links.length })
+        }
+      }
 
       logger.info("[B2CSearch] getListingUrls", { url, found: links.length, keywords: queryKeywords })
       return links.slice(0, maxLinks)
