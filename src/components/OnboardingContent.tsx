@@ -178,7 +178,7 @@ function PlanPicker({
     return `$${usdPrice}`
   }
 
-  async function signup() {
+  async function signup(planKey: string) {
     if (!user) return
     setSaving(true)
     setError(null)
@@ -187,7 +187,7 @@ function PlanPicker({
       const res = await fetch(`${API}/api/allowed-users/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role, name: user.displayName || user.email }),
+        body: JSON.stringify({ role, plan: planKey, name: user.displayName || user.email }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -322,9 +322,9 @@ function PlanPicker({
                     className="w-full mb-4 gap-1.5"
                     variant={plan.key === "pro" ? "default" : "outline"}
                     disabled={plan.is_coming_soon || saving}
-                    onClick={plan.is_coming_soon ? undefined : signup}
+                    onClick={plan.is_coming_soon ? undefined : () => signup(plan.key)}
                   >
-                    {saving && !plan.is_coming_soon ? (
+                    {saving ? (
                       <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Setting up…</>
                     ) : plan.is_coming_soon ? (
                       "Coming Soon"

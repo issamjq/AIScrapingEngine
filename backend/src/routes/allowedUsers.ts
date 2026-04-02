@@ -119,28 +119,34 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
       }
     }
 
-    const { name, role } = req.body
+    const { name, role, plan: planKey = "trial" } = req.body
     if (!role || !["b2b", "b2c"].includes(role)) {
       return next(createError("role must be b2b or b2c", 400, "VALIDATION"))
     }
+    if (!["trial", "free", "pro"].includes(planKey)) {
+      return next(createError("plan must be trial, free, or pro", 400, "VALIDATION"))
+    }
 
-    const effectiveTrial = trialEndsAt(role)
+    // Map plan key → subscription value
+    const subscriptionMap: Record<string, string> = { trial: "trial", free: "free", pro: "paid" }
+    const subscription   = subscriptionMap[planKey]
+    const effectiveTrial = subscription === "trial" ? trialEndsAt(role) : null
 
     const { rows } = await query(
       `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at, firebase_uid, signup_ip)
-       VALUES ($1, $2, $3, true, 'trial', $4, $5, $6)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7)
        RETURNING *`,
-      [email.toLowerCase().trim(), name || null, role, effectiveTrial, uid || null, clientIp]
+      [email.toLowerCase().trim(), name || null, role, subscription, effectiveTrial, uid || null, clientIp]
     )
 
     // Seed the 8 default UAE stores for this new user
     await copyGlobalStoresToUser(email.toLowerCase().trim())
 
-    // Create wallet and seed trial credits from plans table
-    const trialPlan = await getPlanByKey("trial")
+    // Create wallet and seed credits from the chosen plan
+    const chosenPlan = await getPlanByKey(planKey)
     const initialCredits = role === "b2b"
-      ? (trialPlan?.credits_b2b ?? 20)
-      : (trialPlan?.credits_b2c ?? 30)
+      ? (chosenPlan?.credits_b2b ?? 20)
+      : (chosenPlan?.credits_b2c ?? 30)
     await createWallet(email.toLowerCase().trim(), initialCredits)
 
     res.status(201).json({ success: true, data: rows[0] })
