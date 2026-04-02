@@ -101,13 +101,13 @@ async function b2cWebSearch(
     if (parsed.length === 0) {
       logger.warn("[B2CSearch] No JSON array found — trying URL fallback", { snippet: text.slice(0, 400) })
       // Haiku sometimes returns conversational text mentioning URLs — extract them directly
-      const urlMatches = text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []
-      const uniqueUrls = [...new Set(urlMatches)]
-        .filter((u) => !u.includes("anthropic.com") && u.length > 25)
+      const urlMatches: string[] = text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []
+      const uniqueUrls: string[] = [...new Set(urlMatches)]
+        .filter((u: string) => !u.includes("anthropic.com") && u.length > 25)
         .slice(0, 12)
       if (uniqueUrls.length > 0) {
-        parsed = uniqueUrls.map((url) => {
-          const host = (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })()
+        parsed = uniqueUrls.map((url: string) => {
+          const host: string = (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })()
           const retailer = host.split(".")[0].charAt(0).toUpperCase() + host.split(".")[0].slice(1)
           return { retailer, url, title: query, condition: "Unknown" }
         })
