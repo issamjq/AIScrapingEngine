@@ -175,21 +175,25 @@ async function withConcurrency<T>(
 // ── Step 2a: Drill into search/category pages → individual listing URLs ──
 async function drillIntoSearchPages(
   searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
-  engine:      ScraperEngine
+  engine:      ScraperEngine,
+  query:       string
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
+  // Extract keywords from query to filter extracted links (e.g. ["infiniti","g37","coupe","2010"])
+  const queryKeywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+
   const result: typeof searchPages = []
 
   // Drill into ALL search pages (already capped at 5 unique sites from web search step)
   // Get 3 individual listing URLs per site → max 5 × 3 = 15 total listings
   for (const sp of searchPages) {
     try {
-      const links = await engine.getListingUrls(sp.url, 3)
+      const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
       if (links.length > 0) {
         for (const url of links) {
           result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
         }
       } else {
-        result.push(sp)   // no individual links found — keep the search page
+        result.push(sp)   // no relevant links found — keep the search page itself
       }
     } catch {
       result.push(sp)
@@ -241,8 +245,9 @@ async function scrapeUrls(
     }
   })
 
-  // 5 concurrent scrapes — faster with the tighter 15-listing cap
-  return await withConcurrency(tasks, 5)
+  // 2 concurrent scrapes — prevents Vision AI 429 rate limit (50k tokens/min)
+  // Each Vision call ~5k tokens → 2 concurrent = 10k tokens/batch, well within limit
+  return await withConcurrency(tasks, 2)
 }
 
 // ── Main export ───────────────────────────────────────────────────
@@ -256,7 +261,7 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
     await engine.launch()
 
     // Step 2a: Drill into search pages to get individual listing URLs
-    const listings = await drillIntoSearchPages(webResults, engine)
+    const listings = await drillIntoSearchPages(webResults, engine, query)
     logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
 
     // Step 2b: Scrape individual listings for price + details

@@ -229,7 +229,8 @@ export class ScraperEngine {
   }
 
   // ── Extract individual listing URLs from a search/category page ──
-  async getListingUrls(url: string, maxLinks = 5): Promise<string[]> {
+  // queryKeywords: terms from the search query used to filter links to only relevant ones
+  async getListingUrls(url: string, maxLinks = 3, queryKeywords: string[] = []): Promise<string[]> {
     if (!this.browser) throw new Error("Engine not launched")
 
     const context = await this.browser.newContext({
@@ -251,34 +252,45 @@ export class ScraperEngine {
       const page = await context.newPage()
       await page.goto(url, { timeout: 15_000, waitUntil: "domcontentloaded" }).catch(() => {})
 
-      const links: string[] = await page.evaluate((pageUrl: string) => {
-        try {
-          const baseHost = new URL(pageUrl).hostname
-          const seen     = new Set<string>()
-          const out: string[] = []
+      const links: string[] = await page.evaluate(
+        ({ pageUrl, keywords }: { pageUrl: string; keywords: string[] }) => {
+          try {
+            const baseHost = new URL(pageUrl).hostname
+            const seen     = new Set<string>()
+            const out: string[] = []
 
-          for (const el of Array.from(document.querySelectorAll("a[href]"))) {
-            const href = (el as HTMLAnchorElement).href
-            if (!href || seen.has(href)) continue
-            try {
-              const u        = new URL(href)
-              const segments = u.pathname.split("/").filter(Boolean)
-              // Must be same domain, not the same page, and a "deep" path (individual listing)
-              if (u.hostname !== baseHost)    continue
-              if (href === pageUrl)           continue
-              if (segments.length < 3)        continue
-              // Skip pagination / filter / sort links
-              if (/[?&](page|sort|filter|order)=/i.test(u.search)) continue
-              if (/\/(page|search|category|tag)\//i.test(u.pathname)) continue
-              seen.add(href)
-              out.push(href)
-            } catch { /* ignore malformed URLs */ }
-          }
-          return out
-        } catch { return [] }
-      }, url)
+            for (const el of Array.from(document.querySelectorAll("a[href]"))) {
+              const href = (el as HTMLAnchorElement).href
+              if (!href || seen.has(href)) continue
+              try {
+                const u        = new URL(href)
+                const segments = u.pathname.split("/").filter(Boolean)
 
-      logger.info("[B2CSearch] getListingUrls", { url, found: links.length })
+                if (u.hostname !== baseHost) continue
+                if (href === pageUrl)        continue
+                if (segments.length < 3)     continue
+                if (/[?&](page|sort|filter|order)=/i.test(u.search)) continue
+
+                const pathLower = u.pathname.toLowerCase()
+
+                // Must match at least one query keyword in the URL path
+                // OR have a numeric listing ID (4+ consecutive digits) in the path
+                const hasKeyword  = keywords.length > 0 && keywords.some((k) => pathLower.includes(k))
+                const hasNumericId = /\/\d{4,}/.test(pathLower)
+
+                if (!hasKeyword && !hasNumericId) continue
+
+                seen.add(href)
+                out.push(href)
+              } catch { /* ignore malformed URLs */ }
+            }
+            return out
+          } catch { return [] }
+        },
+        { pageUrl: url, keywords: queryKeywords }
+      )
+
+      logger.info("[B2CSearch] getListingUrls", { url, found: links.length, keywords: queryKeywords })
       return links.slice(0, maxLinks)
 
     } catch (err: any) {
