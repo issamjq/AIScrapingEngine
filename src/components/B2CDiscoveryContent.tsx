@@ -3,7 +3,7 @@ import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink, Lock,
-  TrendingDown, AlertCircle,
+  TrendingDown, AlertCircle, Search, Globe, Eye, CheckCircle2,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -164,28 +164,57 @@ function PriceCard({
 }
 
 // ── Loading animation ─────────────────────────────────────────────
-const LOADING_MESSAGES = [
-  "Searching across UAE retailers…",
-  "Checking Amazon AE…",
-  "Scanning Noon listings…",
-  "Checking Dubizzle…",
-  "Looking at OLX…",
-  "Extracting prices with Vision AI…",
-  "Sorting results by best price…",
-  "Almost there…",
-]
+// Phase timings (seconds from start) — roughly match backend pipeline
+const PHASES = [
+  {
+    key:     "web-search",
+    icon:    Search,
+    label:   "Web Search",
+    detail:  "Searching marketplaces and classifieds globally…",
+    startAt: 0,
+    doneAt:  18,
+  },
+  {
+    key:     "scraping",
+    icon:    Globe,
+    label:   "Scraping Pages",
+    detail:  "Opening listing pages and extracting data…",
+    startAt: 18,
+    doneAt:  50,
+  },
+  {
+    key:     "vision",
+    icon:    Eye,
+    label:   "Vision AI",
+    detail:  "AI reading screenshots to extract prices…",
+    startAt: 50,
+    doneAt:  80,
+  },
+  {
+    key:     "sorting",
+    icon:    Sparkles,
+    label:   "Finalizing",
+    detail:  "Ranking results by best price…",
+    startAt: 80,
+    doneAt:  999,
+  },
+] as const
 
 function SearchingState({ query }: { query: string }) {
-  const [msgIdx, setMsgIdx] = useState(0)
+  const [elapsed, setElapsed] = useState(0)
 
   useEffect(() => {
-    const t = setInterval(() => setMsgIdx((i) => (i + 1) % LOADING_MESSAGES.length), 3500)
+    const start = Date.now()
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500)
     return () => clearInterval(t)
   }, [])
 
+  const activeIdx = PHASES.findLastIndex((p) => elapsed >= p.startAt)
+  const activePhase = PHASES[activeIdx] ?? PHASES[0]
+
   return (
-    <div className="flex flex-col items-center justify-center py-20 gap-6 text-center">
-      {/* Animated icon cluster */}
+    <div className="flex flex-col items-center justify-center py-16 gap-8 text-center">
+      {/* Animated icon */}
       <div className="relative">
         <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
           <Sparkles className="h-8 w-8 text-primary" />
@@ -193,35 +222,59 @@ function SearchingState({ query }: { query: string }) {
         <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary/20 animate-ping" />
       </div>
 
-      <div className="space-y-2">
-        <p className="text-base font-semibold">
-          Finding best prices for
-        </p>
-        <p className="text-lg font-bold text-primary line-clamp-2 max-w-sm">
-          "{query}"
-        </p>
+      <div className="space-y-1.5">
+        <p className="text-base font-semibold">Finding best prices for</p>
+        <p className="text-lg font-bold text-primary line-clamp-2 max-w-sm">"{query}"</p>
       </div>
 
-      {/* Status cycling */}
-      <div className="flex items-center gap-2 text-sm text-muted-foreground min-h-[1.5rem]">
-        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
-        <span className="transition-all">{LOADING_MESSAGES[msgIdx]}</span>
+      {/* Pipeline steps */}
+      <div className="w-full max-w-xs space-y-2">
+        {PHASES.map((phase, idx) => {
+          const Icon = phase.icon
+          const isDone    = elapsed >= phase.doneAt
+          const isActive  = idx === activeIdx
+          const isPending = idx > activeIdx
+
+          return (
+            <div
+              key={phase.key}
+              className={`flex items-center gap-3 rounded-xl px-4 py-2.5 border transition-all ${
+                isActive
+                  ? "border-primary/40 bg-primary/5 text-foreground"
+                  : isDone
+                  ? "border-emerald-500/20 bg-emerald-500/5 text-muted-foreground"
+                  : "border-border/40 bg-muted/20 text-muted-foreground/40"
+              }`}
+            >
+              {/* Icon */}
+              <div className="shrink-0">
+                {isDone ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : isActive ? (
+                  <Loader2 className="h-4 w-4 text-primary animate-spin" />
+                ) : (
+                  <Icon className="h-4 w-4" />
+                )}
+              </div>
+
+              {/* Label + detail */}
+              <div className="flex-1 text-left min-w-0">
+                <p className={`text-xs font-semibold ${isPending ? "opacity-40" : ""}`}>
+                  {phase.label}
+                </p>
+                {isActive && (
+                  <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                    {activePhase.detail}
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        })}
       </div>
 
-      {/* Pipeline badges */}
-      <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
-        {["Web Search", "Price Scraping", "Vision AI"].map((step) => (
-          <span
-            key={step}
-            className="text-xs font-medium px-3 py-1 rounded-full bg-muted text-muted-foreground border"
-          >
-            {step}
-          </span>
-        ))}
-      </div>
-
-      <p className="text-xs text-muted-foreground/60 mt-1">
-        Up to 90 seconds — running full AI pipeline
+      <p className="text-xs text-muted-foreground/50">
+        This takes up to 90 seconds — running the full AI pipeline
       </p>
     </div>
   )

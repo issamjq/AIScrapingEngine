@@ -66,14 +66,47 @@ async function b2cWebSearch(
       .map((b: any) => b.text as string)
       .join("\n")
 
-    const match = text.match(/\[[\s\S]*\]/)
-    if (!match) {
-      logger.warn("[B2CSearch] No JSON in web search response", { snippet: text.slice(0, 200) })
+    // Extract JSON — handle plain array, code-block array, or wrapped object
+    let parsed: any[] = []
+    try {
+      // 1) Try code-fenced block: ```json [...] ```
+      const fenced = text.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/)
+      if (fenced) {
+        parsed = JSON.parse(fenced[1])
+      } else {
+        // 2) Try bare array anywhere in text
+        const arrMatch = text.match(/\[[\s\S]*\]/)
+        if (arrMatch) {
+          parsed = JSON.parse(arrMatch[0])
+        } else {
+          // 3) Try JSON object with a known wrapper key
+          const objMatch = text.match(/\{[\s\S]*\}/)
+          if (objMatch) {
+            const obj = JSON.parse(objMatch[0])
+            for (const key of ["results", "listings", "items", "products", "data"]) {
+              if (Array.isArray(obj[key])) { parsed = obj[key]; break }
+            }
+          }
+        }
+      }
+    } catch (parseErr: any) {
+      logger.warn("[B2CSearch] JSON parse error", { error: parseErr.message, snippet: text.slice(0, 300) })
       return []
     }
-    const parsed: any[] = JSON.parse(match[0])
-    const valid = parsed.filter((r) => r.retailer && r.url?.startsWith("http") && r.title)
-    logger.info("[B2CSearch] Web search found", { count: valid.length })
+
+    if (parsed.length === 0) {
+      logger.warn("[B2CSearch] No JSON in web search response", { snippet: text.slice(0, 300) })
+      return []
+    }
+
+    // Normalize URLs — add https:// if scheme is missing
+    const normalized = parsed.map((r: any) => ({
+      ...r,
+      url: r.url && !r.url.startsWith("http") ? `https://${r.url.replace(/^\/\//, "")}` : r.url,
+    }))
+
+    const valid = normalized.filter((r: any) => r.retailer && r.url?.startsWith("http") && r.title)
+    logger.info("[B2CSearch] Web search found", { total: parsed.length, valid: valid.length })
     return valid
   } catch (err: any) {
     if (err.name === "AbortError") {
