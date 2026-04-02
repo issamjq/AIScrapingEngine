@@ -132,11 +132,13 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
     const subscription   = subscriptionMap[planKey]
     const effectiveTrial = subscription === "trial" ? trialEndsAt(role) : null
 
+    const billingRenewsAt = subscription === "paid" ? (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d })() : null
+
     const { rows } = await query(
-      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at, firebase_uid, signup_ip)
-       VALUES ($1, $2, $3, true, $4, $5, $6, $7)
+      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at, billing_renews_at, firebase_uid, signup_ip)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8)
        RETURNING *`,
-      [email.toLowerCase().trim(), name || null, role, subscription, effectiveTrial, uid || null, clientIp]
+      [email.toLowerCase().trim(), name || null, role, subscription, effectiveTrial, billingRenewsAt, uid || null, clientIp]
     )
 
     // Seed the 8 default UAE stores for this new user

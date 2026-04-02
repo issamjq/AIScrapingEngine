@@ -309,8 +309,9 @@ function PrivacyTab({ role }: { role: string }) {
 // ── Billing ───────────────────────────────────────────────────────
 function BillingTab({ role: _role, onNavigate }: { role: string; onNavigate?: (page: string) => void }) {
   const { user } = useAuth()
-  const [subscription, setSubscription] = useState<string | null>(null)
-  const [trialEndsAt,  setTrialEndsAt]  = useState<string | null>(null)
+  const [subscription,    setSubscription]    = useState<string | null>(null)
+  const [trialEndsAt,     setTrialEndsAt]     = useState<string | null>(null)
+  const [billingRenewsAt, setBillingRenewsAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -322,6 +323,7 @@ function BillingTab({ role: _role, onNavigate }: { role: string; onNavigate?: (p
           if (data.success) {
             setSubscription(data.data?.subscription || "free")
             setTrialEndsAt(data.data?.trial_ends_at || null)
+            setBillingRenewsAt(data.data?.billing_renews_at || null)
           }
         })
         .finally(() => setLoading(false))
@@ -352,7 +354,12 @@ function BillingTab({ role: _role, onNavigate }: { role: string; onNavigate?: (p
         : "Trial — no expiry set"
     }
     if (subscription === "free") return "No expiry — free forever"
-    return "Monthly renewal — billing date coming soon"
+    if (subscription === "paid" || subscription === "pro") {
+      return billingRenewsAt
+        ? `Renews ${formatDateTime(billingRenewsAt)}`
+        : "Monthly renewal — billing date coming soon"
+    }
+    return "—"
   }
 
   const planLabel = PLAN_LABELS[subscription ?? "free"] ?? "Free"
