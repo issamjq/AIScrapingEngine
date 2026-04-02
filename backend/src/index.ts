@@ -30,8 +30,16 @@ app.set("trust proxy", 1)
 
 // Middleware
 app.use(helmet())
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost:5173",
+  ...(process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? "").split(",").map(o => o.trim()).filter(Boolean),
+]
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ?? process.env.FRONTEND_URL ?? "http://localhost:3000",
+  origin: (origin, cb) => {
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true)
+    cb(new Error(`CORS: ${origin} not allowed`))
+  },
   credentials: true,
 }))
 app.use(morgan("dev"))
