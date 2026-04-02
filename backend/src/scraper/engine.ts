@@ -228,6 +228,67 @@ export class ScraperEngine {
     }
   }
 
+  // ── Extract individual listing URLs from a search/category page ──
+  async getListingUrls(url: string, maxLinks = 5): Promise<string[]> {
+    if (!this.browser) throw new Error("Engine not launched")
+
+    const context = await this.browser.newContext({
+      userAgent:  this._randomUserAgent(),
+      locale:     "en-AE",
+      timezoneId: "Asia/Dubai",
+      viewport:   { width: 1366, height: 768 },
+    })
+
+    try {
+      // Block heavy resources — we only need the DOM
+      await context.route("**/*", (route: any) => {
+        if (["image", "font", "media", "stylesheet"].includes(route.request().resourceType()))
+          route.abort()
+        else
+          route.continue()
+      })
+
+      const page = await context.newPage()
+      await page.goto(url, { timeout: 15_000, waitUntil: "domcontentloaded" }).catch(() => {})
+
+      const links: string[] = await page.evaluate((pageUrl: string) => {
+        try {
+          const baseHost = new URL(pageUrl).hostname
+          const seen     = new Set<string>()
+          const out: string[] = []
+
+          for (const el of Array.from(document.querySelectorAll("a[href]"))) {
+            const href = (el as HTMLAnchorElement).href
+            if (!href || seen.has(href)) continue
+            try {
+              const u        = new URL(href)
+              const segments = u.pathname.split("/").filter(Boolean)
+              // Must be same domain, not the same page, and a "deep" path (individual listing)
+              if (u.hostname !== baseHost)    continue
+              if (href === pageUrl)           continue
+              if (segments.length < 3)        continue
+              // Skip pagination / filter / sort links
+              if (/[?&](page|sort|filter|order)=/i.test(u.search)) continue
+              if (/\/(page|search|category|tag)\//i.test(u.pathname)) continue
+              seen.add(href)
+              out.push(href)
+            } catch { /* ignore malformed URLs */ }
+          }
+          return out
+        } catch { return [] }
+      }, url)
+
+      logger.info("[B2CSearch] getListingUrls", { url, found: links.length })
+      return links.slice(0, maxLinks)
+
+    } catch (err: any) {
+      logger.warn("[B2CSearch] getListingUrls failed", { url, error: err.message })
+      return []
+    } finally {
+      await context.close().catch(() => {})
+    }
+  }
+
   async _extractFirst(page: any, selectors: string[]): Promise<string | null> {
     for (const selector of selectors) {
       try {

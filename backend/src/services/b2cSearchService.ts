@@ -141,90 +141,121 @@ async function withConcurrency<T>(
   return results
 }
 
-// ── Step 2: Scrape each URL for price ─────────────────────────────
+// ── Step 2a: Drill into search/category pages → individual listing URLs ──
+async function drillIntoSearchPages(
+  searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
+  engine:      ScraperEngine
+): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
+  const result: typeof searchPages = []
+
+  // Drill into the first 3 search pages (enough for good coverage without excessive requests)
+  for (const sp of searchPages.slice(0, 3)) {
+    try {
+      const links = await engine.getListingUrls(sp.url, 5)
+      if (links.length > 0) {
+        for (const url of links) {
+          result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
+        }
+      } else {
+        result.push(sp)   // no individual links found — keep the search page
+      }
+    } catch {
+      result.push(sp)
+    }
+  }
+
+  // Remaining search pages appended as-is (breadth)
+  result.push(...searchPages.slice(3))
+  return result
+}
+
+// ── Step 2b: Scrape each URL for price ────────────────────────────
 async function scrapeUrls(
   items:  Array<{ retailer: string; url: string; title: string; condition: string }>,
-  apiKey: string
+  apiKey: string,
+  engine: ScraperEngine
 ): Promise<B2CResult[]> {
-  const engine = new ScraperEngine()
-  try {
-    await engine.launch()
-
-    const tasks = items.map((item) => async (): Promise<B2CResult> => {
-      try {
-        const result = await engine.scrape(item.url, {}, {
-          timeout:         20_000,
-          blockResources:  ["font", "media"],   // keep images so Vision AI can see the page
-        })
-        return {
-          retailer:      item.retailer,
-          url:           item.url,
-          title:         result.title || item.title,
-          condition:     item.condition || "Unknown",
-          price:         result.price,
-          originalPrice: result.originalPrice,
-          currency:      result.currency || "AED",
-          availability:  result.availability || "unknown",
-          imageUrl:      result.imageUrl,
-          priceSource:   result.price !== null ? "scraped" : "not_found",
-        }
-      } catch (err: any) {
-        logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
-        return {
-          retailer:      item.retailer,
-          url:           item.url,
-          title:         item.title,
-          condition:     item.condition || "Unknown",
-          price:         null,
-          originalPrice: null,
-          currency:      "AED",
-          availability:  "unknown",
-          imageUrl:      null,
-          priceSource:   "not_found",
-        }
+  const tasks = items.map((item) => async (): Promise<B2CResult> => {
+    try {
+      const result = await engine.scrape(item.url, {}, {
+        timeout:        20_000,
+        blockResources: ["font", "media"],   // keep images for Vision AI
+      })
+      return {
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         result.title || item.title,
+        condition:     item.condition || "Unknown",
+        price:         result.price,
+        originalPrice: result.originalPrice,
+        currency:      result.currency || "AED",
+        availability:  result.availability || "unknown",
+        imageUrl:      result.imageUrl,
+        priceSource:   result.price !== null ? "scraped" : "not_found",
       }
-    })
+    } catch (err: any) {
+      logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
+      return {
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         item.title,
+        condition:     item.condition || "Unknown",
+        price:         null,
+        originalPrice: null,
+        currency:      "AED",
+        availability:  "unknown",
+        imageUrl:      null,
+        priceSource:   "not_found",
+      }
+    }
+  })
 
-    // 3 concurrent scrapes — Vision AI fallback is already built into engine.scrape()
-    return await withConcurrency(tasks, 3)
-  } finally {
-    await engine.close().catch(() => {})
-  }
+  // 3 concurrent scrapes
+  return await withConcurrency(tasks, 3)
 }
 
 // ── Main export ───────────────────────────────────────────────────
 export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
+  // Step 1: AI web search — finds search/category page URLs
   const webResults = await b2cWebSearch(query, apiKey, countryHint)
-
-  // Always return something — even if web search found listings but scraping fails,
-  // show the listings with "visit listing" so the user isn't left with 0 results.
   if (webResults.length === 0) return []
 
-  let scraped: B2CResult[]
+  const engine = new ScraperEngine()
   try {
-    scraped = await scrapeUrls(webResults, apiKey)
-  } catch (err: any) {
-    logger.warn("[B2CSearch] Scrape step failed entirely, returning web-only results", { error: err.message })
-    // Scraping failed completely — return web search results without prices
-    scraped = webResults.map((item) => ({
-      retailer:      item.retailer,
-      url:           item.url,
-      title:         item.title,
-      condition:     item.condition || "Unknown",
-      price:         null,
-      originalPrice: null,
-      currency:      "AED",
-      availability:  "unknown",
-      imageUrl:      null,
-      priceSource:   "not_found" as const,
-    }))
-  }
+    await engine.launch()
 
-  // Sort: price-found first (ascending), then no-price at the end
-  return scraped.sort((a, b) => {
-    if (a.price !== null && b.price !== null) return a.price - b.price
-    if (a.price !== null) return -1
-    if (b.price !== null) return 1
-    return 0
-  })
+    // Step 2a: Drill into search pages to get individual listing URLs
+    const listings = await drillIntoSearchPages(webResults, engine)
+    logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
+
+    // Step 2b: Scrape individual listings for price + details
+    let scraped: B2CResult[]
+    try {
+      scraped = await scrapeUrls(listings, apiKey, engine)
+    } catch (err: any) {
+      logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
+      scraped = listings.map((item) => ({
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         item.title,
+        condition:     item.condition || "Unknown",
+        price:         null,
+        originalPrice: null,
+        currency:      "AED",
+        availability:  "unknown",
+        imageUrl:      null,
+        priceSource:   "not_found" as const,
+      }))
+    }
+
+    // Sort: price-found first (ascending), then no-price at the end
+    return scraped.sort((a, b) => {
+      if (a.price !== null && b.price !== null) return a.price - b.price
+      if (a.price !== null) return -1
+      if (b.price !== null) return 1
+      return 0
+    })
+  } finally {
+    await engine.close().catch(() => {})
+  }
 }
