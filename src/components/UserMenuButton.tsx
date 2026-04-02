@@ -11,7 +11,7 @@ import {
 } from "./ui/dropdown-menu"
 import {
   Settings, Globe, HelpCircle, Sparkles,
-  Info, LogOut, ChevronUp, Wallet,
+  Info, LogOut, ChevronUp,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -41,6 +41,7 @@ export function UserMenuButton({ onNavigate }: Props) {
   const [subscription, setSubscription] = useState<string>("free")
   const [role, setRole]                 = useState<string>("b2c")
   const [balance, setBalance]           = useState<number | null>(null)
+  const [totalAdded, setTotalAdded]     = useState<number>(0)
 
   useEffect(() => {
     if (!user) return
@@ -59,6 +60,7 @@ export function UserMenuButton({ onNavigate }: Props) {
         }
         if (!cancelled && wallet.success && wallet.data?.wallet) {
           setBalance(wallet.data.wallet.balance)
+          setTotalAdded(wallet.data.wallet.total_added || 0)
         }
       } catch { /* silent */ }
     }
@@ -105,18 +107,39 @@ export function UserMenuButton({ onNavigate }: Props) {
         </DropdownMenuLabel>
 
         {/* Wallet balance */}
-        {!isUnlimited && balance !== null && (
-          <>
-            <DropdownMenuSeparator />
-            <div className="flex items-center gap-2.5 px-3 py-2">
-              <Wallet className="h-4 w-4 text-primary shrink-0" />
-              <div>
-                <p className="text-xs font-semibold">{balance} credits remaining</p>
-                <p className="text-[10px] text-muted-foreground">Top up coming soon</p>
+        {!isUnlimited && balance !== null && (() => {
+          const pct     = totalAdded > 0 ? Math.round((balance / totalAdded) * 100) : 0
+          const r       = 16
+          const circ    = 2 * Math.PI * r
+          const offset  = circ * (1 - pct / 100)
+          return (
+            <>
+              <DropdownMenuSeparator />
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                {/* Circular progress ring */}
+                <div className="relative shrink-0" style={{ width: 40, height: 40 }}>
+                  <svg width="40" height="40" style={{ display: "block", transform: "rotate(-90deg)" }}>
+                    <circle cx="20" cy="20" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2.5" />
+                    <circle
+                      cx="20" cy="20" r={r} fill="none"
+                      stroke="#EAB308"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeDasharray={circ}
+                      strokeDashoffset={offset}
+                      style={{ transition: "stroke-dashoffset 0.5s ease" }}
+                    />
+                  </svg>
+                  <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }} className="text-[9px] font-bold text-yellow-500 leading-none">{pct}%</span>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold">{balance} credits remaining</p>
+                  <p className="text-[10px] text-muted-foreground">Top up coming soon</p>
+                </div>
               </div>
-            </div>
-          </>
-        )}
+            </>
+          )
+        })()}
 
         <DropdownMenuSeparator />
 

@@ -4,7 +4,6 @@ import {
   Home,
   Compass,
   TrendingUp,
-  Link,
   Package,
   Building2,
   ChevronDown,
@@ -45,7 +44,6 @@ const rspSections = [
     id: "rsp-monitoring",
     items: [
       { title: "Price Activity",   icon: TrendingUp, id: "price-board" },
-      { title: "Tracked Listings", icon: Link,       id: "tracked-urls" },
     ],
   },
   {
