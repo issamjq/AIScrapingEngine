@@ -37,19 +37,23 @@ async function b2cWebSearch(
     `• Any product → also check local classified sites: Dubizzle, OLX, Melltoo, Facebook Marketplace`
 
   const prompt =
-    `You are an expert price discovery assistant — like a smart shopping agent.\n` +
-    `A user wants to find: "${query}"\n\n` +
+    `You are a price discovery API. Your output must ALWAYS be a raw JSON array — never plain text.\n\n` +
+    `Search for: "${query}"\n` +
     `${geoLine}\n\n` +
     `${siteHints}\n\n` +
-    `Instructions:\n` +
-    `1. Search the web right now for real, active listings of this exact item.\n` +
-    `2. Include both new AND used/second-hand listings.\n` +
-    `3. For classifieds (Dubizzle, OLX, etc.) the search results page URL is acceptable — include it.\n` +
-    `4. Aim for 10–15 diverse listings from different sellers/platforms.\n` +
-    `5. For each result determine the condition from the title or listing text.\n\n` +
-    `Return ONLY a valid JSON array — no explanation, no markdown, no extra text:\n` +
-    `[{"retailer":"Dubizzle","url":"https://www.dubizzle.com/...","title":"2010 Infiniti G37 S Coupe","condition":"Used - Good"}]\n\n` +
-    `condition must be one of exactly: "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"`
+    `Rules:\n` +
+    `1. Use web search now to find pages about this item.\n` +
+    `2. Include BOTH new AND used/second-hand listings.\n` +
+    `3. Specific listing URLs are preferred, but search/category page URLs are ALSO acceptable.\n` +
+    `4. If you can only find category pages or general search pages — include them. They are valid.\n` +
+    `5. Aim for 10–15 results from different platforms.\n\n` +
+    `CRITICAL OUTPUT RULES:\n` +
+    `- Output ONLY the JSON array. Zero other text.\n` +
+    `- NEVER write "I was unable to find", "I apologize", or any explanation.\n` +
+    `- NEVER return an empty response. If you found any relevant page at all, include it.\n` +
+    `- If specific listings are unavailable, use the search results page URL for that platform.\n\n` +
+    `JSON format (this is your entire response — nothing before, nothing after):\n` +
+    `[{"retailer":"YallaMotor","url":"https://uae.yallamotor.com/used-cars/infiniti/g37","title":"Infiniti G37 2010 for sale UAE","condition":"Unknown"}]`
 
   logger.info("[B2CSearch] Web search start", { query, countryHint })
 
@@ -95,8 +99,22 @@ async function b2cWebSearch(
     }
 
     if (parsed.length === 0) {
-      logger.warn("[B2CSearch] No JSON array found in response", { snippet: text.slice(0, 400) })
-      return []
+      logger.warn("[B2CSearch] No JSON array found — trying URL fallback", { snippet: text.slice(0, 400) })
+      // Haiku sometimes returns conversational text mentioning URLs — extract them directly
+      const urlMatches = text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []
+      const uniqueUrls = [...new Set(urlMatches)]
+        .filter((u) => !u.includes("anthropic.com") && u.length > 25)
+        .slice(0, 12)
+      if (uniqueUrls.length > 0) {
+        parsed = uniqueUrls.map((url) => {
+          const host = (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })()
+          const retailer = host.split(".")[0].charAt(0).toUpperCase() + host.split(".")[0].slice(1)
+          return { retailer, url, title: query, condition: "Unknown" }
+        })
+        logger.info("[B2CSearch] URL fallback extracted", { count: parsed.length })
+      } else {
+        return []
+      }
     }
 
     // Normalize URLs — add https:// if scheme is missing
