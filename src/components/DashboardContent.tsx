@@ -5,18 +5,16 @@ import { Button } from "./ui/button"
 import { Progress } from "./ui/progress"
 import { Calendar } from "./ui/calendar"
 import {
-  BarChart3,
-  Users,
-  Zap,
-  DollarSign,
-  Globe,
-  Plus,
-  CheckCircle,
-  XCircle,
-  Clock,
+  BarChart3, Users, Zap, DollarSign, Globe, Plus,
+  CheckCircle, XCircle, Clock,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { PageSkeleton } from "./PageSkeleton"
+import {
+  AreaChart, Area,
+  BarChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+} from "recharts"
 
 const platformStatuses = [
   { name: "Omnisend", status: "connected", icon: CheckCircle, color: "text-green-500" },
@@ -26,11 +24,29 @@ const platformStatuses = [
 ]
 
 const activityFeed = [
-  { action: "Content generated for Instagram post",    platform: "Meta",     time: "2 min ago",  status: "success" },
+  { action: "Content generated for Instagram post",     platform: "Meta",     time: "2 min ago",  status: "success" },
   { action: "Email campaign sent to 1,200 subscribers", platform: "Omnisend", time: "1 hr ago",   status: "success" },
   { action: "TikTok video script created",              platform: "TikTok",   time: "3 hrs ago",  status: "pending" },
   { action: "Product sync failed",                      platform: "Shopify",  time: "4 hrs ago",  status: "error"   },
   { action: "YouTube thumbnail generated",              platform: "YouTube",  time: "6 hrs ago",  status: "success" },
+]
+
+const videoPerformanceData = [
+  { date: "Jan 1", views: 48000 },
+  { date: "Jan 2", views: 52000 },
+  { date: "Jan 3", views: 38000 },
+  { date: "Jan 4", views: 71000 },
+  { date: "Jan 5", views: 74000 },
+  { date: "Jan 6", views: 51000 },
+  { date: "Jan 7", views: 91000 },
+]
+
+const contentTypeData = [
+  { type: "Dance/Trend",   score: 95 },
+  { type: "Educational",   score: 78 },
+  { type: "Behind Scenes", score: 82 },
+  { type: "Product Demo",  score: 68 },
+  { type: "Q&A",           score: 71 },
 ]
 
 const calendarData = new Date()
@@ -39,7 +55,6 @@ export function DashboardContent() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
 
-  // Simulate initial data fetch
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 900)
     return () => clearTimeout(t)
@@ -75,10 +90,10 @@ export function DashboardContent() {
       {/* Metrics */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {[
-          { title: "Credits Left",      value: "2,500",  sub: "657 used this month",    icon: Zap },
-          { title: "Active Campaigns",  value: "24",     sub: "+4 from last week",       icon: BarChart3 },
-          { title: "Ad Spend",          value: "$12,483", sub: "+8.2% from last month", icon: DollarSign },
-          { title: "Total Reach",       value: "145.2K", sub: "+12.5% from last month", icon: Users },
+          { title: "Credits Left",      value: "2,500",   sub: "657 used this month",    icon: Zap        },
+          { title: "Active Campaigns",  value: "24",      sub: "+4 from last week",       icon: BarChart3  },
+          { title: "Ad Spend",          value: "$12,483", sub: "+8.2% from last month",   icon: DollarSign },
+          { title: "Total Reach",       value: "145.2K",  sub: "+12.5% from last month",  icon: Users      },
         ].map(({ title, value, sub, icon: Icon }) => (
           <Card key={title}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
@@ -107,19 +122,19 @@ export function DashboardContent() {
               selected={calendarData}
               className="rounded-md border-0 w-full"
               classNames={{
-                months: "flex w-full flex-col flex-1",
-                month: "space-y-4 w-full flex-1",
-                table: "w-full border-collapse",
-                head_row: "",
+                months:    "flex w-full flex-col flex-1",
+                month:     "space-y-4 w-full flex-1",
+                table:     "w-full border-collapse",
+                head_row:  "",
                 head_cell: "text-muted-foreground rounded-md w-8 font-normal text-[0.8rem]",
-                row: "flex w-full mt-2",
-                cell: "relative h-8 w-8 text-center text-sm p-0 [&:has([aria-selected])]:bg-accent rounded-md",
-                day: "h-8 w-8 p-0 font-normal hover:bg-accent rounded-md text-xs",
+                row:       "flex w-full mt-2",
+                cell:      "relative h-8 w-8 text-center text-sm p-0 [&:has([aria-selected])]:bg-accent rounded-md",
+                day:       "h-8 w-8 p-0 font-normal hover:bg-accent rounded-md text-xs",
               }}
               components={{
                 DayContent: ({ date }) => {
-                  const hasActivity = (date.getDate() % 3 === 0)
-                  const isHigh = date.getDate() % 5 === 0
+                  const hasActivity = date.getDate() % 3 === 0
+                  const isHigh      = date.getDate() % 5 === 0
                   return (
                     <div className="relative w-full h-full flex items-center justify-center">
                       <span>{date.getDate()}</span>
@@ -212,6 +227,55 @@ export function DashboardContent() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Charts row */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Video Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Video Performance</CardTitle>
+            <CardDescription className="text-xs">Last 7 days of video metrics</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={videoPerformanceData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="gradViews" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#a78bfa" stopOpacity={0.5} />
+                    <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} tickFormatter={v => `${v / 1000}k`} />
+                <Tooltip formatter={(v: number) => [`${v.toLocaleString()} views`, ""]} labelStyle={{ fontSize: 11 }} />
+                <Area type="monotone" dataKey="views" stroke="#7c3aed" strokeWidth={2} fill="url(#gradViews)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Content Type Performance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Content Type Performance</CardTitle>
+            <CardDescription className="text-xs">Engagement score by content category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={contentTypeData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={true} vertical={false} />
+                <XAxis dataKey="type" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <Tooltip formatter={(v: number) => [`${v}`, "Score"]} labelStyle={{ fontSize: 11 }} />
+                <Bar dataKey="score" fill="#818cf8" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+      </div>
     </div>
   )
 }
