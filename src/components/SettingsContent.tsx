@@ -8,18 +8,18 @@ import { Badge } from "./ui/badge"
 import {
   Settings, User, Shield, CreditCard, BarChart3, Zap,
 } from "lucide-react"
+// Zap kept for UsageTab unlimited icon
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
-type Tab = "general" | "account" | "privacy" | "billing" | "usage" | "capabilities"
+type Tab = "general" | "account" | "privacy" | "billing" | "usage"
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "general",      label: "General",      icon: Settings   },
-  { id: "account",      label: "Account",      icon: User       },
-  { id: "privacy",      label: "Privacy",      icon: Shield     },
-  { id: "billing",      label: "Billing",      icon: CreditCard },
-  { id: "usage",        label: "Usage",        icon: BarChart3  },
-  { id: "capabilities", label: "Capabilities", icon: Zap        },
+  { id: "general",  label: "General",  icon: Settings   },
+  { id: "account",  label: "Account",  icon: User       },
+  { id: "privacy",  label: "Privacy",  icon: Shield     },
+  { id: "billing",  label: "Billing",  icon: CreditCard },
+  { id: "usage",    label: "Usage",    icon: BarChart3  },
 ]
 
 function Row({ label, desc, children }: { label: string; desc?: string; children: React.ReactNode }) {
@@ -522,34 +522,6 @@ function UsageTab({ role }: { role: string }) {
   )
 }
 
-// ── Capabilities ──────────────────────────────────────────────────
-function CapabilitiesTab() {
-  return (
-    <>
-      <Section title="AI Features">
-        <Row label="AI Market Discovery" desc="Use Claude web search to find product URLs">
-          <Switch defaultChecked />
-        </Row>
-        <Row label="Auto-match results" desc="Automatically match discovered URLs to your catalog">
-          <Switch defaultChecked />
-        </Row>
-        <Row label="Vision price extraction" desc="Use AI to extract prices from screenshots">
-          <Switch defaultChecked />
-        </Row>
-      </Section>
-
-      <Section title="Search">
-        <Row label="Blur free-plan results" desc="Show blurred results beyond your plan limit">
-          <Switch defaultChecked />
-        </Row>
-        <Row label="Save search history" desc="Remember recent queries for quick access">
-          <Switch />
-        </Row>
-      </Section>
-    </>
-  )
-}
-
 // ── Main ──────────────────────────────────────────────────────────
 export function SettingsContent({ role = "b2b", onNavigate }: { role?: string; onNavigate?: (page: string) => void }) {
   const [active, setActive] = useState<Tab>("general")
@@ -561,7 +533,6 @@ export function SettingsContent({ role = "b2b", onNavigate }: { role?: string; o
       case "privacy":      return <PrivacyTab role={role} />
       case "billing":      return <BillingTab role={role} onNavigate={onNavigate} />
       case "usage":        return <UsageTab role={role} />
-      case "capabilities": return <CapabilitiesTab />
     }
   }
 

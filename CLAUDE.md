@@ -9,7 +9,58 @@
 
 A full-stack AI-powered price scraping and market discovery platform for UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys). It tracks product prices across retailers, uses Claude Vision AI to extract prices from screenshots, and uses Claude web search to auto-discover product listing URLs.
 
-**Current version:** v1.0.44
+**Current version:** v1.0.55
+
+---
+
+## B2B vs B2C — Role Architecture
+
+The project is fully role-aware. Every page component receives a `role` prop (`"b2b"`, `"b2c"`, `"dev"`). All future changes must be scoped: B2B-only in `{role !== "b2c" && ...}`, B2C-only in `{role === "b2c" && ...}`.
+
+### Role rules
+| Feature | B2B | B2C | Dev |
+|---|---|---|---|
+| Dashboard | ✅ | ✅ | ✅ |
+| Market Discovery | ✅ (see below) | ✅ (see below) | ✅ |
+| Price Activity | ✅ | ✅ | ✅ |
+| Products | ✅ | ❌ hidden + guarded | ✅ |
+| Stores | ✅ | ❌ hidden + guarded | ✅ |
+| Credits | deducted | deducted | bypassed (unlimited) |
+
+### Dev account
+- `karaaliissa@gmail.com` → `role = "dev"`, `subscription = "paid"`, unlimited credits
+- Dev bypasses all credit deductions (backend `UNLIMITED_ROLES = ["dev", "owner"]`)
+- Dev sees all pages
+
+---
+
+## Market Discovery — B2B vs B2C Vision (NOT YET BUILT — COMING NEXT)
+
+This is the next major area of work. The discovery experience will be completely different per role.
+
+### B2C Discovery (like Google/ChatGPT)
+- User types a natural language query: e.g. "Infiniti G37 S Coupe 2010 — best 5 prices with best conditions"
+- AI searches the web (Claude web_search tool) and returns the **best prices from best sources**
+- No catalog required — purely AI-driven price hunting
+- Results shown as: product name, price, source, condition, link
+- Each search costs 1 credit
+- No URL tracking, no catalog matching — just AI answers
+
+### B2B Discovery (catalog-based + AI web search)
+- **Mode 1 — Catalog-based:** User picks from their own stores + products (already uploaded). AI finds the product URL on those specific stores.
+- **Mode 2 — AI web search:** Same as B2C, but user can also match results back to their catalog and track URLs.
+- User chooses which mode per search
+- Each search costs 1 credit regardless of mode
+
+### Credit cost per capability (planned, user chooses at discovery time)
+- AI web search: 1 credit
+- Auto-match to catalog: +1 credit (optional, B2B only)
+- Vision price extraction: +1 credit (optional)
+- User sees the credit cost before confirming the search
+
+### What NOT to do
+- Do NOT put capability toggles in Settings — they will be inline options in the Discovery page itself
+- Capabilities tab has been removed from Settings for this reason
 
 ---
 
@@ -62,6 +113,7 @@ PORT=8080
 2. **Never commit `.github/workflows/`** — the PAT token lacks `workflow` scope. The workflow file exists locally but must never be staged/pushed.
 3. **DB is raw SQL** — no Prisma, no ORM. Use `query()` from `backend/src/db/index.ts`.
 4. **Auth is Firebase** — backend verifies Firebase ID tokens via `requireAuth` middleware. Frontend gets token via `user.getIdToken()`.
+5. **Role prop** — every page component receives `role?: string`. Use `role !== "b2c"` for B2B/dev, `role === "b2c"` for B2C-only.
 
 ---
 
@@ -88,7 +140,8 @@ PORT=8080
 | `backend/src/services/walletService.ts` | `getWallet()`, `createWallet()`, `deductCredit()`, `addCredits()`, `getTransactions()`. |
 | `backend/src/routes/plans.ts` | `GET /api/plans` — returns all active plans from DB. |
 | `backend/src/routes/wallet.ts` | `GET /api/wallet` (balance + transactions), `POST /api/wallet/add` (manual top-up). |
-| `backend/src/routes/allowedUsers.ts` | `GET /me` (returns NEW_USER for unknowns), `POST /signup` (creates trial user, copies stores, checks UID+IP dupe), CRUD for management roles. |
+| `backend/src/routes/allowedUsers.ts` | `GET /me`, `PUT /me` (update name/company_name), `DELETE /me` (delete account + all data), `POST /signup`, CRUD for management roles. `billing_renews_at` set on pro signup. |
+| `backend/src/routes/export.ts` | `GET /api/export?format=json\|csv\|pdf` — downloads user data. B2C gets tracked_urls only; B2B gets products+stores+tracked_urls. Uses pdfkit for PDF. |
 | `backend/tsconfig.json` | Must include `"lib": ["ES2020", "DOM"]` — DOM needed for Playwright page.evaluate() |
 
 ---
@@ -97,25 +150,37 @@ PORT=8080
 
 | File | Purpose |
 |------|---------|
-| `src/App.tsx` | State machine: loading → onboarding → ready → denied. Renders OnboardingContent for new users. |
+| `src/App.tsx` | State machine: loading → onboarding → ready → denied. Passes `role` prop to all page components. |
+| `src/context/ThemeContext.tsx` | Theme provider (light/dark/system). Applies `.dark` class to `<html>`. Persists to localStorage. |
 | `src/components/OnboardingContent.tsx` | Two-card B2B vs B2C picker shown to new users before dashboard access. POSTs to `/signup`. |
-| `src/components/DashboardLayout.tsx` | Sidebar: Dashboard, AI (Market Discovery), Monitoring (Price Activity, Tracked Listings), Catalog (Products, Stores), Social (Meta, TikTok). System items (Plans/Settings/Users) are in the user menu footer only. |
-| `src/components/TopNavigation.tsx` | Top bar — sidebar trigger + title only. Bell and avatar removed. |
-| `src/components/UserMenuButton.tsx` | Sidebar footer: avatar+initials, name, plan label. Dropdown: Settings, Upgrade plan, Log out, etc. |
-| `src/components/DiscoveringContent.tsx` | Market Discovery — 3-step wizard (Discover → Review → Track). Step 1: search input + collapsible marketplace multi-select dropdown. Step 2: results by retailer with blur for free users. Step 3: AI Match dialog. Usage counter is role-aware (b2c = credits/month, b2b = searches/week). |
-| `src/components/PlansModal.tsx` | Plans comparison modal (Trial/Free/Pro) — shown on limit hit. Stripe CTA = "Coming soon". |
-| `src/components/PlansContent.tsx` | Full pricing page — Free / Pro cards, current plan banner with usage bar, trial countdown. Full width (no max-width constraint). |
-| `src/components/PriceBoardContent.tsx` | Price activity table (mock data) |
-| `src/components/TrackedUrlsContent.tsx` | Tracked URLs — **real API data** from `/api/product-company-urls`. Add URL via right-side Sheet with product+store dropdowns. |
-| `src/components/CompaniesContent.tsx` | Stores — real API data, Add Store + **Edit Store** via right-side Sheet (name+URL→auto-slug), activate/deactivate toggle. External link fixed to always prepend `https://` if missing. B2C users cannot see this page. |
-| `src/components/OnboardingContent.tsx` | 2-step: (1) B2B vs B2C picker, (2) Plan picker — **fetches plans from `/api/plans`**, no hardcoded features. |
-| `src/components/PlansContent.tsx` | Full pricing page — **fetches plans from `/api/plans`**, shows live wallet balance from `/api/wallet`. |
-| `src/components/UserMenuButton.tsx` | Shows live credit balance from `/api/wallet` in sidebar footer + dropdown. |
-| `src/components/ProductsContent.tsx` | Products — real data, Add Product via right-side Sheet (Name/Brand/SKU/Barcode/RSP/Image), CSV/TSV import with brand filter dialog. |
-| `src/components/ui/sheet.tsx` | shadcn Sheet — right side, `w-[90%] sm:w-[33vw] sm:min-w-[380px]`, overlay has `backdrop-blur-sm`. Used for all add/edit forms. |
+| `src/components/DashboardLayout.tsx` | Sidebar: Dashboard, AI (Market Discovery), Monitoring (Price Activity), Catalog (Products, Stores — B2B only). Social section removed. |
+| `src/components/TopNavigation.tsx` | Top bar — sidebar trigger + title only. |
+| `src/components/UserMenuButton.tsx` | Sidebar footer: avatar+initials, name, plan label, golden credit ring. Dropdown: Settings, Upgrade plan, Log out. Fetches live balance from `/api/wallet`. |
+| `src/components/DiscoveringContent.tsx` | Market Discovery — 3-step wizard (Discover → Review → Track). **Major redesign coming** — B2B/B2C split modes. |
+| `src/components/PlansModal.tsx` | Plans comparison modal — shown on credit limit hit. Stripe CTA = "Coming soon". |
+| `src/components/PlansContent.tsx` | Full pricing page — fetches from `/api/plans`, shows live wallet balance. |
+| `src/components/PriceBoardContent.tsx` | Price activity table (mock data — real data coming) |
+| `src/components/TrackedUrlsContent.tsx` | Tracked URLs — real API data from `/api/product-company-urls`. |
+| `src/components/CompaniesContent.tsx` | Stores — real API data, Add/Edit Store via Sheet. B2C cannot access. |
+| `src/components/ProductsContent.tsx` | Products — real data, Add Product via Sheet, CSV/TSV import. B2C cannot access. |
+| `src/components/SettingsContent.tsx` | Settings — 5 tabs: General, Account, Privacy, Billing, Usage. Capabilities tab removed. Role-aware. |
+| `src/components/ui/sheet.tsx` | shadcn Sheet — right side, `w-[90%] sm:w-[33vw] sm:min-w-[380px]`, overlay has `backdrop-blur-sm`. |
 | `src/context/AuthContext.tsx` | Firebase auth context (`useAuth()`) |
 | `src/lib/firebase.ts` | Firebase client init |
 | `vite.config.ts` | Injects `__APP_VERSION__` from package.json at build time |
+
+---
+
+## Settings Tabs (current state)
+
+| Tab | Status |
+|-----|--------|
+| General | ✅ Real — theme switcher (light/dark/system), default currency (USD/AED) stored in localStorage |
+| Account | ✅ Real — edit display name (Firebase + backend), edit company name (B2B only), delete account with "DELETE MY ACCOUNT" confirm input |
+| Privacy | ✅ Real — analytics/personalisation toggles (localStorage), export data as JSON/CSV/PDF |
+| Billing | ✅ Real — live plan from DB, plan end date + time (trial_ends_at / billing_renews_at), "View plans" button |
+| Usage | ✅ Real — live credits from `/api/wallet`, transaction history table |
+| Capabilities | ❌ Removed — capability toggles will be inline options in Market Discovery page |
 
 ---
 
@@ -128,10 +193,11 @@ Key tables:
 - `price_snapshots` — scraped prices (price, original_price, currency, availability, scrape_status, checked_at)
 - `company_configs` — per-company scraper config (selectors, page_options)
 - `sync_runs` — scraping job history
-- `allowed_users` — whitelist + subscription info (role, subscription, trial_ends_at, **firebase_uid**, **signup_ip**)
-- `plans` — all plan definitions (key, name, price_usd, credits_b2b, credits_b2c, features_b2b JSONB, features_b2c JSONB, is_coming_soon, sort_order). Frontend never hardcodes plans.
-- `user_wallet` — one row per user (balance, total_added, total_used). All usage costs 1 credit.
+- `allowed_users` — whitelist + subscription info (role, subscription, trial_ends_at, **billing_renews_at**, **company_name**, **firebase_uid**, **signup_ip**)
+- `plans` — all plan definitions (key, name, price_usd_b2b, price_usd_b2c, credits_b2b, credits_b2c, features_b2b JSONB, features_b2c JSONB, is_coming_soon, sort_order)
+- `user_wallet` — one row per user (balance, total_added, total_used)
 - `wallet_transactions` — immutable log of every credit change (amount, balance_after, type, description)
+- `currency_rates` — USD→AED rate (seeded: 1 USD = 3.65 AED)
 
 **Multi-tenancy:** `user_email` column on `products` and `companies`. Global seed stores have `user_email IS NULL` — these are copied to each new user on signup via `copyGlobalStoresToUser()`. Slug uniqueness is per-user: `(slug, user_email)` unique index. SKU uniqueness: `(internal_sku, user_email)`.
 
@@ -144,8 +210,10 @@ Key tables:
 All routes are protected by `requireAuth` (Firebase Bearer token). All data routes are scoped to `req.email`.
 
 ```
-GET  /api/allowed-users/me       ← Access check; returns NEW_USER (403) for unknowns
-POST /api/allowed-users/signup   ← Self-serve signup: creates trial user, checks UID+IP, seeds stores
+GET    /api/allowed-users/me       ← Access check; returns NEW_USER (403) for unknowns
+PUT    /api/allowed-users/me       ← Update own name / company_name
+DELETE /api/allowed-users/me       ← Delete own account + all data (FK-safe cascade)
+POST   /api/allowed-users/signup   ← Self-serve signup: creates trial user, checks UID+IP, seeds stores
 
 POST /api/discovery/ai-search    ← Claude web search → find product URLs
 POST /api/discovery/ai-match     ← Claude matches discovered URLs to product catalog
@@ -154,20 +222,23 @@ POST /api/discovery/search       ← Playwright discovery on company search page
 POST /api/discovery/probe        ← Detect search URL pattern for a website
 
 GET  /api/companies              ← List user's stores (user_email scoped)
-POST /api/companies              ← Create store (stores user_email)
-GET  /api/products               ← List user's products (user_email scoped)
+POST /api/companies              ← Create store
+PUT  /api/companies/:id          ← Edit store
+GET  /api/products               ← List user's products
 POST /api/products               ← Create single product
-POST /api/products/import        ← Bulk CSV import (user_email scoped)
-GET  /api/product-company-urls   ← Tracked URLs (user_email scoped via JOIN on products)
-POST /api/product-company-urls   ← Add tracked URL (product_id + company_id + product_url)
+POST /api/products/import        ← Bulk CSV import
+GET  /api/product-company-urls   ← Tracked URLs
+POST /api/product-company-urls   ← Add tracked URL
 GET  /api/price-snapshots        ← Price history
 POST /api/scraper/scrape         ← Scrape a single URL
 POST /api/sync-runs              ← Trigger bulk sync
-GET  /api/stats                  ← Dashboard stats (user_email scoped)
+GET  /api/stats                  ← Dashboard stats
 GET  /api/allowed-users          ← User whitelist management (management roles only)
-GET  /api/plans                  ← All active plans from DB (auth required)
+GET  /api/plans                  ← All active plans from DB
 GET  /api/wallet                 ← Current user's balance + last 20 transactions
 POST /api/wallet/add             ← Manually add credits (dev/admin use)
+GET  /api/currency-rates         ← USD→AED conversion rate
+GET  /api/export?format=json|csv|pdf ← Download user data export
 ```
 
 ---
@@ -178,66 +249,43 @@ POST /api/wallet/add             ← Manually add credits (dev/admin use)
 - File: `backend/src/scraper/aiScraper.ts`
 - Takes a screenshot → sends to Claude → extracts price, title, availability, originalPrice
 
-### Claude Web Search (v1.0.5+)
+### Claude Web Search
 - File: `backend/src/scraper/aiWebSearch.ts`
 - Uses `claude-haiku-4-5-20251001` with `web_search_20250305` tool
 - Hard 30-second AbortController timeout
 - Endpoint: `POST /api/discovery/ai-search`
 
-### AI Auto-Matching (v1.0.9+)
+### AI Auto-Matching
 - Endpoint: `POST /api/discovery/ai-match`
 - Claude haiku matches discovered URLs to product catalog with confidence 0–1
 - ≥85% = pre-selected green, 60–84% = yellow unselected, <60% = no match
-- Inline catalog picker to manually assign/change product
-
-### Company Matching (`matchCompany()` in DiscoveringContent.tsx)
-- **Primary:** domain from result URL matched against company `base_url`
-- **Fallback:** keyword matching on name/slug/base_url
 
 ---
 
-## Credit / Wallet System (v1.0.44+)
+## Credit / Wallet System
 
-**All users (b2b + b2c) use credits.** No more searches/week vs credits/month split.
+**All users (b2b + b2c) use credits.** `dev`, `owner` → unlimited (bypass wallet).
 
-**Roles:** `dev`, `owner` → unlimited (bypass wallet). `b2b`, `b2c` → deduct 1 credit per search.
+| Plan       | B2B credits | B2C credits | Trial duration |
+|------------|-------------|-------------|----------------|
+| trial      | 20          | 30          | b2b=14d, b2c=7d |
+| free       | 10          | 15          | Forever         |
+| pro        | 50          | 150         | Monthly         |
+| enterprise | Unlimited   | Unlimited   | Coming soon     |
 
-| Plan       | B2B credits | B2C credits | Results visible          | Trial duration |
-|------------|-------------|-------------|--------------------------|----------------|
-| trial      | 20          | 30          | All — no blur            | b2b=14d, b2c=7d |
-| free       | 10          | 15          | 3 per retailer (blurred) | Forever         |
-| pro        | 50          | 150         | All — no blur            | Monthly         |
-| enterprise | Unlimited   | Unlimited   | All — no blur            | Coming soon     |
-
-- Plan definitions live in `plans` DB table — frontend fetches `/api/plans`, never hardcodes
-- Signup → creates `user_wallet` with trial credits seeded from `plans.credits_b2b/b2c`
-- Each search deducts 1 credit from `user_wallet.balance` (atomic SQL update)
-- All transactions logged in `wallet_transactions` (immutable audit log)
+- Each search deducts 1 credit (atomic SQL update)
 - Balance = 0 → 429 `USAGE_LIMIT_REACHED` → frontend shows `PlansModal`
-- Stripe top-up = **not yet built** — "Coming soon"
-- B2C users cannot see Products or Stores pages (sidebar hidden, route guarded in App.tsx)
+- Stripe top-up = **not yet built**
 
 ---
 
 ## Onboarding Flow
 
 1. New Google sign-in → `/api/allowed-users/me` returns `NEW_USER` (403)
-2. Frontend shows `OnboardingContent` — user picks B2B (business) or B2C (personal)
-3. `POST /api/allowed-users/signup` — checks firebase_uid dupe, IP dupe (30d), creates trial user
-4. `copyGlobalStoresToUser()` seeds 8 UAE retailers for this user
-5. `onComplete()` → app state transitions to `ready`
-
----
-
-## Market Discovery Flow (end-to-end)
-
-1. User types query + selects marketplaces in collapsible dropdown → `POST /api/discovery/ai-search`
-2. Claude web-searches → returns `[{retailer, url, title}]`
-3. Step 2 shows results grouped by retailer — user checks what to track
-4. `POST /api/discovery/ai-match` → Claude matches titles to catalog → confidence scores
-5. Step 3 dialog: ≥85% pre-selected (green), 60–84% yellow unselected, <60% = no match
-6. User confirms → `POST /api/discovery/confirm` per company → saves to `product_company_urls`
-7. On success → resets to Step 1
+2. Frontend shows `OnboardingContent` — user picks B2B or B2C, then picks plan (trial/free/pro)
+3. `POST /api/allowed-users/signup` — checks firebase_uid dupe, IP dupe (30d), creates user, sets billing_renews_at for pro
+4. `copyGlobalStoresToUser()` seeds 8 UAE retailers
+5. `onComplete()` → triggers role re-fetch → app transitions to `ready`
 
 ---
 
@@ -246,15 +294,17 @@ POST /api/wallet/add             ← Manually add credits (dev/admin use)
 - **Add/Edit forms:** Use `Sheet` (right-side panel, `33vw` width, `backdrop-blur-sm` overlay) — NOT centered Dialog
 - **Import dialogs:** Still use centered `Dialog` (brand filter for CSV import)
 - **Pages have no max-width constraint** — they fill the full content area
+- **Role-aware rendering:** `{role !== "b2c" && ...}` for B2B/dev content, `{role === "b2c" && ...}` for B2C-only
 
 ---
 
 ## Planned Features (not yet built)
 
-- **Stripe payment integration** — "Coming soon" buttons in PlansModal and PlansContent
-- **Real data in PriceBoardContent** — still uses mock data
+- **Market Discovery redesign** — B2B/B2C split modes (see "Market Discovery Vision" section above)
+- **Stripe payment integration** — "Coming soon" in PlansModal and PlansContent
+- **Real data in PriceBoardContent** — still mock data
 - **Edit product** — no edit form yet, only add + deactivate
-- **Edit store** — ✅ done (v1.0.39): Edit button on each card opens pre-filled Sheet, calls `PUT /api/companies/:id`
+- **B2C best-price search** — natural language query → AI returns best prices from web
 
 ---
 
