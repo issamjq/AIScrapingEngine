@@ -71,12 +71,12 @@ async function fetchWithRetry(
   })
 
   if (response.status === 429) {
-    if (attempt >= 3) {
+    if (attempt >= 2) {
       throw new Error("Rate limit reached — please wait a moment and try again.")
     }
-    // Respect Retry-After header if present, otherwise wait 30s
-    const retryAfter = parseInt(response.headers.get("retry-after") || "30", 10)
-    const waitMs     = Math.min(retryAfter * 1000, 60_000)
+    // Respect Retry-After header if present, cap at 15s to fail fast
+    const retryAfter = parseInt(response.headers.get("retry-after") || "15", 10)
+    const waitMs     = Math.min(retryAfter * 1000, 15_000)
     logger.warn(`[ClaudeClient] 429 rate limit — waiting ${waitMs / 1000}s before retry ${attempt + 1}`)
     await new Promise((r) => setTimeout(r, waitMs))
     return fetchWithRetry(apiKey, req, attempt + 1)

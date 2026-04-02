@@ -335,13 +335,18 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setResults([])
     setLastQuery(q)
 
+    const controller = new AbortController()
+    const timeoutId  = setTimeout(() => controller.abort(), 110_000)
+
     try {
       const token = await getToken()
       const res = await fetch(`${API}/api/discovery/b2c-search`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body:    JSON.stringify({ query: q }),
+        signal:  controller.signal,
       })
+      clearTimeout(timeoutId)
       const json = await res.json()
 
       if (!res.ok || !json.success) {
@@ -359,7 +364,12 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       setBalance((prev) => prev !== null ? Math.max(0, prev - 3) : null)
       setPhase("results")
     } catch (err: any) {
-      setSearchError(err.message || "Search failed")
+      clearTimeout(timeoutId)
+      if (err.name === "AbortError") {
+        setSearchError("Search timed out — the AI pipeline is taking too long. Please try again.")
+      } else {
+        setSearchError(err.message || "Search failed")
+      }
       setPhase("idle")
     }
   }
