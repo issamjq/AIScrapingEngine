@@ -1,11 +1,14 @@
 import { Router } from "express"
 import { discoverProducts, confirmMappings, probeWebsite } from "../services/discoveryService"
+import { b2cSearch } from "../services/b2cSearchService"
 import { aiWebSearch } from "../scraper/aiWebSearch"
 import { callClaude } from "../utils/claudeClient"
 import { createError } from "../middleware/validate"
 import { checkUsageLimit } from "../middleware/usageLimit"
+import { deductCredits, getWallet } from "../services/walletService"
 import { AuthRequest } from "../middleware/auth"
 import { logger } from "../utils/logger"
+import { query as dbQuery } from "../db"
 
 export const discoveryRouter = Router()
 
@@ -131,6 +134,80 @@ discoveryRouter.post("/ai-match", checkUsageLimit as any, async (req, res, next)
       matched: result.filter((r: any) => r.match).length,
     })
     res.json({ success: true, data: result })
+  } catch (err) { next(err) }
+})
+
+// POST /api/discovery/b2c-search
+// B2C price discovery: web search + Playwright scrape + Vision AI fallback = 3 credits
+discoveryRouter.post("/b2c-search", async (req, res, next) => {
+  try {
+    const email = (req as AuthRequest).email
+    if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
+
+    const queryText = (req.body.query || "").toString().trim()
+    if (!queryText) return next(createError("query is required", 400, "VALIDATION_ERROR"))
+
+    const apiKey = process.env.ANTHROPIC_API_KEY
+    if (!apiKey) return next(createError("ANTHROPIC_API_KEY not configured", 503, "NOT_CONFIGURED"))
+
+    const UNLIMITED_ROLES = ["dev", "owner"]
+    const { rows } = await dbQuery(
+      `SELECT role, subscription, trial_ends_at FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`,
+      [email]
+    )
+    const user = rows[0]
+
+    // Determine effective subscription (handle expired trial)
+    let subscription: string = user?.subscription || "free"
+    if (subscription === "trial" && user?.trial_ends_at && new Date(user.trial_ends_at) < new Date()) {
+      subscription = "free"
+    }
+
+    // Deduct 3 credits unless unlimited role
+    if (user && !UNLIMITED_ROLES.includes(user.role)) {
+      const creditResult = await deductCredits(
+        email, 3,
+        "B2C AI price search (web search + price scrape + Vision AI)"
+      )
+      if (!creditResult.success) {
+        const wallet = await getWallet(email)
+        return res.status(429).json({
+          success: false,
+          error: {
+            message:      `Insufficient credits. You need 3 credits but only have ${creditResult.balance}.`,
+            code:         "USAGE_LIMIT_REACHED",
+            balance:      creditResult.balance,
+            required:     3,
+            subscription,
+            role:         user.role,
+            trial_ends_at: user.trial_ends_at ?? null,
+          },
+        })
+      }
+    }
+
+    // Visible results limit per plan (rest are blurred on frontend)
+    const LIMITS: Record<string, number> = { free: 3, trial: 8, pro: 20, enterprise: 20 }
+    const limit = (user && UNLIMITED_ROLES.includes(user.role)) ? 20 : (LIMITS[subscription] ?? 3)
+
+    // Detect user country from IP for geo-aware search
+    const rawIp = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim()
+                  || req.socket.remoteAddress || ""
+    const clientIp = rawIp.replace("::ffff:", "")  // strip IPv4-mapped IPv6 prefix
+    let countryHint = ""
+    if (clientIp && clientIp !== "127.0.0.1" && clientIp !== "::1") {
+      try {
+        const geoRes = await fetch(`http://ip-api.com/json/${clientIp}?fields=country,status`, { signal: AbortSignal.timeout(3000) })
+        const geo    = await geoRes.json()
+        if (geo.status === "success" && geo.country) countryHint = geo.country
+      } catch { /* geo lookup is best-effort — never block the search */ }
+    }
+
+    logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint })
+    const results = await b2cSearch(queryText, apiKey, countryHint)
+    logger.info("[B2CSearch] Done", { email, count: results.length })
+
+    res.json({ success: true, data: { query: queryText, results, limit } })
   } catch (err) { next(err) }
 })
 

@@ -10,8 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu"
 import {
-  Settings, Globe, HelpCircle, Sparkles,
-  Info, LogOut, ChevronUp,
+  Settings, Sparkles,
+  LogOut, ChevronUp,
 } from "lucide-react"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
@@ -148,26 +148,11 @@ export function UserMenuButton({ onNavigate }: Props) {
           Settings
         </DropdownMenuItem>
 
-        <DropdownMenuItem disabled className="gap-2.5 cursor-pointer">
-          <Globe className="h-4 w-4 text-muted-foreground" />
-          Language
-        </DropdownMenuItem>
-
-        <DropdownMenuItem disabled className="gap-2.5 cursor-pointer">
-          <HelpCircle className="h-4 w-4 text-muted-foreground" />
-          Get help
-        </DropdownMenuItem>
-
         <DropdownMenuSeparator />
 
         <DropdownMenuItem onClick={() => onNavigate("plans")} className="gap-2.5 cursor-pointer">
           <Sparkles className="h-4 w-4 text-muted-foreground" />
           Upgrade plan
-        </DropdownMenuItem>
-
-        <DropdownMenuItem disabled className="gap-2.5 cursor-pointer">
-          <Info className="h-4 w-4 text-muted-foreground" />
-          Learn more
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />

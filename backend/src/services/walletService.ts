@@ -57,6 +57,37 @@ export async function deductCredit(userEmail: string): Promise<{ success: boolea
   return { success: true, balance: newBalance }
 }
 
+/**
+ * Deduct N credits from wallet atomically.
+ * Returns { success: true } or { success: false, balance } if insufficient.
+ */
+export async function deductCredits(
+  userEmail:   string,
+  amount:      number,
+  description: string
+): Promise<{ success: boolean; balance: number }> {
+  const { rows } = await query(
+    `UPDATE user_wallet
+     SET balance    = balance - $2,
+         total_used = total_used + $2,
+         updated_at = NOW()
+     WHERE user_email = $1 AND balance >= $2
+     RETURNING balance`,
+    [userEmail, amount]
+  )
+  if (!rows.length) {
+    const wallet = await getWallet(userEmail)
+    return { success: false, balance: wallet?.balance ?? 0 }
+  }
+  const newBalance = rows[0].balance
+  await query(
+    `INSERT INTO wallet_transactions (user_email, amount, balance_after, type, description)
+     VALUES ($1, $2, $3, 'usage', $4)`,
+    [userEmail, -amount, newBalance, description]
+  )
+  return { success: true, balance: newBalance }
+}
+
 /** Add credits to wallet (top-up / adjustment). */
 export async function addCredits(userEmail: string, amount: number, type: string, description: string) {
   const { rows } = await query(

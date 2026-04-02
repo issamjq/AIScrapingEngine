@@ -523,8 +523,16 @@ function UsageTab({ role }: { role: string }) {
 }
 
 // ── Main ──────────────────────────────────────────────────────────
-export function SettingsContent({ role = "b2b", onNavigate }: { role?: string; onNavigate?: (page: string) => void }) {
-  const [active, setActive] = useState<Tab>("general")
+const VALID_TABS = new Set<Tab>(["general", "account", "privacy", "billing", "usage"])
+
+export function SettingsContent({ role = "b2b", onNavigate, initialTab }: { role?: string; onNavigate?: (page: string) => void; initialTab?: string }) {
+  const startTab: Tab = (initialTab && VALID_TABS.has(initialTab as Tab)) ? (initialTab as Tab) : "general"
+  const [active, setActive] = useState<Tab>(startTab)
+
+  function changeTab(tab: Tab) {
+    setActive(tab)
+    window.location.hash = `settings:${tab}`
+  }
 
   function renderTab() {
     switch (active) {
@@ -544,7 +552,7 @@ export function SettingsContent({ role = "b2b", onNavigate }: { role?: string; o
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setActive(id)}
+              onClick={() => changeTab(id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
                 active === id
                   ? "bg-muted font-medium text-foreground"

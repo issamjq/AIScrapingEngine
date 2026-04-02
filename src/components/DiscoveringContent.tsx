@@ -12,6 +12,7 @@ import {
 import { PageSkeleton } from "./PageSkeleton"
 import { PlansModal } from "./PlansModal"
 import { useAuth } from "@/context/AuthContext"
+import { B2CDiscoveryContent } from "./B2CDiscoveryContent"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
@@ -237,8 +238,8 @@ function MarketplaceDropdown({
   )
 }
 
-// ── Main component ────────────────────────────────────────────────
-export function DiscoveringContent(_: { role?: string }) {
+// ── B2B inner component (all hooks live here) ─────────────────────
+function B2BDiscoveryContent() {
   const { user } = useAuth()
 
   const [loading, setLoading]                     = useState(true)
@@ -888,4 +889,10 @@ export function DiscoveringContent(_: { role?: string }) {
       </Dialog>
     </div>
   )
+}
+
+// ── Public export: routes by role ─────────────────────────────────
+export function DiscoveringContent({ role, onNavigate }: { role?: string; onNavigate?: (page: string) => void }) {
+  if (role === "b2c") return <B2CDiscoveryContent onNavigate={onNavigate} />
+  return <B2BDiscoveryContent />
 }

@@ -1,0 +1,516 @@
+import { useState, useEffect, useRef } from "react"
+import { Button } from "./ui/button"
+import { Textarea } from "./ui/textarea"
+import {
+  Compass, Sparkles, Loader2, ExternalLink, Lock,
+  TrendingDown, AlertCircle,
+} from "lucide-react"
+import { PageSkeleton } from "./PageSkeleton"
+import { useAuth } from "@/context/AuthContext"
+
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
+const UNLIMITED_ROLES = ["dev", "owner"]
+
+const RESULT_LIMIT: Record<string, number> = {
+  free:       3,
+  trial:      8,
+  pro:        20,
+  enterprise: 20,
+}
+
+// ── Condition badge ───────────────────────────────────────────────
+const CONDITION_STYLES: Record<string, string> = {
+  "New":          "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400",
+  "Refurbished":  "bg-violet-100  text-violet-700  dark:bg-violet-900/30  dark:text-violet-400",
+  "Used - Good":  "bg-blue-100    text-blue-700    dark:bg-blue-900/30    dark:text-blue-400",
+  "Used - Fair":  "bg-amber-100   text-amber-700   dark:bg-amber-900/30   dark:text-amber-400",
+  "Used - Poor":  "bg-orange-100  text-orange-700  dark:bg-orange-900/30  dark:text-orange-400",
+  "Unknown":      "bg-muted       text-muted-foreground",
+}
+
+function ConditionBadge({ condition }: { condition: string }) {
+  const style = CONDITION_STYLES[condition] ?? CONDITION_STYLES["Unknown"]
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${style}`}>
+      {condition}
+    </span>
+  )
+}
+
+// ── Price card ────────────────────────────────────────────────────
+interface B2CResult {
+  retailer:      string
+  url:           string
+  title:         string
+  condition:     string
+  price:         number | null
+  originalPrice: number | null
+  currency:      string
+  availability:  string
+  imageUrl:      string | null
+  priceSource:   "scraped" | "not_found"
+}
+
+function formatPrice(price: number, currency: string) {
+  return `${currency} ${price.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
+function PriceCard({
+  result,
+  isBest,
+  rank,
+}: {
+  result:  B2CResult
+  isBest:  boolean
+  rank:    number
+}) {
+  const hasPrice    = result.price !== null
+  const hasDiscount = result.originalPrice !== null && result.originalPrice > (result.price ?? 0)
+  const discount    = hasDiscount
+    ? Math.round(((result.originalPrice! - result.price!) / result.originalPrice!) * 100)
+    : 0
+
+  return (
+    <div className={`relative rounded-2xl border bg-card overflow-hidden transition-shadow hover:shadow-md ${
+      isBest ? "border-primary/40 shadow-sm" : ""
+    }`}>
+      {/* Best price banner */}
+      {isBest && (
+        <div className="flex items-center gap-1.5 bg-primary px-4 py-1.5">
+          <TrendingDown className="h-3.5 w-3.5 text-primary-foreground" />
+          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Price</span>
+        </div>
+      )}
+
+      <div className="flex items-start gap-4 p-4">
+        {/* Rank + image */}
+        <div className="flex flex-col items-center gap-2 shrink-0">
+          <span className="text-xs font-bold text-muted-foreground/50 w-6 text-center">#{rank}</span>
+          {result.imageUrl ? (
+            <img
+              src={result.imageUrl}
+              alt={result.title}
+              className="w-14 h-14 rounded-lg object-contain bg-muted/30 border"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-lg bg-muted/40 border flex items-center justify-center">
+              <span className="text-lg font-bold text-muted-foreground/40 select-none">
+                {result.retailer.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Info */}
+        <div className="flex-1 min-w-0 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-xs font-semibold text-muted-foreground">{result.retailer}</span>
+            <ConditionBadge condition={result.condition} />
+            {result.availability === "Out of Stock" && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                Out of Stock
+              </span>
+            )}
+          </div>
+
+          <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
+
+          {/* Price row */}
+          {hasPrice ? (
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className={`text-xl font-bold ${isBest ? "text-primary" : "text-foreground"}`}>
+                {formatPrice(result.price!, result.currency)}
+              </span>
+              {hasDiscount && (
+                <>
+                  <span className="text-sm text-muted-foreground line-through">
+                    {formatPrice(result.originalPrice!, result.currency)}
+                  </span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                    -{discount}%
+                  </span>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 mt-1 text-sm text-muted-foreground">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span>Price not available — visit listing</span>
+            </div>
+          )}
+        </div>
+
+        {/* CTA */}
+        <a
+          href={result.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="shrink-0 mt-1"
+        >
+          <Button
+            size="sm"
+            variant={isBest ? "default" : "outline"}
+            className="gap-1.5 text-xs rounded-xl"
+          >
+            View deal
+            <ExternalLink className="h-3 w-3" />
+          </Button>
+        </a>
+      </div>
+    </div>
+  )
+}
+
+// ── Loading animation ─────────────────────────────────────────────
+const LOADING_MESSAGES = [
+  "Searching across UAE retailers…",
+  "Checking Amazon AE…",
+  "Scanning Noon listings…",
+  "Checking Dubizzle…",
+  "Looking at OLX…",
+  "Extracting prices with Vision AI…",
+  "Sorting results by best price…",
+  "Almost there…",
+]
+
+function SearchingState({ query }: { query: string }) {
+  const [msgIdx, setMsgIdx] = useState(0)
+
+  useEffect(() => {
+    const t = setInterval(() => setMsgIdx((i) => (i + 1) % LOADING_MESSAGES.length), 3500)
+    return () => clearInterval(t)
+  }, [])
+
+  return (
+    <div className="flex flex-col items-center justify-center py-20 gap-6 text-center">
+      {/* Animated icon cluster */}
+      <div className="relative">
+        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+          <Sparkles className="h-8 w-8 text-primary" />
+        </div>
+        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary/20 animate-ping" />
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-base font-semibold">
+          Finding best prices for
+        </p>
+        <p className="text-lg font-bold text-primary line-clamp-2 max-w-sm">
+          "{query}"
+        </p>
+      </div>
+
+      {/* Status cycling */}
+      <div className="flex items-center gap-2 text-sm text-muted-foreground min-h-[1.5rem]">
+        <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+        <span className="transition-all">{LOADING_MESSAGES[msgIdx]}</span>
+      </div>
+
+      {/* Pipeline badges */}
+      <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+        {["Web Search", "Price Scraping", "Vision AI"].map((step) => (
+          <span
+            key={step}
+            className="text-xs font-medium px-3 py-1 rounded-full bg-muted text-muted-foreground border"
+          >
+            {step}
+          </span>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground/60 mt-1">
+        Up to 90 seconds — running full AI pipeline
+      </p>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────
+export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string) => void }) {
+  const { user }                              = useAuth()
+
+  const [loading, setLoading]                 = useState(true)
+  const [balance, setBalance]                 = useState<number | null>(null)
+  const [userProfile, setUserProfile]         = useState<{
+    subscription: string; role: string; trialEndsAt?: string | null
+  } | null>(null)
+
+  const [query, setQuery]                     = useState("")
+  const [phase, setPhase]                     = useState<"idle" | "searching" | "results">("idle")
+  const [results, setResults]                 = useState<B2CResult[]>([])
+  const [visibleLimit, setVisibleLimit]       = useState(3)
+  const [lastQuery, setLastQuery]             = useState("")
+  const [searchError, setSearchError]         = useState<string | null>(null)
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  async function getToken() {
+    try { return user ? await (user as any).getIdToken() : null } catch { return null }
+  }
+
+  // Load wallet + profile on mount
+  useEffect(() => {
+    if (!user) return
+    let cancelled = false
+    async function load() {
+      try {
+        const token = await (user as any).getIdToken()
+        const [walletRes, meRes] = await Promise.all([
+          fetch(`${API}/api/wallet`,            { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/allowed-users/me`,  { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        const [walletJson, meJson] = await Promise.all([walletRes.json(), meRes.json()])
+        if (!cancelled) {
+          if (walletJson.success) setBalance(walletJson.data?.wallet?.balance ?? 0)
+          if (meJson.success && meJson.data) setUserProfile(meJson.data)
+        }
+      } catch { /* silent */ }
+      if (!cancelled) setLoading(false)
+    }
+    load()
+    return () => { cancelled = true }
+  }, [user])
+
+  async function handleSearch() {
+    const q = query.trim()
+    if (!q || phase === "searching") return
+
+    setPhase("searching")
+    setSearchError(null)
+    setResults([])
+    setLastQuery(q)
+
+    try {
+      const token = await getToken()
+      const res = await fetch(`${API}/api/discovery/b2c-search`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body:    JSON.stringify({ query: q }),
+      })
+      const json = await res.json()
+
+      if (!res.ok || !json.success) {
+        if (json.error?.code === "USAGE_LIMIT_REACHED") {
+          onNavigate?.("plans")
+          setPhase("idle")
+          return
+        }
+        throw new Error(json.error?.message || "Search failed")
+      }
+
+      const data = json.data
+      setResults(data.results || [])
+      setVisibleLimit(data.limit ?? 3)
+      setBalance((prev) => prev !== null ? Math.max(0, prev - 3) : null)
+      setPhase("results")
+    } catch (err: any) {
+      setSearchError(err.message || "Search failed")
+      setPhase("idle")
+    }
+  }
+
+  function handleNewSearch() {
+    setPhase("idle")
+    setResults([])
+    setSearchError(null)
+    setQuery("")
+    setTimeout(() => textareaRef.current?.focus(), 50)
+  }
+
+  if (loading) return <PageSkeleton cards={1} rows={4} />
+
+  const isUnlimited   = UNLIMITED_ROLES.includes(userProfile?.role ?? "")
+  const subscription  = userProfile?.subscription ?? "free"
+  const planLimit     = isUnlimited ? 20 : (RESULT_LIMIT[subscription] ?? 3)
+
+  const canSearch     = isUnlimited || (balance !== null && balance >= 3)
+  const visibleCards  = results.slice(0, visibleLimit)
+  const blurredCards  = results.slice(visibleLimit)
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
+          <Compass className="h-5 w-5" />
+          Market Discovery
+        </h1>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Ask for anything — AI searches the web, scrapes prices, and ranks the best deals
+        </p>
+      </div>
+
+      {/* ── Idle / Search input ── */}
+      {phase === "idle" && (
+        <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+          {/* Input area */}
+          <div className="p-5 pb-3">
+            <Textarea
+              ref={textareaRef}
+              autoFocus
+              rows={3}
+              className="resize-none text-base border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/50"
+              placeholder={`e.g. Infiniti G37 S Coupe 2010 — best price UAE\ne.g. iPhone 16 Pro 256GB new\ne.g. Marvis Classic Whitening Toothpaste 75ml`}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch()
+              }}
+            />
+          </div>
+
+          {/* Bottom bar — like Midjourney */}
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-t bg-muted/20">
+            {/* Left: credit info */}
+            <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
+              {!isUnlimited && (
+                <span className={`font-medium ${!canSearch ? "text-destructive" : ""}`}>
+                  {balance !== null ? (
+                    canSearch
+                      ? `${balance} credits remaining`
+                      : `${balance} credits — need 3`
+                  ) : "Loading…"}
+                </span>
+              )}
+              {isUnlimited && (
+                <span className="font-medium text-primary">Unlimited credits</span>
+              )}
+              <span className="hidden sm:flex items-center gap-1 opacity-60">
+                Web · Scrape · Vision AI
+              </span>
+            </div>
+
+            {/* Right: Search button (Midjourney-style with credit cost) */}
+            <Button
+              onClick={handleSearch}
+              disabled={!query.trim() || !canSearch}
+              className="gap-2 rounded-xl shrink-0 font-semibold"
+            >
+              <Sparkles className="h-4 w-4" />
+              {canSearch ? (
+                <>Search <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : "3"} credits</span></>
+              ) : (
+                "No credits · Upgrade"
+              )}
+            </Button>
+          </div>
+
+          {/* Error */}
+          {searchError && (
+            <div className="mx-5 mb-4 rounded-xl bg-destructive/10 text-destructive text-sm px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              {searchError}
+            </div>
+          )}
+
+          {!canSearch && !isUnlimited && (
+            <div className="mx-5 mb-4 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm px-4 py-3 flex items-center justify-between gap-3">
+              <span>You need 3 credits per search.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => onNavigate?.("plans")}
+              >
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                Upgrade
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Searching ── */}
+      {phase === "searching" && <SearchingState query={lastQuery} />}
+
+      {/* ── Results ── */}
+      {phase === "results" && (
+        <div className="space-y-4">
+          {/* Results header */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold">
+                {results.length === 0
+                  ? `No results found for "${lastQuery}"`
+                  : `${results.length} result${results.length !== 1 ? "s" : ""} for "${lastQuery}"`
+                }
+              </p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {results.filter((r) => r.price !== null).length} prices found · Sorted by lowest price
+              </p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleNewSearch} className="shrink-0">
+              New search
+            </Button>
+          </div>
+
+          {results.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-16 gap-3 rounded-2xl border bg-card">
+              <Compass className="h-10 w-10 text-muted-foreground/30" />
+              <p className="text-sm text-muted-foreground text-center max-w-xs">
+                No listings found. Try a more specific query — include model, year, size, or variant.
+              </p>
+              <Button variant="outline" size="sm" onClick={handleNewSearch}>Try again</Button>
+            </div>
+          )}
+
+          {/* Visible cards */}
+          <div className="space-y-3">
+            {visibleCards.map((result, idx) => (
+              <PriceCard
+                key={result.url}
+                result={result}
+                isBest={idx === 0 && result.price !== null}
+                rank={idx + 1}
+              />
+            ))}
+          </div>
+
+          {/* Blurred / locked cards */}
+          {blurredCards.length > 0 && (
+            <div className="relative rounded-2xl overflow-hidden">
+              {/* Lock overlay */}
+              <div className="absolute inset-0 backdrop-blur-sm bg-background/70 z-10 flex items-center justify-center">
+                <div className="text-center bg-card border shadow-xl rounded-2xl px-8 py-6 max-w-xs mx-4">
+                  <div className="flex justify-center mb-3">
+                    <div className="rounded-full bg-primary/10 p-3">
+                      <Lock className="h-6 w-6 text-primary" />
+                    </div>
+                  </div>
+                  <p className="text-base font-bold mb-1">
+                    {blurredCards.length} more deal{blurredCards.length !== 1 ? "s" : ""} found
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Upgrade to unlock all results and never miss a better price
+                  </p>
+                  <Button
+                    className="w-full gap-1.5"
+                    onClick={() => onNavigate?.("plans")}
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Unlock all results
+                  </Button>
+                </div>
+              </div>
+
+              {/* Ghost blurred cards */}
+              <div className="space-y-3 opacity-20 pointer-events-none select-none">
+                {blurredCards.map((result, idx) => (
+                  <PriceCard
+                    key={result.url}
+                    result={result}
+                    isBest={false}
+                    rank={visibleCards.length + idx + 1}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+    </div>
+  )
+}

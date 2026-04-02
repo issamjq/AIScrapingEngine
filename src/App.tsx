@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext"
 import { LoginPage } from "./components/LoginPage"
 import { DashboardLayout } from "./components/DashboardLayout"
 import { OnboardingContent } from "./components/OnboardingContent"
-import { Skeleton } from "./components/ui/skeleton"
+
 
 // Original pages
 import { DashboardContent }      from "./components/DashboardContent"
@@ -33,9 +33,18 @@ type AppState = "loading" | "onboarding" | "ready" | "denied" | "error"
 function AppLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-        <Skeleton className="h-4 w-32" />
+      <div className="flex flex-col items-center gap-5">
+        {/* Layered spinner */}
+        <div className="relative flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full border-4 border-muted" />
+          <div className="absolute h-14 w-14 animate-spin rounded-full border-4 border-transparent border-t-primary" />
+          <div className="absolute h-7 w-7 rounded-full bg-primary/10" />
+        </div>
+        {/* Text */}
+        <div className="flex flex-col items-center gap-1">
+          <p className="text-sm font-medium text-foreground">Please wait</p>
+          <p className="text-xs text-muted-foreground">Loading your workspace…</p>
+        </div>
       </div>
     </div>
   )
@@ -119,12 +128,43 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
   )
 }
 
+const VALID_PAGES = new Set([
+  "dashboard", "discovering", "price-board", "tracked-urls",
+  "products", "companies", "plans", "settings",
+])
+const B2C_BLOCKED = new Set(["products", "companies"])
+
+function getHashPage(): string {
+  const hash = window.location.hash.slice(1).split(":")[0]
+  return VALID_PAGES.has(hash) ? hash : "dashboard"
+}
+
+function getHashSubTab(): string {
+  return window.location.hash.slice(1).split(":")[1] ?? ""
+}
+
 function AppInner() {
   const { user, loading } = useAuth()
-  const [currentPage, setCurrentPage] = useState("dashboard")
+  const [currentPage, setCurrentPage] = useState(getHashPage)
   const [appState, setAppState] = useState<AppState>("loading")
   const [retryCount, setRetryCount] = useState(0)
   const [userRole, setUserRole] = useState<string | null>(null)
+
+  // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
+  useEffect(() => {
+    const hashPage = window.location.hash.slice(1).split(":")[0]
+    if (hashPage !== currentPage) window.location.hash = currentPage
+  }, [currentPage])
+
+  // Sync URL hash → state (browser back/forward)
+  useEffect(() => {
+    function onHashChange() {
+      const page = getHashPage()
+      setCurrentPage(page)
+    }
+    window.addEventListener("hashchange", onHashChange)
+    return () => window.removeEventListener("hashchange", onHashChange)
+  }, [])
 
   useEffect(() => {
     if (loading) return
@@ -151,10 +191,14 @@ function AppInner() {
   const isB2C = userRole === "b2c"
 
   function navigate(page: string) {
-    // B2C cannot access catalog pages
-    if (isB2C && (page === "products" || page === "companies")) return
+    if (isB2C && B2C_BLOCKED.has(page)) return
     setCurrentPage(page)
   }
+
+  // Redirect B2C users who land on a blocked page via direct URL hash
+  useEffect(() => {
+    if (isB2C && B2C_BLOCKED.has(currentPage)) setCurrentPage("dashboard")
+  }, [isB2C, currentPage])
 
   if (loading || (user && appState === "loading")) return <AppLoader />
   if (!user) return <LoginPage />
@@ -178,10 +222,10 @@ function AppInner() {
       case "youtube":         return <YouTubeContent role={role} />
       case "twitter":         return <TwitterContent role={role} />
       case "shopify":         return <ShopifyContent role={role} />
-      case "settings":        return <SettingsContent role={role} onNavigate={navigate} />
+      case "settings":        return <SettingsContent role={role} onNavigate={navigate} initialTab={getHashSubTab()} />
 
       // RSP / Scraping Engine pages
-      case "discovering":     return <DiscoveringContent role={role} />
+      case "discovering":     return <DiscoveringContent role={role} onNavigate={navigate} />
       case "price-board":     return <PriceBoardContent role={role} />
       case "tracked-urls":    return <TrackedUrlsContent role={role} />
       case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />
