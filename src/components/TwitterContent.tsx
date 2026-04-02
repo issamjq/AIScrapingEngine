@@ -63,7 +63,7 @@ const trendingTopics = [
   { topic: "#Innovation", posts: "19.8K", growth: "+9%" }
 ]
 
-export function TwitterContent() {
+export function TwitterContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 750); return () => clearTimeout(t) }, [])
 

@@ -68,7 +68,7 @@ const audienceData = [
   { name: "45-54", value: 10, color: "#ef4444" }
 ]
 
-export function MetaContent() {
+export function MetaContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 800); return () => clearTimeout(t) }, [])
 

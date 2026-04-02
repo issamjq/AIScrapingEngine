@@ -16,7 +16,7 @@ const statusIcon = (status: string) => {
   return                           <Clock       className="h-4 w-4 text-yellow-500" />
 }
 
-export function TrackedUrlsContent() {
+export function TrackedUrlsContent(_: { role?: string }) {
   const { user } = useAuth()
   const [loading, setLoading]     = useState(true)
   const [urls, setUrls]           = useState<any[]>([])

@@ -238,7 +238,7 @@ function MarketplaceDropdown({
 }
 
 // ── Main component ────────────────────────────────────────────────
-export function DiscoveringContent() {
+export function DiscoveringContent(_: { role?: string }) {
   const { user } = useAuth()
 
   const [loading, setLoading]                     = useState(true)

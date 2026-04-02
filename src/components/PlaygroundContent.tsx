@@ -32,7 +32,7 @@ interface Message {
   timestamp: Date
 }
 
-export function PlaygroundContent() {
+export function PlaygroundContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 700); return () => clearTimeout(t) }, [])
 

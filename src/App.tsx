@@ -163,31 +163,33 @@ function AppInner() {
   if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />
   if (appState !== "ready") return <AppLoader />
 
+  const role = (userRole ?? "b2b") as string
+
   const renderContent = () => {
     switch (currentPage) {
       // Original pages
-      case "dashboard":       return <DashboardContent />
-      case "playground":      return <PlaygroundContent />
-      case "content-library": return <ContentLibraryContent />
-      case "ai-services":     return <AIServicesContent />
-      case "post-scheduler":  return <PostSchedulerContent />
-      case "meta":            return <MetaContent />
-      case "tiktok":          return <TikTokContent />
-      case "youtube":         return <YouTubeContent />
-      case "twitter":         return <TwitterContent />
-      case "shopify":         return <ShopifyContent />
-      case "settings":        return <SettingsContent />
+      case "dashboard":       return <DashboardContent role={role} />
+      case "playground":      return <PlaygroundContent role={role} />
+      case "content-library": return <ContentLibraryContent role={role} />
+      case "ai-services":     return <AIServicesContent role={role} />
+      case "post-scheduler":  return <PostSchedulerContent role={role} />
+      case "meta":            return <MetaContent role={role} />
+      case "tiktok":          return <TikTokContent role={role} />
+      case "youtube":         return <YouTubeContent role={role} />
+      case "twitter":         return <TwitterContent role={role} />
+      case "shopify":         return <ShopifyContent role={role} />
+      case "settings":        return <SettingsContent role={role} />
 
       // RSP / Scraping Engine pages
-      case "discovering":     return <DiscoveringContent />
-      case "price-board":     return <PriceBoardContent />
-      case "tracked-urls":    return <TrackedUrlsContent />
-      case "products":        return isB2C ? <DashboardContent /> : <ProductsContent />
-      case "companies":       return isB2C ? <DashboardContent /> : <CompaniesContent />
+      case "discovering":     return <DiscoveringContent role={role} />
+      case "price-board":     return <PriceBoardContent role={role} />
+      case "tracked-urls":    return <TrackedUrlsContent role={role} />
+      case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />
+      case "companies":       return isB2C ? <DashboardContent role={role} /> : <CompaniesContent role={role} />
 
-      case "plans":           return <PlansContent />
+      case "plans":           return <PlansContent role={role} />
 
-      default:                return <DashboardContent />
+      default:                return <DashboardContent role={role} />
     }
   }
 

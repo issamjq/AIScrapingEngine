@@ -51,7 +51,7 @@ const contentTypeData = [
 
 const calendarData = new Date()
 
-export function DashboardContent() {
+export function DashboardContent(_: { role?: string }) {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
 

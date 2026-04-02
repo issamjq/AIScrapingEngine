@@ -12,7 +12,7 @@ const mockPrices = [
   { product: "Marvis Whitening 75ml",    store: "Amazon AE",    price: "AED 55.00", change: "+1.0%",   trend: "up",   status: "out_of_stock" },
 ]
 
-export function PriceBoardContent() {
+export function PriceBoardContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {

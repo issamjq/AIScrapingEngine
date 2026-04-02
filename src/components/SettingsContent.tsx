@@ -243,7 +243,7 @@ const TAB_CONTENT: Record<Tab, React.ReactNode> = {
   capabilities: <CapabilitiesTab />,
 }
 
-export function SettingsContent() {
+export function SettingsContent(_: { role?: string }) {
   const [active, setActive] = useState<Tab>("general")
 
   return (

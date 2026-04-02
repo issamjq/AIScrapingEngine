@@ -69,7 +69,7 @@ const topProducts = [
   { name: "USB Cable", sales: 234, revenue: 4680, growth: "+45%" }
 ]
 
-export function ShopifyContent() {
+export function ShopifyContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 800); return () => clearTimeout(t) }, [])
 

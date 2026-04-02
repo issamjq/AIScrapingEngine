@@ -108,7 +108,7 @@ const mockPosts: ScheduledPost[] = [
   }
 ]
 
-export function PostSchedulerContent() {
+export function PostSchedulerContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 850); return () => clearTimeout(t) }, [])
 

@@ -61,7 +61,7 @@ function mapRow(headers: string[], cols: string[]): ParsedRow | null {
   }
 }
 
-export function ProductsContent() {
+export function ProductsContent(_: { role?: string }) {
   const { user } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
 

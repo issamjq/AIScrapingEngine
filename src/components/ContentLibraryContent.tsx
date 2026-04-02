@@ -160,7 +160,7 @@ const getStatusColor = (status: string) => {
   }
 }
 
-export function ContentLibraryContent() {
+export function ContentLibraryContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 800); return () => clearTimeout(t) }, [])
 

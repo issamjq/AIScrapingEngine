@@ -95,7 +95,7 @@ const services: ServiceCard[] = [
   }
 ]
 
-export function AIServicesContent() {
+export function AIServicesContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 750); return () => clearTimeout(t) }, [])
 

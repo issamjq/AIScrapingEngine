@@ -61,7 +61,7 @@ const youtubePerformanceData = [
   { date: "Jan 7", views: 19800, subscribers: 94, revenue: 234, watchTime: 1450 }
 ]
 
-export function YouTubeContent() {
+export function YouTubeContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 800); return () => clearTimeout(t) }, [])
 

@@ -56,7 +56,7 @@ function daysLeft(trialEndsAt: string | null): number | null {
   return Math.max(0, Math.ceil(diff / 86_400_000))
 }
 
-export function PlansContent() {
+export function PlansContent(_: { role?: string }) {
   const { user } = useAuth()
   const [plans, setPlans]           = useState<PlanRow[]>([])
   const [profile, setProfile]       = useState<UserProfile | null>(null)

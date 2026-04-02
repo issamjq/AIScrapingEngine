@@ -18,7 +18,7 @@ function domainFromUrl(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url }
 }
 
-export function CompaniesContent() {
+export function CompaniesContent(_: { role?: string }) {
   const { user } = useAuth()
   const [loading, setLoading]     = useState(true)
   const [companies, setCompanies] = useState<any[]>([])

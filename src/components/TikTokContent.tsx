@@ -66,7 +66,7 @@ const trendingHashtags = [
   { tag: "#trend", posts: "750K", growth: "+19%" }
 ]
 
-export function TikTokContent() {
+export function TikTokContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   useEffect(() => { const t = setTimeout(() => setLoading(false), 750); return () => clearTimeout(t) }, [])
 
