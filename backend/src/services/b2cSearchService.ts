@@ -124,8 +124,21 @@ async function b2cWebSearch(
     }))
 
     const valid = normalized.filter((r: any) => r.retailer && r.url?.startsWith("http") && r.title)
-    logger.info("[B2CSearch] Web search done", { total: parsed.length, valid: valid.length })
-    return valid
+
+    // Deduplicate: keep only the first result per domain, cap at 5 unique sites
+    // Country-hint sites naturally appear first since Claude prioritises them
+    const seenDomains = new Set<string>()
+    const deduped = valid.filter((r: any) => {
+      try {
+        const domain = new URL(r.url).hostname.replace("www.", "")
+        if (seenDomains.has(domain)) return false
+        seenDomains.add(domain)
+        return seenDomains.size <= 5   // hard cap: 5 unique websites max
+      } catch { return false }
+    })
+
+    logger.info("[B2CSearch] Web search done", { total: parsed.length, valid: valid.length, sites: deduped.length })
+    return deduped
   } catch (err: any) {
     logger.error("[B2CSearch] Web search error", { error: (err as any).message })
     throw err
@@ -166,10 +179,11 @@ async function drillIntoSearchPages(
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
   const result: typeof searchPages = []
 
-  // Drill into the first 3 search pages (enough for good coverage without excessive requests)
-  for (const sp of searchPages.slice(0, 3)) {
+  // Drill into ALL search pages (already capped at 5 unique sites from web search step)
+  // Get 3 individual listing URLs per site → max 5 × 3 = 15 total listings
+  for (const sp of searchPages) {
     try {
-      const links = await engine.getListingUrls(sp.url, 5)
+      const links = await engine.getListingUrls(sp.url, 3)
       if (links.length > 0) {
         for (const url of links) {
           result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
@@ -182,8 +196,7 @@ async function drillIntoSearchPages(
     }
   }
 
-  // Remaining search pages appended as-is (breadth)
-  result.push(...searchPages.slice(3))
+  logger.info("[B2CSearch] Drill-down complete", { sites: searchPages.length, listings: result.length })
   return result
 }
 
@@ -228,8 +241,8 @@ async function scrapeUrls(
     }
   })
 
-  // 3 concurrent scrapes
-  return await withConcurrency(tasks, 3)
+  // 5 concurrent scrapes — faster with the tighter 15-listing cap
+  return await withConcurrency(tasks, 5)
 }
 
 // ── Main export ───────────────────────────────────────────────────
