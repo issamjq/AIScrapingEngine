@@ -158,7 +158,7 @@ function AppInner() {
 
   if (loading || (user && appState === "loading")) return <AppLoader />
   if (!user) return <LoginPage />
-  if (appState === "onboarding") return <OnboardingContent onComplete={() => setAppState("ready")} />
+  if (appState === "onboarding") return <OnboardingContent onComplete={() => setRetryCount((n) => n + 1)} />
   if (appState === "denied") return <AccessDenied onChoosePlan={() => setAppState("onboarding")} />
   if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />
   if (appState !== "ready") return <AppLoader />
