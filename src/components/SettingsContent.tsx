@@ -247,16 +247,16 @@ export function SettingsContent() {
   const [active, setActive] = useState<Tab>("general")
 
   return (
-    <div className="flex min-h-full">
+    <div className="flex -m-4 sm:-m-6 min-h-[calc(100vh-56px)]">
       {/* Left nav */}
-      <aside className="w-52 shrink-0 border-r pr-2 pt-8 pl-4">
-        <p className="text-xl font-bold mb-6 px-2">Settings</p>
+      <aside className="w-60 shrink-0 border-r pt-10 pl-8 pr-4 bg-background">
+        <p className="text-2xl font-bold mb-8 px-2">Settings</p>
         <nav className="space-y-0.5">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => setActive(id)}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
                 active === id
                   ? "bg-muted font-medium text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -270,8 +270,8 @@ export function SettingsContent() {
       </aside>
 
       {/* Content */}
-      <main className="flex-1 px-10 py-8 max-w-2xl">
-        <h1 className="text-xl font-semibold mb-6 capitalize">{active}</h1>
+      <main className="flex-1 px-12 py-10 overflow-y-auto">
+        <h1 className="text-2xl font-semibold mb-8 capitalize">{active}</h1>
         {TAB_CONTENT[active]}
       </main>
     </div>
