@@ -19,42 +19,43 @@ export interface B2CResult {
 async function b2cWebSearch(
   query:       string,
   apiKey:      string,
-  countryHint: string   // e.g. "United Arab Emirates", "Lebanon", "Egypt" — from IP geo-detection
+  countryHint: string
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
-  const geoContext = countryHint
-    ? `The user is located in ${countryHint}. Search on marketplaces and retailers popular in ${countryHint} first, then expand globally if needed.`
-    : `Search globally across all major marketplaces and retailers.`
+
+  const geoLine = countryHint
+    ? `The user is in ${countryHint}. Prioritise marketplaces popular there, then expand regionally and globally.`
+    : `Search globally across all major marketplaces.`
+
+  // Product-type hints so Claude knows which sites to search
+  const siteHints =
+    `Site guidance by product type (use whichever fits the query):\n` +
+    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch (carswitch.com), OpenSooq (ae.opensooq.com), Haraj (haraj.com.sa), AutoTrader, Avito\n` +
+    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Sharaf DG, Virgin Megastore, Back Market, eBay, Souq\n` +
+    `• Fashion / luxury → Ounass, Level Shoes, Namshi, Farfetch, eBay, Vestiaire Collective\n` +
+    `• Furniture / home → IKEA AE, West Elm, PAN Emirates, noon, Amazon\n` +
+    `• General goods → Amazon AE, Noon, Carrefour AE, LuLu Hypermarket, eBay\n` +
+    `• Any product → also check local classified sites: Dubizzle, OLX, Melltoo, Facebook Marketplace`
 
   const prompt =
-    `You are a world-class price discovery AI. Find the best product listings for: "${query}"\n\n` +
-    `${geoContext}\n\n` +
-    `Search strategy:\n` +
-    `1. Start with the user's local country marketplaces (e-commerce sites, classifieds, retailers)\n` +
-    `2. If the product is scarce locally, expand to regional and global marketplaces\n` +
-    `3. Include both new and used/second-hand listings where relevant\n` +
-    `4. Search any marketplace that sells this type of product (Amazon, eBay, Noon, Dubizzle, OLX, local classifieds, brand websites, etc.)\n\n` +
-    `For EACH listing, return:\n` +
-    `- retailer: the marketplace/platform name\n` +
-    `- url: the direct product or listing page URL\n` +
-    `- title: the exact product title as shown on the listing\n` +
-    `- condition: classify strictly as one of: "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"\n` +
-    `  (determine from title, description, or seller notes)\n\n` +
-    `Rules:\n` +
-    `- Only direct product/listing pages (not search results or category pages)\n` +
-    `- Focus on the most competitive prices and most relevant listings\n` +
-    `- Return at most 15 results total\n` +
-    `- No duplicates\n\n` +
-    `Return ONLY a JSON array, no other text:\n` +
-    `[{"retailer":"Dubizzle","url":"https://...","title":"...","condition":"Used - Good"}]`
+    `You are an expert price discovery assistant — like a smart shopping agent.\n` +
+    `A user wants to find: "${query}"\n\n` +
+    `${geoLine}\n\n` +
+    `${siteHints}\n\n` +
+    `Instructions:\n` +
+    `1. Search the web right now for real, active listings of this exact item.\n` +
+    `2. Include both new AND used/second-hand listings.\n` +
+    `3. For classifieds (Dubizzle, OLX, etc.) the search results page URL is acceptable — include it.\n` +
+    `4. Aim for 10–15 diverse listings from different sellers/platforms.\n` +
+    `5. For each result determine the condition from the title or listing text.\n\n` +
+    `Return ONLY a valid JSON array — no explanation, no markdown, no extra text:\n` +
+    `[{"retailer":"Dubizzle","url":"https://www.dubizzle.com/...","title":"2010 Infiniti G37 S Coupe","condition":"Used - Good"}]\n\n` +
+    `condition must be one of exactly: "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"`
 
-  logger.info("[B2CSearch] Web search", { query, countryHint })
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 75_000)
+  logger.info("[B2CSearch] Web search start", { query, countryHint })
 
   try {
     const data = await callClaude(apiKey, {
-      model:      "claude-haiku-4-5-20251001",
+      model:      "claude-sonnet-4-6",
       max_tokens: 4096,
       tools:      [{ type: "web_search_20250305", name: "web_search" }],
       messages:   [{ role: "user", content: prompt }],
@@ -66,20 +67,19 @@ async function b2cWebSearch(
       .map((b: any) => b.text as string)
       .join("\n")
 
-    // Extract JSON — handle plain array, code-block array, or wrapped object
+    logger.info("[B2CSearch] Raw response length", { chars: text.length, snippet: text.slice(0, 400) })
+
+    // Extract JSON — handle code-fenced block, bare array, or wrapped object
     let parsed: any[] = []
     try {
-      // 1) Try code-fenced block: ```json [...] ```
       const fenced = text.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/)
       if (fenced) {
         parsed = JSON.parse(fenced[1])
       } else {
-        // 2) Try bare array anywhere in text
         const arrMatch = text.match(/\[[\s\S]*\]/)
         if (arrMatch) {
           parsed = JSON.parse(arrMatch[0])
         } else {
-          // 3) Try JSON object with a known wrapper key
           const objMatch = text.match(/\{[\s\S]*\}/)
           if (objMatch) {
             const obj = JSON.parse(objMatch[0])
@@ -90,12 +90,12 @@ async function b2cWebSearch(
         }
       }
     } catch (parseErr: any) {
-      logger.warn("[B2CSearch] JSON parse error", { error: parseErr.message, snippet: text.slice(0, 300) })
+      logger.warn("[B2CSearch] JSON parse error", { error: parseErr.message, snippet: text.slice(0, 400) })
       return []
     }
 
     if (parsed.length === 0) {
-      logger.warn("[B2CSearch] No JSON in web search response", { snippet: text.slice(0, 300) })
+      logger.warn("[B2CSearch] No JSON array found in response", { snippet: text.slice(0, 400) })
       return []
     }
 
@@ -106,16 +106,11 @@ async function b2cWebSearch(
     }))
 
     const valid = normalized.filter((r: any) => r.retailer && r.url?.startsWith("http") && r.title)
-    logger.info("[B2CSearch] Web search found", { total: parsed.length, valid: valid.length })
+    logger.info("[B2CSearch] Web search done", { total: parsed.length, valid: valid.length })
     return valid
   } catch (err: any) {
-    if (err.name === "AbortError") {
-      logger.warn("[B2CSearch] Web search timeout")
-      return []
-    }
+    logger.error("[B2CSearch] Web search error", { error: (err as any).message })
     throw err
-  } finally {
-    clearTimeout(timer)
   }
 }
 
@@ -200,9 +195,30 @@ async function scrapeUrls(
 // ── Main export ───────────────────────────────────────────────────
 export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
   const webResults = await b2cWebSearch(query, apiKey, countryHint)
+
+  // Always return something — even if web search found listings but scraping fails,
+  // show the listings with "visit listing" so the user isn't left with 0 results.
   if (webResults.length === 0) return []
 
-  const scraped = await scrapeUrls(webResults, apiKey)
+  let scraped: B2CResult[]
+  try {
+    scraped = await scrapeUrls(webResults, apiKey)
+  } catch (err: any) {
+    logger.warn("[B2CSearch] Scrape step failed entirely, returning web-only results", { error: err.message })
+    // Scraping failed completely — return web search results without prices
+    scraped = webResults.map((item) => ({
+      retailer:      item.retailer,
+      url:           item.url,
+      title:         item.title,
+      condition:     item.condition || "Unknown",
+      price:         null,
+      originalPrice: null,
+      currency:      "AED",
+      availability:  "unknown",
+      imageUrl:      null,
+      priceSource:   "not_found" as const,
+    }))
+  }
 
   // Sort: price-found first (ascending), then no-price at the end
   return scraped.sort((a, b) => {
