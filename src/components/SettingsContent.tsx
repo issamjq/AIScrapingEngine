@@ -256,27 +256,27 @@ function PrivacyTab({ role }: { role: string }) {
 
   const [analytics,       setAnalytics]       = useState(() => localStorage.getItem("pref_analytics")       !== "false")
   const [personalisation, setPersonalisation] = useState(() => localStorage.getItem("pref_personalisation") !== "false")
-  const [exporting, setExporting] = useState(false)
+  const [exporting, setExporting] = useState<string | null>(null)
 
   function toggle(key: string, val: boolean, setter: (v: boolean) => void) {
     localStorage.setItem(key, String(val))
     setter(val)
   }
 
-  async function exportData() {
+  async function exportData(format: "json" | "csv" | "pdf") {
     if (!user) return
-    setExporting(true)
+    setExporting(format)
     try {
       const token = await user.getIdToken()
-      const res   = await fetch(`${API}/api/export`, { headers: { Authorization: `Bearer ${token}` } })
+      const res   = await fetch(`${API}/api/export?format=${format}`, { headers: { Authorization: `Bearer ${token}` } })
       const blob  = await res.blob()
       const url   = URL.createObjectURL(blob)
       const a     = document.createElement("a")
       a.href      = url
-      a.download  = `aise-export-${Date.now()}.json`
+      a.download  = `aise-export-${Date.now()}.${format}`
       a.click()
       URL.revokeObjectURL(url)
-    } finally { setExporting(false) }
+    } finally { setExporting(null) }
   }
 
   return (
@@ -297,9 +297,20 @@ function PrivacyTab({ role }: { role: string }) {
             ? "Download a copy of your tracked URLs"
             : "Download a copy of your products, stores, and tracked URLs"}
         >
-          <Button variant="outline" size="sm" onClick={exportData} disabled={exporting}>
-            {exporting ? "Exporting…" : "Export as JSON"}
-          </Button>
+          <div className="flex gap-2">
+            {(["json", "csv", "pdf"] as const).map(fmt => (
+              <Button
+                key={fmt}
+                variant="outline"
+                size="sm"
+                onClick={() => exportData(fmt)}
+                disabled={exporting !== null}
+                className="uppercase text-xs"
+              >
+                {exporting === fmt ? "…" : fmt}
+              </Button>
+            ))}
+          </div>
         </Row>
       </Section>
     </>
