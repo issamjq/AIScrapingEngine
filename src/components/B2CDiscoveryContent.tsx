@@ -40,18 +40,19 @@ function ConditionBadge({ condition }: { condition: string }) {
 
 // ── Price card ────────────────────────────────────────────────────
 interface B2CResult {
-  retailer:      string
-  url:           string
-  title:         string
-  condition:     string
-  price:         number | null
-  originalPrice: number | null
-  currency:      string
-  availability:  string
-  imageUrl:      string | null
-  location:      string | null
-  details:       string | null
-  priceSource:   "scraped" | "not_found"
+  seller:         string
+  url:            string
+  title:          string
+  condition:      string
+  price:          number | null
+  original_price: number | null
+  currency:       string
+  availability:   string
+  image:          string | null
+  location:       string | null
+  details:        string | null
+  source:         string
+  score:          number
 }
 
 function formatPrice(price: number, currency: string) {
@@ -68,20 +69,21 @@ function PriceCard({
   rank:    number
 }) {
   const hasPrice    = result.price !== null
-  const hasDiscount = result.originalPrice !== null && result.originalPrice > (result.price ?? 0)
+  const hasDiscount = result.original_price !== null && result.original_price > (result.price ?? 0)
   const discount    = hasDiscount
-    ? Math.round(((result.originalPrice! - result.price!) / result.originalPrice!) * 100)
+    ? Math.round(((result.original_price! - result.price!) / result.original_price!) * 100)
     : 0
+  const displayName = result.source || result.seller
 
   return (
     <div className={`relative rounded-2xl border bg-card overflow-hidden transition-shadow hover:shadow-md ${
       isBest ? "border-primary/40 shadow-sm" : ""
     }`}>
-      {/* Best price banner */}
+      {/* Best match banner */}
       {isBest && (
         <div className="flex items-center gap-1.5 bg-primary px-4 py-1.5">
           <TrendingDown className="h-3.5 w-3.5 text-primary-foreground" />
-          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Price</span>
+          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Match</span>
         </div>
       )}
 
@@ -89,9 +91,9 @@ function PriceCard({
         {/* Rank + image */}
         <div className="flex flex-col items-center gap-2 shrink-0">
           <span className="text-xs font-bold text-muted-foreground/50 w-6 text-center">#{rank}</span>
-          {result.imageUrl ? (
+          {result.image ? (
             <img
-              src={result.imageUrl}
+              src={result.image}
               alt={result.title}
               className="w-14 h-14 rounded-lg object-contain bg-muted/30 border"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
@@ -99,7 +101,7 @@ function PriceCard({
           ) : (
             <div className="w-14 h-14 rounded-lg bg-muted/40 border flex items-center justify-center">
               <span className="text-lg font-bold text-muted-foreground/40 select-none">
-                {result.retailer.charAt(0).toUpperCase()}
+                {displayName.charAt(0).toUpperCase()}
               </span>
             </div>
           )}
@@ -108,11 +110,16 @@ function PriceCard({
         {/* Info */}
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">{result.retailer}</span>
+            <span className="text-xs font-semibold text-muted-foreground">{displayName}</span>
             <ConditionBadge condition={result.condition} />
             {result.availability === "Out of Stock" && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">
                 Out of Stock
+              </span>
+            )}
+            {result.score > 0 && (
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground ml-auto">
+                {result.score}% match
               </span>
             )}
           </div>
@@ -143,7 +150,7 @@ function PriceCard({
               {hasDiscount && (
                 <>
                   <span className="text-sm text-muted-foreground line-through">
-                    {formatPrice(result.originalPrice!, result.currency)}
+                    {formatPrice(result.original_price!, result.currency)}
                   </span>
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                     -{discount}%
@@ -357,7 +364,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
 
     try {
       const token = await getToken()
-      const res = await fetch(`${API}/api/discovery/b2c-search`, {
+      const res = await fetch(`${API}/api/search`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body:    JSON.stringify({ query: q }),
@@ -518,7 +525,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                 }
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {results.filter((r) => r.price !== null).length} prices found · Sorted by lowest price
+                {results.filter((r) => r.price !== null).length} prices found · Sorted by best match
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={handleNewSearch} className="shrink-0">
@@ -542,7 +549,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
               <PriceCard
                 key={result.url}
                 result={result}
-                isBest={idx === 0 && result.price !== null}
+                isBest={idx === 0 && result.score >= 40}
                 rank={idx + 1}
               />
             ))}
