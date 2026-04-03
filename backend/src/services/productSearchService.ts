@@ -220,49 +220,30 @@ async function discoverAndExtract(
     }`
 
   const prompt =
-    `You are a universal product search API.\n\n` +
-    `WHAT TO FIND:\n${intentSummary}\n\n` +
-    `SEARCH QUERIES (use all of them):\n` +
+    `You are a real-time product search API. Find REAL listings for sale matching:\n\n` +
+    `${intentSummary}\n\n` +
+    `Search queries (use all):\n` +
     queries.map((q, i) => `${i + 1}. "${q}"`).join("\n") + `\n\n` +
-    `GEO: ${geoLine}\n\n` +
+    `${geoLine}\n\n` +
     `${SITE_GUIDE}\n\n` +
-    `PIPELINE — follow these steps exactly:\n` +
-    `1. Search each query above across the relevant platforms.\n` +
-    `2. Collect candidate URLs from the search results.\n` +
-    `3. For EACH candidate URL — visit the actual page.\n` +
-    `4. Classify the page:\n` +
-    `   ACCEPT  → single product listing with: title + price + image + buy/contact button\n` +
-    `   REJECT  → category page, search results page, article, blog, service page,\n` +
-    `             or any page showing "no results", "0 listings", "no cars found"\n` +
-    `5. Extract data only from ACCEPTED pages.\n` +
-    `6. Search at least 4 different platforms. Return 10–15 verified results.\n\n` +
-    `STRICT RULES:\n` +
-    `- NEVER include a page that shows "no results" or "no listings".\n` +
-    `- NEVER invent a price. Only include prices you READ on the listing page.\n` +
-    `- NEVER return a search result page or category page as a product.\n` +
-    `- NEVER mix data from two different products.\n` +
-    `- Each result = one specific item on one specific page.\n\n` +
-    `FIELDS TO EXTRACT per accepted listing:\n` +
-    `- title          : exact product title shown on the page\n` +
-    `- price          : number (e.g. 10000) or null if not shown\n` +
-    `- original_price : crossed-out/was-price if on sale, else null\n` +
-    `- currency       : currency code shown (USD, AED, GBP, EUR, SAR, LBP, etc.)\n` +
-    `- image          : main product image URL from this listing\n` +
-    `- condition      : "New" | "Used - Good" | "Used - Fair" | "Used - Poor" | "Refurbished" | "Unknown"\n` +
-    `- location       : seller city/area (e.g. "Beirut - Hamra") or null\n` +
-    `- seller         : seller/store name shown on the listing or platform name\n` +
-    `- availability   : "In Stock" | "Out of Stock" | "Unknown"\n` +
-    `- url            : direct URL to this specific listing\n` +
-    `- source         : platform name (e.g. "OLX Lebanon", "Amazon AE", "Dubizzle UAE")\n` +
-    `- details        : key specs one line (e.g. "200,000 km · 2008 · Coupe") or null\n\n` +
-    `OUTPUT: Return ONLY a raw JSON array. Zero other text.\n\n` +
+    `Instructions:\n` +
+    `1. Search the above queries across at least 4 different platforms.\n` +
+    `2. Find individual product listings that have a price and are for sale.\n` +
+    `3. Include both new and used listings.\n` +
+    `4. Return 10–15 results total.\n\n` +
+    `RULES:\n` +
+    `- NEVER invent a price. Only include prices you actually found in search results.\n` +
+    `- NEVER include pages showing "no results" or "0 listings".\n` +
+    `- Each result must be one specific item with its own URL and price.\n` +
+    `- Output ONLY the raw JSON array. No explanation, no markdown, nothing else.\n\n` +
+    `JSON format:\n` +
     `[{"title":"Infiniti G37 Coupe 2010","price":10000,"original_price":null,"currency":"USD","image":"https://...","condition":"Used - Good","location":"Beirut - Ras Al Nabaa","seller":"Private Seller","availability":"In Stock","url":"https://www.olx.com.lb/item/...","source":"OLX Lebanon","details":"150,000 km · 2010 · Coupe"}]`
 
   logger.info("[Search] Discovery+extraction start", { queries, countryHint })
 
   const data = await callClaude(apiKey, {
     model:      "claude-sonnet-4-6",
-    max_tokens: 8192,
+    max_tokens: 16000,
     tools:      [{ type: "web_search_20250305", name: "web_search" }],
     messages:   [{ role: "user", content: prompt }],
     beta:       "web-search-2025-03-05",
