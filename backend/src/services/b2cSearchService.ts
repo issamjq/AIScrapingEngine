@@ -1,6 +1,21 @@
 import { callClaude } from "../utils/claudeClient"
 import { ScraperEngine } from "../scraper/engine"
+import { getConfig } from "../scraper/companyConfigs"
 import { logger } from "../utils/logger"
+
+// Domains that have CSS selector configs → try selectors first, skip Vision AI if price found
+const SELECTOR_DOMAINS: Record<string, string> = {
+  "amazon.ae":       "amazon-ae",
+  "amazon.com":      "amazon-ae",
+  "carrefouruae.com":"carrefour-uae",
+}
+
+function getSlugForUrl(url: string): string | null {
+  try {
+    const host = new URL(url).hostname.replace("www.", "")
+    return SELECTOR_DOMAINS[host] ?? null
+  } catch { return null }
+}
 
 export interface B2CResult {
   retailer:      string
@@ -186,25 +201,31 @@ async function withConcurrency<T>(
 }
 
 // ── Step 2a: Drill into search/category pages → individual listing URLs ──
+//
+// Cost control:
+//   MAX_LISTINGS_PER_SITE  — cap per source so one site can't dominate scrape budget
+//   MAX_TOTAL_LISTINGS     — hard cap on total scrapes regardless of how many sites found
+//   Together: max 2 × 5 = 10 → capped at 8 = at most 8 Vision AI calls per search
 async function drillIntoSearchPages(
   searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
   engine:      ScraperEngine,
   query:       string
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
-  // Extract keywords from query to filter extracted links (e.g. ["infiniti","g37","coupe","2010"])
-  const queryKeywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+  const MAX_LISTINGS_PER_SITE = 2   // was 3 — saves 1 scrape per site
+  const MAX_TOTAL_LISTINGS    = 8   // hard cap — never scrape more than 8 URLs total
 
+  const queryKeywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
   const result: typeof searchPages = []
 
-  // Drill into ALL search pages (already capped at 5 unique sites from web search step)
-  // Get 3 individual listing URLs per site → max 5 × 3 = 15 total listings
   for (const sp of searchPages) {
+    if (result.length >= MAX_TOTAL_LISTINGS) break
     try {
-      const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
-      // Only keep individual listing URLs — never fall back to the search/list page itself
-      // (scraping a list page causes Vision AI to pick a price from a random card on the page)
+      const remaining = MAX_TOTAL_LISTINGS - result.length
+      const take      = Math.min(MAX_LISTINGS_PER_SITE, remaining)
+      const links     = await engine.getListingUrls(sp.url, take, queryKeywords)
       for (const url of links) {
         result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
+        if (result.length >= MAX_TOTAL_LISTINGS) break
       }
     } catch {
       // skip this source entirely on error
@@ -224,10 +245,22 @@ async function scrapeUrls(
 ): Promise<B2CResult[]> {
   const tasks = items.map((item) => async (): Promise<B2CResult> => {
     try {
-      const result = await engine.scrape(item.url, {}, {
+      // Use CSS selectors for known sites → Vision AI only fires as fallback if price not found
+      // This saves ~$0.05 per scrape on Amazon/Carrefour where selectors reliably work
+      const slug    = getSlugForUrl(item.url)
+      const config  = slug ? getConfig(slug) : null
+      const selectors = config ? {
+        price:        config.priceSelectors,
+        title:        config.titleSelectors,
+        availability: config.availabilitySelectors,
+        waitFor:      config.waitForSelector ?? null,
+        preferSelectors: false,   // still allow Vision AI fallback if selectors return null
+      } : {}
+
+      const result = await engine.scrape(item.url, selectors, {
         timeout:        20_000,
-        blockResources: ["font", "media"],   // keep images for Vision AI
-        searchQuery:    query,               // tells Vision AI which listing card to pick
+        blockResources: ["font", "media"],
+        searchQuery:    query,
       })
       return {
         retailer:      item.retailer,
