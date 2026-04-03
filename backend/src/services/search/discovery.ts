@@ -152,49 +152,110 @@ async function discoverViaClaudeSearch(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Strategy B — Playwright search page (marketplace / classifieds sources)
+// Strategy B — Classifieds: Claude finds the search/results page URL,
+//              Playwright extracts individual listing links from it.
+//
+// Why this split:
+//   - Playwright on Render cannot load OLX/Dubizzle/OpenSooq search pages
+//     directly (bot detection blocks headless Chrome on shared hosting)
+//   - Claude web_search CAN find the correct search results page URL on these
+//     sites (e.g. https://uae.dubizzle.com/motors/used-cars/infiniti/g37/)
+//   - Playwright then loads THAT URL — a known good page — and extracts
+//     individual listing hrefs from the rendered DOM
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function discoverViaPlaywright(
+async function getSearchResultsPageUrls(
+  sources:  Source[],
+  query:    string,
+  apiKey:   string
+): Promise<Array<{ source: Source; url: string }>> {
+  const siteList = sources.map(s => `${s.name} (${s.domain})`).join(", ")
+
+  const prompt =
+    `Search for "${query}" on each of these classifieds/marketplace sites: ${siteList}\n\n` +
+    `For each site, return the SEARCH RESULTS PAGE URL — the URL that shows a list of matching listings.\n` +
+    `Do NOT return individual listing pages. Return the search/filter results page.\n\n` +
+    `Return ONLY JSON: [{"site":"OLX Lebanon","domain":"olx.com.lb","url":"https://..."}]`
+
+  logger.info("[Search] Claude classifieds search URL", { sources: sources.map(s => s.id) })
+
+  try {
+    const data = await callClaude(apiKey, {
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      tools:      [{ type: "web_search_20250305", name: "web_search" }],
+      messages:   [{ role: "user", content: prompt }],
+      beta:       "web-search-2025-03-05",
+    })
+
+    const rawText = (data?.content ?? [])
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text as string)
+      .join("\n")
+
+    const parsed = extractJsonArray(rawText)
+    const results: Array<{ source: Source; url: string }> = []
+
+    for (const item of parsed) {
+      if (!item?.url?.startsWith("http")) continue
+      const source = sources.find(s => {
+        try {
+          const host = new URL(item.url).hostname.replace("www.", "")
+          return host.endsWith(s.domain) || s.domain.endsWith(host) ||
+                 (item.domain && (item.domain === s.domain || s.domain.includes(item.domain)))
+        } catch { return false }
+      })
+      if (source) results.push({ source, url: item.url })
+    }
+
+    logger.info("[Search] Claude found search URLs", { count: results.length,
+      urls: results.map(r => `${r.source.id}: ${r.url}`) })
+    return results
+  } catch (err: any) {
+    logger.warn("[Search] Claude classifieds search URL failed", { error: err.message })
+    // Fallback: use the source's built-in search URL template
+    return sources.map(s => ({ source: s, url: s.searchUrl(query) }))
+  }
+}
+
+async function discoverViaClassifieds(
   sources:      Source[],
   query:        string,
   keywords:     string[],
+  apiKey:       string,
   maxPerSource: number,
   engine:       ScraperEngine
 ): Promise<Candidate[]> {
+  // Step 1: Claude finds the search results page URL per source
+  const searchPages = await getSearchResultsPageUrls(sources, query, apiKey)
+
+  if (searchPages.length === 0) {
+    logger.info("[Search] No classified search pages found, using template URLs")
+    // Fallback to DB search URL templates
+    searchPages.push(...sources.map(s => ({ source: s, url: s.searchUrl(query) })))
+  }
+
   const candidates: Candidate[] = []
 
-  for (const source of sources) {
-    const searchUrl = source.searchUrl(query)
-    logger.info("[Search] Playwright search page", { source: source.id, url: searchUrl })
-
+  // Step 2: Playwright loads each search results page → extracts listing links
+  for (const { source, url } of searchPages) {
+    logger.info("[Search] Playwright on classified results page", { source: source.id, url })
     try {
-      // Use getListingUrls: renders the search page and extracts same-domain links
-      // with numeric IDs or keyword matches in the path
-      const links = await engine.getListingUrls(searchUrl, maxPerSource * 3, keywords)
-      logger.info("[Search] Playwright links", { source: source.id, count: links.length })
+      const links = await engine.getListingUrls(url, maxPerSource * 3, keywords)
+      logger.info("[Search] Classified links", { source: source.id, count: links.length })
 
       let added = 0
-      for (const url of links) {
+      for (const link of links) {
         if (added >= maxPerSource) break
-        const type = classifyUrl(url, source)
+        const type = classifyUrl(link, source)
         if (type === "detail_candidate") {
-          candidates.push({
-            url,
-            title:      "",
-            sourceId:   source.id,
-            sourceName: source.name,
-            type,
-          })
+          candidates.push({ url: link, title: "", sourceId: source.id, sourceName: source.name, type })
           added++
         }
       }
-
-      logger.info("[Search] Playwright candidates", { source: source.id, added })
+      logger.info("[Search] Classified candidates", { source: source.id, added })
     } catch (err: any) {
-      logger.warn("[Search] Playwright discovery failed", {
-        source: source.id, error: err.message,
-      })
+      logger.warn("[Search] Playwright on classified page failed", { source: source.id, error: err.message })
     }
   }
 
@@ -222,7 +283,7 @@ export async function discoverFromSources(
       ? discoverViaClaudeSearch(ecommerceSources, query, apiKey, maxPerSource)
       : Promise.resolve([]),
     classifiedSources.length > 0
-      ? discoverViaPlaywright(classifiedSources, query, keywords, maxPerSource, engine)
+      ? discoverViaClassifieds(classifiedSources, query, keywords, apiKey, maxPerSource, engine)
       : Promise.resolve([]),
   ])
 
