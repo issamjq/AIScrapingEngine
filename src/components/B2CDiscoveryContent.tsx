@@ -3,7 +3,7 @@ import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink, Lock,
-  TrendingDown, AlertCircle, Search, Globe, CheckCircle2, Zap,
+  TrendingDown, AlertCircle, Search, Globe, CheckCircle2, Zap, MapPin,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -49,6 +49,8 @@ interface B2CResult {
   currency:      string
   availability:  string
   imageUrl:      string | null
+  location:      string | null
+  details:       string | null
   priceSource:   "scraped" | "not_found"
 }
 
@@ -116,6 +118,21 @@ function PriceCard({
           </div>
 
           <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
+
+          {/* Location + details */}
+          {(result.location || result.details) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+              {result.location && (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  {result.location}
+                </span>
+              )}
+              {result.details && (
+                <span className="opacity-70">{result.details}</span>
+              )}
+            </div>
+          )}
 
           {/* Price row */}
           {hasPrice ? (

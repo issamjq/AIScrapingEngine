@@ -11,54 +11,63 @@ export interface B2CResult {
   currency:      string
   availability:  string
   imageUrl:      string | null
+  location:      string | null   // e.g. "Beirut, Lebanon" or "Dubai - Marina"
+  details:       string | null   // e.g. "150,000 km · 2010 · Coupe" or "256GB · Space Black"
   priceSource:   "scraped" | "not_found"
 }
 
 const VALID_CONDITIONS = ["New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"]
 
 // ── Main export ───────────────────────────────────────────────────
-// Single Claude call with web_search — finds products AND extracts prices.
-// No Playwright, no browser, no crashes.
 export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
   const geoLine = countryHint
     ? `The user is in ${countryHint}. Search ${countryHint} marketplaces first, then expand regionally and globally.`
     : `Search globally across all major marketplaces.`
 
   const siteHints =
-    `Site guidance by product type (pick whichever fits):\n` +
-    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch (carswitch.com), OpenSooq (ae.opensooq.com), AutoTrader, Avito\n` +
-    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Sharaf DG, Back Market, eBay\n` +
+    `Site guidance by product type (pick whichever fits the query):\n` +
+    `• Cars / vehicles → OLX (olx.com.lb / olx.ae / olx.com.sa), Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch, OpenSooq, Haraj\n` +
+    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Back Market, eBay, Dubizzle\n` +
     `• Fashion / luxury → Ounass, Namshi, Farfetch, eBay, Vestiaire Collective\n` +
     `• Furniture / home → IKEA AE, Noon, Amazon AE, PAN Emirates\n` +
     `• General goods → Amazon AE, Noon, Carrefour AE, LuLu Hypermarket, eBay\n` +
-    `• Used / second-hand → Dubizzle, OLX, eBay, Facebook Marketplace, Melltoo`
+    `• Used / second-hand → OLX, Dubizzle, eBay, OpenSooq, Haraj`
 
   const prompt =
-    `You are a price discovery API. Find current prices for: "${query}"\n\n` +
+    `You are a real-time price discovery API. Find REAL, active listings for: "${query}"\n\n` +
     `${geoLine}\n\n` +
     `${siteHints}\n\n` +
-    `Instructions:\n` +
-    `1. Use web search to find this exact product on multiple platforms (both new AND used listings).\n` +
-    `2. For each listing found, read the page to extract the exact current price.\n` +
-    `3. Search at least 3–4 different platforms and return 8–15 results total.\n` +
-    `4. Only include listings that are specifically for THIS product — not unrelated items.\n\n` +
-    `CRITICAL OUTPUT RULES:\n` +
-    `- Output ONLY the JSON array. No markdown, no explanation, nothing else.\n` +
-    `- NEVER write "I was unable to find" or any prose. Return the array even if partial.\n` +
-    `- price must be a NUMBER (e.g. 299.99) or null — never a string.\n` +
-    `- originalPrice is the crossed-out / was-price if on sale, otherwise null.\n` +
-    `- currency: use the currency shown on the site (AED, USD, GBP, EUR, SAR, etc.).\n` +
-    `- condition: one of "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown".\n` +
-    `- availability: "In Stock", "Out of Stock", or "Unknown".\n` +
-    `- imageUrl: include product image URL if visible in the page, otherwise null.\n\n` +
-    `JSON format (your entire response — nothing before, nothing after):\n` +
-    `[{"retailer":"Amazon AE","url":"https://www.amazon.ae/...","title":"Exact title","condition":"New","price":299.99,"originalPrice":399.99,"currency":"AED","availability":"In Stock","imageUrl":"https://..."}]`
+    `Search strategy:\n` +
+    `1. Search for "${query} for sale" on multiple platforms — search the user's country first, then globally.\n` +
+    `2. For each platform, find INDIVIDUAL LISTING PAGES (not category pages, not search result pages).\n` +
+    `3. Visit each listing page and read the actual price shown on that page.\n` +
+    `4. ONLY include a result when you have confirmed a real price is shown on that specific page.\n\n` +
+    `STRICT RULES — violating these will make the API useless:\n` +
+    `- NEVER include a page that says "No results found", "No listings", or "0 results".\n` +
+    `- NEVER make up or estimate a price. Only include prices you actually READ on the listing page.\n` +
+    `- NEVER include search or category pages that don't show a specific price for one item.\n` +
+    `- DO include both new and used/second-hand listings.\n` +
+    `- Aim for 8–15 individual listings from at least 3 different platforms.\n\n` +
+    `For each confirmed listing extract:\n` +
+    `- retailer: platform name (e.g. "OLX Lebanon", "Dubizzle UAE", "Amazon AE")\n` +
+    `- url: direct URL to the listing page\n` +
+    `- title: exact product title shown on the page\n` +
+    `- condition: one of "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"\n` +
+    `- price: number (e.g. 10000) — never a string, never null if you confirmed a price\n` +
+    `- originalPrice: crossed-out/was-price if on sale, otherwise null\n` +
+    `- currency: the currency shown (USD, AED, GBP, EUR, SAR, LBP, etc.)\n` +
+    `- availability: "In Stock", "Out of Stock", or "Unknown"\n` +
+    `- imageUrl: product image URL from the listing (null if not visible)\n` +
+    `- location: city/area shown on listing (e.g. "Beirut - Ras Al Nabaa", "Dubai - Deira") — null if not shown\n` +
+    `- details: key specs in one line (e.g. "150,000 km · 2010 · Coupe" for cars, "256GB · Space Black" for phones) — null if not applicable\n\n` +
+    `OUTPUT: Return ONLY the raw JSON array. No markdown, no explanation, no text before or after.\n\n` +
+    `[{"retailer":"OLX Lebanon","url":"https://www.olx.com.lb/item/...","title":"Infiniti G37 Coupe 2010","condition":"Used - Good","price":10000,"originalPrice":null,"currency":"USD","availability":"In Stock","imageUrl":"https://...","location":"Beirut - Ras Al Nabaa","details":"150,000 km · 2010 · Coupe"}]`
 
   logger.info("[B2CSearch] Starting", { query, countryHint })
 
   try {
     const data = await callClaude(apiKey, {
-      model:      "claude-haiku-4-5-20251001",
+      model:      "claude-sonnet-4-6",
       max_tokens: 8192,
       tools:      [{ type: "web_search_20250305", name: "web_search" }],
       messages:   [{ role: "user", content: prompt }],
@@ -111,6 +120,8 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
           currency:      String(r.currency || "AED").trim(),
           availability:  String(r.availability || "Unknown").trim(),
           imageUrl:      r.imageUrl ? String(r.imageUrl).trim() : null,
+          location:      r.location ? String(r.location).trim() : null,
+          details:       r.details  ? String(r.details).trim()  : null,
           priceSource:   price !== null ? ("scraped" as const) : ("not_found" as const),
         }
       })
