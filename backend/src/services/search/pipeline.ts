@@ -99,8 +99,8 @@ export async function productSearch(
   const intent = await parseIntent(query, apiKey, countryHint)
   logger.info("[Search] Intent", { intent })
 
-  // Stage 3+4: build source plan
-  const plan = buildSourcePlan(intent)
+  // Stage 3+4: build source plan (loads sources from DB)
+  const plan = await buildSourcePlan(intent)
   logger.info("[Search] Plan", {
     sources: plan.map(p => `${p.source.id}${p.fallback ? "(fb)" : ""}`),
   })

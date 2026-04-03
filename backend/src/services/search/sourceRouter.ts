@@ -14,7 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { ProductIntent, Source, SourcePlanEntry, ProductCategory } from "./types"
-import { SOURCES } from "./sources"
+import { loadSources } from "./sourceService"
 
 const MAX_PER_SOURCE          = 5   // hard cap per source (enforced in ranker)
 const PRIMARY_TARGET_PER_SRC  = 5
@@ -87,9 +87,6 @@ const ROUTING: Partial<Record<ProductCategory, Partial<Record<string, RoutingTab
   },
 }
 
-function sourceById(id: string): Source | undefined {
-  return SOURCES.find(s => s.id === id)
-}
 
 function genericSort(sources: Source[], category: ProductCategory): Source[] {
   return [...sources].sort((a, b) => {
@@ -99,46 +96,41 @@ function genericSort(sources: Source[], category: ProductCategory): Source[] {
   })
 }
 
-export function buildSourcePlan(intent: ProductIntent): SourcePlanEntry[] {
+export async function buildSourcePlan(intent: ProductIntent): Promise<SourcePlanEntry[]> {
+  const allSources = await loadSources()
   const { category, country } = intent
+
+  const countryKey = country ?? "AE"
+
+  // Helper: find a loaded source by source_id string
+  const byId = (id: string) => allSources.find(s => s.id === id)
 
   // Try explicit routing table first
   const categoryRouting = ROUTING[category]
-  const countryKey      = country ?? "AE"  // default to UAE if no country detected
   const explicit        = categoryRouting?.[countryKey]
-                       ?? categoryRouting?.["AE"]   // AE is the global fallback
+                       ?? categoryRouting?.["AE"]
 
   let primarySources:  Source[]
   let fallbackSources: Source[]
 
   if (explicit) {
-    primarySources  = explicit.primary.map(sourceById).filter(Boolean) as Source[]
-    fallbackSources = explicit.fallback.map(sourceById).filter(Boolean) as Source[]
+    primarySources  = explicit.primary.map(byId).filter(Boolean)  as Source[]
+    fallbackSources = explicit.fallback.map(byId).filter(Boolean) as Source[]
   } else {
     // Generic: sort all matching sources by priority, split by country
-    const matching = SOURCES.filter(s =>
-      s.categories.includes(category) || s.categories.includes("general")
+    const matching   = allSources.filter(s =>
+      s.categories.includes(category) || s.categories.includes("general" as ProductCategory)
     )
     const inCountry  = genericSort(matching.filter(s => s.country === countryKey), category)
     const outCountry = genericSort(matching.filter(s => s.country !== countryKey), category)
-    primarySources  = inCountry.slice(0, 4)
-    fallbackSources = outCountry.slice(0, 3)
+    primarySources   = inCountry.slice(0, 4)
+    fallbackSources  = outCountry.slice(0, 3)
   }
 
-  const plan: SourcePlanEntry[] = [
-    ...primarySources.map(source => ({
-      source,
-      target:   PRIMARY_TARGET_PER_SRC,
-      fallback: false,
-    })),
-    ...fallbackSources.map(source => ({
-      source,
-      target:   FALLBACK_TARGET_PER_SRC,
-      fallback: true,
-    })),
+  return [
+    ...primarySources.map(source  => ({ source, target: PRIMARY_TARGET_PER_SRC,  fallback: false })),
+    ...fallbackSources.map(source => ({ source, target: FALLBACK_TARGET_PER_SRC, fallback: true  })),
   ]
-
-  return plan
 }
 
 export { MIN_RESULTS_BEFORE_FALLBACK, MAX_PER_SOURCE }
