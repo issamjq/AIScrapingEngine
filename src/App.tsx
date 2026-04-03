@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import spinnerGif from "@/assets/spinner.gif"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { LoginPage } from "./components/LoginPage"
 import { DashboardLayout } from "./components/DashboardLayout"
@@ -33,14 +34,8 @@ type AppState = "loading" | "onboarding" | "ready" | "denied" | "error"
 function AppLoader() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-5">
-        {/* Layered spinner */}
-        <div className="relative flex items-center justify-center">
-          <div className="h-14 w-14 rounded-full border-4 border-muted" />
-          <div className="absolute h-14 w-14 animate-spin rounded-full border-4 border-transparent border-t-primary" />
-          <div className="absolute h-7 w-7 rounded-full bg-primary/10" />
-        </div>
-        {/* Text */}
+      <div className="flex flex-col items-center gap-4">
+        <img src={spinnerGif} alt="Loading…" className="h-28 w-28 object-contain" draggable={false} />
         <div className="flex flex-col items-center gap-1">
           <p className="text-sm font-medium text-foreground">Please wait</p>
           <p className="text-xs text-muted-foreground">Loading your workspace…</p>
