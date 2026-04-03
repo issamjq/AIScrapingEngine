@@ -3,7 +3,7 @@ import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink, Lock,
-  TrendingDown, AlertCircle, Search, Globe, Eye, CheckCircle2,
+  TrendingDown, AlertCircle, Search, Globe, CheckCircle2, Zap,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -164,38 +164,38 @@ function PriceCard({
 }
 
 // ── Loading animation ─────────────────────────────────────────────
-// Phase timings (seconds from start) — roughly match backend pipeline
+// Phase timings (seconds from start) — match Claude web search pipeline
 const PHASES = [
   {
-    key:     "web-search",
+    key:     "searching",
     icon:    Search,
-    label:   "Web Search",
-    detail:  "Searching marketplaces and classifieds globally…",
+    label:   "Searching Marketplaces",
+    detail:  "AI scanning global marketplaces for this product…",
     startAt: 0,
-    doneAt:  18,
+    doneAt:  15,
   },
   {
-    key:     "scraping",
+    key:     "reading",
     icon:    Globe,
-    label:   "Scraping Pages",
-    detail:  "Opening listing pages and extracting data…",
-    startAt: 18,
+    label:   "Reading Listings",
+    detail:  "AI reading listing pages to extract prices…",
+    startAt: 15,
+    doneAt:  35,
+  },
+  {
+    key:     "extracting",
+    icon:    Zap,
+    label:   "Extracting Prices",
+    detail:  "Identifying prices, conditions, and availability…",
+    startAt: 35,
     doneAt:  50,
   },
   {
-    key:     "vision",
-    icon:    Eye,
-    label:   "Vision AI",
-    detail:  "AI reading screenshots to extract prices…",
-    startAt: 50,
-    doneAt:  80,
-  },
-  {
-    key:     "sorting",
+    key:     "ranking",
     icon:    Sparkles,
-    label:   "Finalizing",
-    detail:  "Ranking results by best price…",
-    startAt: 80,
+    label:   "Ranking Results",
+    detail:  "Sorting by best price across all platforms…",
+    startAt: 50,
     doneAt:  999,
   },
 ] as const
@@ -274,7 +274,7 @@ function SearchingState({ query }: { query: string }) {
       </div>
 
       <p className="text-xs text-muted-foreground/50">
-        This takes up to 90 seconds — running the full AI pipeline
+        This takes up to 60 seconds — AI is searching and reading listings
       </p>
     </div>
   )
@@ -336,7 +336,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setLastQuery(q)
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 110_000)
+    const timeoutId  = setTimeout(() => controller.abort(), 75_000)
 
     try {
       const token = await getToken()
@@ -366,7 +366,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     } catch (err: any) {
       clearTimeout(timeoutId)
       if (err.name === "AbortError") {
-        setSearchError("Search timed out — the AI pipeline is taking too long. Please try again.")
+        setSearchError("Search timed out — AI is taking too long. Please try again.")
       } else {
         setSearchError(err.message || "Search failed")
       }
