@@ -359,7 +359,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       }
 
       const data = json.data
-      setResults(data.results || [])
+      setResults((data.results || []).filter(Boolean))
       setVisibleLimit(data.limit ?? 3)
       setBalance((prev) => prev !== null ? Math.max(0, prev - 3) : null)
       setPhase("results")
@@ -501,7 +501,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                 }
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {results.filter((r) => r.price !== null).length} prices found · Sorted by lowest price
+                {results.filter((r) => r?.price !== null).length} prices found · Sorted by lowest price
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={handleNewSearch} className="shrink-0">
