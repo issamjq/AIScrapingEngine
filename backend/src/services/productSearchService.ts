@@ -74,8 +74,14 @@ async function getCached(query: string): Promise<SearchResult[] | null> {
       [key]
     )
     if (rows.length === 0) return null
+    const results = rows[0].results as SearchResult[]
+    // Auto-evict empty cache entries left by previous bugs
+    if (!Array.isArray(results) || results.length === 0) {
+      await dbQuery(`DELETE FROM search_cache WHERE cache_key = $1`, [key]).catch(() => {})
+      return null
+    }
     await dbQuery(`UPDATE search_cache SET hit_count = hit_count + 1 WHERE cache_key = $1`, [key]).catch(() => {})
-    return rows[0].results as SearchResult[]
+    return results
   } catch {
     return null
   }
@@ -437,7 +443,8 @@ export async function productSearch(
   logger.info("[Search] Pipeline done", { final: final.length })
 
   // Cache the result
-  await setCached(query, final)
+  // Only cache non-empty results — never cache a failed/empty search
+  if (final.length > 0) await setCached(query, final)
 
   return { query, intent, results: final, cached: false }
 }
