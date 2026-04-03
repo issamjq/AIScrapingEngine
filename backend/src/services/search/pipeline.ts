@@ -2,27 +2,30 @@
 // Main Search Pipeline — orchestrates all stages
 //
 // Stages:
-//  1+2  parseIntent      → ProductIntent (category, brand, model, location…)
-//  3+4  buildSourcePlan  → ordered list of sources with targets
-//  5+6  discoverCandidates (per source, 2 concurrent) → detail_candidate URLs
-//  7+8  engine.scrape    (Playwright + Vision AI, 2 concurrent) → raw data
+//  1+2  parseIntent        → ProductIntent (category, brand, model, location…)
+//  3+4  buildSourcePlan    → ordered list of sources with targets
+//  5+6  discoverFromSources (one Claude web_search call per tier) → Candidates
+//  7    reject list/category pages via URL pattern classification
+//  8    engine.scrape (Playwright + Vision AI, 2 concurrent) → raw data
 //  9    reject if missing price AND image
-//  10   (normalization embedded in scraper via Vision AI)
-//  11-13 rankResults     → score + dedup + balance + top 10
+//  10   (normalization via Vision AI inside ScraperEngine)
+//  11-13 rankResults       → score + dedup + balance + top 10
 //
-// Caching: results are stored in search_cache for 6 h.
-//          Empty results are never cached.
-//          Fallback sources are skipped when primary sources already have ≥3 results.
+// Tiers:
+//   Primary   = sources in user's detected country (searched first)
+//   Fallback  = other-country sources (searched only if primary returns < 3 results)
+//
+// Cache: 6-hour TTL in search_cache table.  Empty results never cached.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { createHash }             from "crypto"
-import { ScraperEngine }          from "../../scraper/engine"
-import { query as dbQuery }       from "../../db"
-import { logger }                 from "../../utils/logger"
-import { parseIntent }            from "./queryParser"
+import { createHash }              from "crypto"
+import { ScraperEngine }           from "../../scraper/engine"
+import { query as dbQuery }        from "../../db"
+import { logger }                  from "../../utils/logger"
+import { parseIntent }             from "./queryParser"
 import { buildSourcePlan, MIN_RESULTS_BEFORE_FALLBACK, MAX_PER_SOURCE } from "./sourceRouter"
-import { discoverCandidates }     from "./discovery"
-import { rankResults }            from "./ranker"
+import { discoverFromSources }     from "./discovery"
+import { rankResults }             from "./ranker"
 import { SearchResult, SearchResponse, ProductIntent } from "./types"
 
 // ── Cache helpers ─────────────────────────────────────────────────────────────
@@ -44,7 +47,6 @@ async function getCached(query: string): Promise<SearchResult[] | null> {
     if (rows.length === 0) return null
     const results = rows[0].results as SearchResult[]
     if (!Array.isArray(results) || results.length === 0) {
-      // Evict stale empty entry
       await dbQuery(`DELETE FROM search_cache WHERE cache_key = $1`, [key]).catch(() => {})
       return null
     }
@@ -58,7 +60,7 @@ async function getCached(query: string): Promise<SearchResult[] | null> {
 }
 
 async function setCached(query: string, results: SearchResult[]): Promise<void> {
-  if (results.length === 0) return   // never cache empty results
+  if (results.length === 0) return
   try {
     const key = makeCacheKey(query)
     await dbQuery(
@@ -69,18 +71,6 @@ async function setCached(query: string, results: SearchResult[]): Promise<void> 
       [key, query, JSON.stringify(results)]
     )
   } catch { /* non-fatal */ }
-}
-
-// ── Keyword set for Playwright link filtering ─────────────────────────────────
-
-function buildKeywords(intent: ProductIntent, query: string): string[] {
-  const kws = [intent.brand, intent.model, ...intent.attributes, ...intent.keywords]
-    .filter(Boolean)
-    .map(k => k!.toLowerCase())
-    .flatMap(k => k.split(/\s+/))
-
-  const fallback = query.toLowerCase().split(/\s+/).filter(w => w.length > 2)
-  return [...new Set(kws.length > 0 ? kws : fallback)]
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -112,79 +102,58 @@ export async function productSearch(
   // Stage 3+4: build source plan
   const plan = buildSourcePlan(intent)
   logger.info("[Search] Plan", {
-    sources: plan.map(p => `${p.source.id}×${p.target}${p.fallback ? "(fb)" : ""}`),
+    sources: plan.map(p => `${p.source.id}${p.fallback ? "(fb)" : ""}`),
   })
 
-  const keywords   = buildKeywords(intent, query)
-  const engine     = new ScraperEngine()
-  const allResults: SearchResult[] = []
-
-  // Split plan into primary and fallback tiers
   const primary  = plan.filter(p => !p.fallback)
   const fallback = plan.filter(p =>  p.fallback)
 
-  const DISCOVERY_CONCURRENCY = 2   // concurrent source searches
-  const SCRAPE_CONCURRENCY    = 2   // concurrent page scrapes
+  const SCRAPE_CONCURRENCY = 2
+  const engine = new ScraperEngine()
+  const allResults: SearchResult[] = []
 
-  async function runBatch(tier: typeof plan): Promise<void> {
-    // Discover candidates — 2 sources at a time
-    for (let i = 0; i < tier.length; i += DISCOVERY_CONCURRENCY) {
-      const srcBatch = tier.slice(i, i + DISCOVERY_CONCURRENCY)
-      const candidateBatches = await Promise.all(
-        srcBatch.map(({ source, target }) =>
-          discoverCandidates(source, query, keywords, target)
-        )
-      )
-      const candidates = candidateBatches.flat()
-      logger.info("[Search] Candidates from batch", {
-        sources: srcBatch.map(s => s.source.id),
-        count:   candidates.length,
-      })
+  async function scrapeAndCollect(candidates: ReturnType<typeof discoverFromSources> extends Promise<infer T> ? T : never): Promise<void> {
+    for (let i = 0; i < candidates.length; i += SCRAPE_CONCURRENCY) {
+      const batch   = candidates.slice(i, i + SCRAPE_CONCURRENCY)
+      const scraped = await Promise.all(
+        batch.map(async (c) => {
+          try {
+            const result = await engine.scrape(c.url, {}, {
+              timeout:        20_000,
+              blockResources: ["font", "media"],
+              searchQuery:    query,
+            })
 
-      // Stage 7+9: Verify + extract — 2 pages at a time
-      for (let j = 0; j < candidates.length; j += SCRAPE_CONCURRENCY) {
-        const scrapeBatch = candidates.slice(j, j + SCRAPE_CONCURRENCY)
-        const scraped = await Promise.all(
-          scrapeBatch.map(async (c) => {
-            try {
-              const result = await engine.scrape(c.url, {}, {
-                timeout:        20_000,
-                blockResources: ["font", "media"],
-                searchQuery:    query,
-              })
-
-              // Stage 9 rejection: must have at least a price OR an image
-              if (!result.price && !result.imageUrl) {
-                logger.debug("[Search] Reject missing_price_or_image", { url: c.url })
-                return null
-              }
-
-              return {
-                title:          result.title || c.title || c.sourceName,
-                price:          result.price,
-                original_price: result.originalPrice,
-                currency:       result.currency || "USD",
-                image:          result.imageUrl,
-                condition:      "Unknown",
-                location:       null,
-                seller:         c.sourceName,
-                availability:   result.availability || "Unknown",
-                url:            c.url,
-                source:         c.sourceName,
-                sourceId:       c.sourceId,
-                details:        null,
-                score:          0,
-              } as SearchResult
-            } catch (err: any) {
-              logger.warn("[Search] Scrape failed", { url: c.url, error: err.message })
+            // Stage 9: reject if both price and image are missing
+            if (!result.price && !result.imageUrl) {
+              logger.debug("[Search] Reject missing_price_or_image", { url: c.url })
               return null
             }
-          })
-        )
 
-        for (const r of scraped) {
-          if (r) allResults.push(r)
-        }
+            return {
+              title:          result.title || c.title || c.sourceName,
+              price:          result.price,
+              original_price: result.originalPrice,
+              currency:       result.currency || "USD",
+              image:          result.imageUrl,
+              condition:      "Unknown",
+              location:       null,
+              seller:         c.sourceName,
+              availability:   result.availability || "Unknown",
+              url:            c.url,
+              source:         c.sourceName,
+              sourceId:       c.sourceId,
+              details:        null,
+              score:          0,
+            } as SearchResult
+          } catch (err: any) {
+            logger.warn("[Search] Scrape failed", { url: c.url, error: err.message })
+            return null
+          }
+        })
+      )
+      for (const r of scraped) {
+        if (r) allResults.push(r)
       }
     }
   }
@@ -192,19 +161,27 @@ export async function productSearch(
   try {
     await engine.launch()
 
-    // Run primary sources
-    await runBatch(primary)
+    // Stage 5+6: discover from primary sources (one Claude call for all)
+    const primarySources    = primary.map(p => p.source)
+    const primaryCandidates = await discoverFromSources(primarySources, query, apiKey, MAX_PER_SOURCE)
+    logger.info("[Search] Primary candidates", { count: primaryCandidates.length })
+
+    // Stage 7+8+9: verify + scrape primary candidates
+    await scrapeAndCollect(primaryCandidates)
     logger.info("[Search] Primary done", { results: allResults.length })
 
-    // Run fallback sources only if primary didn't find enough
+    // Stage 5+6 fallback: only if primary didn't find enough
     if (allResults.length < MIN_RESULTS_BEFORE_FALLBACK && fallback.length > 0) {
       logger.info("[Search] Expanding to fallback sources", {
         reason: `only ${allResults.length} results from primary`,
       })
-      await runBatch(fallback)
+      const fallbackSources    = fallback.map(p => p.source)
+      const fallbackCandidates = await discoverFromSources(fallbackSources, query, apiKey, MAX_PER_SOURCE)
+      logger.info("[Search] Fallback candidates", { count: fallbackCandidates.length })
+      await scrapeAndCollect(fallbackCandidates)
       logger.info("[Search] Fallback done", { results: allResults.length })
     } else if (fallback.length > 0) {
-      logger.info("[Search] Skipping fallback sources — primary has enough results")
+      logger.info("[Search] Skipping fallback — primary has enough results")
     }
 
     // Stages 11–13: score, dedup, balance, top 10

@@ -1,75 +1,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 5 + 6 — Per-Source Discovery & Candidate Classification
 //
-// Uses DuckDuckGo "site:" search to find product pages on each source.
-// This is more reliable than loading source search pages directly because:
-//   • DuckDuckGo indexes actual product listing pages (not category pages)
-//   • No Playwright needed for discovery — plain fetch, no bot detection
-//   • Works for all sources regardless of their JS rendering complexity
+// Uses Claude Haiku + web_search_20250305 to find product pages per source.
+// One Claude call per tier (primary sources batched together, fallbacks batched
+// together) — more efficient and avoids Render IP blocks on direct scraping.
 //
-// Flow per source:
-//   1. Build DDG query: site:{domain} {query}
-//   2. Fetch DuckDuckGo HTML endpoint (no JS required)
-//   3. Parse anchor links, decode DDG redirect wrappers
-//   4. Classify each URL: detail_candidate / list_candidate / reject_candidate
-//   5. Expand up to 2 list_candidates (fetch their DDG results too)
-//   6. Return up to `target` detail_candidates
+// Candidate classification uses source-specific URL patterns to distinguish:
+//   detail_candidate  → single product listing page
+//   list_candidate    → category / search results page (skipped by default)
+//   reject_candidate  → off-domain, social, irrelevant
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { callClaude }                       from "../../utils/claudeClient"
 import { logger }                           from "../../utils/logger"
 import { Source, Candidate, CandidateType } from "./types"
-
-// ── DDG HTML fetch ────────────────────────────────────────────────────────────
-
-const DDG_URL    = "https://html.duckduckgo.com/html/"
-const DDG_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
-  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-]
-
-async function fetchDDG(q: string): Promise<Array<{ url: string; title: string }>> {
-  try {
-    const ua  = DDG_AGENTS[Math.floor(Math.random() * DDG_AGENTS.length)]
-    const src = `${DDG_URL}?q=${encodeURIComponent(q)}&kl=us-en`
-
-    const resp = await fetch(src, {
-      headers: {
-        "User-Agent":      ua,
-        "Accept":          "text/html,application/xhtml+xml",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer":         "https://duckduckgo.com/",
-      },
-      signal: AbortSignal.timeout(15_000),
-    })
-    const html = await resp.text()
-
-    // Parse anchor tags with class="result__a"
-    // href is either a real URL or "//duckduckgo.com/l/?uddg=<encoded>"
-    const results: Array<{ url: string; title: string }> = []
-    const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
-    let m: RegExpExecArray | null
-
-    while ((m = re.exec(html)) !== null) {
-      const href  = m[1]
-      const title = m[2].replace(/<[^>]+>/g, "").trim()
-      let realUrl = href
-      try {
-        if (href.includes("uddg=")) {
-          const params = new URL("https:" + href).searchParams
-          realUrl = decodeURIComponent(params.get("uddg") || href)
-        }
-      } catch { /* keep href */ }
-      if (realUrl.startsWith("http") && !realUrl.includes("duckduckgo.com")) {
-        results.push({ url: realUrl, title })
-      }
-    }
-    return results
-  } catch (err: any) {
-    logger.warn("[Search] DDG fetch failed", { q, error: err.message })
-    return []
-  }
-}
 
 // ── URL classifier ────────────────────────────────────────────────────────────
 
@@ -89,80 +33,129 @@ function classifyUrl(url: string, source: Source): CandidateType {
     return "reject_candidate"
   }
 
-  // Check list patterns first (safer — avoids category pages)
+  // Check list patterns first (avoids scraping category/search pages)
   if (source.listPatterns.some(p => p.test(path)))   return "list_candidate"
 
-  // Check explicit detail patterns
+  // Explicit detail patterns
   if (source.detailPatterns.some(p => p.test(path))) return "detail_candidate"
 
-  // Heuristic: numeric ID (4+ digits) in path → likely a product page
+  // Heuristic: numeric ID in path → likely a product listing
   if (/\/\d{4,}/.test(path)) return "detail_candidate"
 
-  // Default: treat as list (don't scrape unknown pages)
   return "list_candidate"
 }
 
-// ── Per-source discovery ──────────────────────────────────────────────────────
+// ── Claude web search (batched per tier) ─────────────────────────────────────
 
-export async function discoverCandidates(
-  source:   Source,
+async function claudeWebSearch(
+  sources:  Source[],
   query:    string,
-  keywords: string[],   // not used for DDG (query already contains them) — kept for interface compat
-  target:   number
+  apiKey:   string
+): Promise<Array<{ url: string; title: string; domain: string }>> {
+  if (sources.length === 0) return []
+
+  const siteList    = sources.map(s => `${s.name} (${s.domain})`).join(", ")
+  const domainList  = sources.map(s => s.domain).join(", ")
+
+  const prompt =
+    `Search for product listings matching this query: "${query}"\n\n` +
+    `Search ONLY on these specific websites: ${siteList}\n\n` +
+    `Rules:\n` +
+    `- Find INDIVIDUAL product listing pages (one product per URL)\n` +
+    `- NEVER include search result pages, category pages, homepages\n` +
+    `- ONLY return URLs from these domains: ${domainList}\n` +
+    `- Aim for up to 5 listings per site\n\n` +
+    `Return ONLY a JSON array, no explanation, no markdown:\n` +
+    `[{"domain":"olx.com.lb","url":"https://...","title":"product title"}]`
+
+  logger.info("[Search] Claude web search", { sources: sources.map(s => s.id), query })
+
+  try {
+    const data = await callClaude(apiKey, {
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 2048,
+      tools:      [{ type: "web_search_20250305", name: "web_search" }],
+      messages:   [{ role: "user", content: prompt }],
+      beta:       "web-search-2025-03-05",
+    })
+
+    const rawText = (data?.content ?? [])
+      .filter((b: any) => b.type === "text")
+      .map((b: any) => b.text as string)
+      .join("\n")
+
+    logger.debug("[Search] Claude raw response", { preview: rawText.slice(0, 400) })
+
+    const match = rawText.match(/\[[\s\S]*\]/)
+    if (!match) {
+      logger.warn("[Search] No JSON array in Claude response", { preview: rawText.slice(0, 300) })
+      return []
+    }
+
+    const parsed = JSON.parse(match[0]) as any[]
+    return parsed.filter(
+      (r) => r?.url && typeof r.url === "string" && r.url.startsWith("http")
+    )
+  } catch (err: any) {
+    logger.warn("[Search] Claude web search failed", { error: err.message })
+    return []
+  }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
+
+/**
+ * Discover product candidates from a batch of sources in a single Claude call.
+ * Returns detail_candidates only (list/reject candidates are dropped).
+ * Per-source result count is capped by `maxPerSource`.
+ */
+export async function discoverFromSources(
+  sources:      Source[],
+  query:        string,
+  apiKey:       string,
+  maxPerSource: number = 5
 ): Promise<Candidate[]> {
-  // Stage 5: DDG site: search
-  const ddgQuery = `site:${source.domain} ${query}`
-  logger.info("[Search] DDG site search", { source: source.id, ddgQuery })
+  const rawResults = await claudeWebSearch(sources, query, apiKey)
+  logger.info("[Search] Claude results", { count: rawResults.length })
 
-  const rawLinks = await fetchDDG(ddgQuery)
-  logger.info("[Search] DDG results", { source: source.id, count: rawLinks.length })
+  const perSourceCount: Record<string, number> = {}
+  const candidates: Candidate[] = []
 
-  const detailCandidates: Candidate[] = []
-  const listCandidates:   string[]    = []
+  for (const item of rawResults) {
+    // Match URL to a source by domain
+    const source = sources.find(s => {
+      try {
+        const host = new URL(item.url).hostname.replace("www.", "")
+        return host.endsWith(s.domain) || s.domain.endsWith(host)
+      } catch { return false }
+    })
+    if (!source) continue
 
-  // Stage 6: classify each URL
-  for (const r of rawLinks) {
-    if (detailCandidates.length >= target) break
+    // Cap per source
+    const count = perSourceCount[source.id] || 0
+    if (count >= maxPerSource) continue
 
-    const type = classifyUrl(r.url, source)
-
-    if (type === "detail_candidate") {
-      detailCandidates.push({
-        url:        r.url,
-        title:      r.title,
-        sourceId:   source.id,
-        sourceName: source.name,
-        type,
-      })
-    } else if (type === "list_candidate" && listCandidates.length < 2) {
-      listCandidates.push(r.url)
+    // Must be a detail page
+    const type = classifyUrl(item.url, source)
+    if (type !== "detail_candidate") {
+      logger.debug("[Search] Dropped non-detail URL", { url: item.url, type })
+      continue
     }
+
+    candidates.push({
+      url:        item.url,
+      title:      item.title || "",
+      sourceId:   source.id,
+      sourceName: source.name,
+      type,
+    })
+    perSourceCount[source.id] = count + 1
   }
 
-  // Stage 8: if not enough detail candidates, search DDG for list page sub-queries
-  // e.g. if DDG returned a category page URL, search DDG with that URL appended to query
-  if (detailCandidates.length < target && listCandidates.length > 0) {
-    for (const listUrl of listCandidates) {
-      if (detailCandidates.length >= target) break
-      // Search DDG specifically within the list page's path
-      const subQuery = `site:${source.domain} ${query} ${new URL(listUrl).pathname.split("/").filter(Boolean).join(" ")}`
-      logger.info("[Search] DDG sub-search", { source: source.id, subQuery })
-      const subLinks = await fetchDDG(subQuery)
-      for (const r of subLinks) {
-        if (classifyUrl(r.url, source) === "detail_candidate") {
-          detailCandidates.push({
-            url:        r.url,
-            title:      r.title,
-            sourceId:   source.id,
-            sourceName: source.name,
-            type:       "detail_candidate",
-          })
-          if (detailCandidates.length >= target) break
-        }
-      }
-    }
-  }
-
-  logger.info("[Search] Discovery done", { source: source.id, found: detailCandidates.length })
-  return detailCandidates
+  logger.info("[Search] Candidates", {
+    sources:  sources.map(s => s.id),
+    found:    candidates.length,
+    perSource: perSourceCount,
+  })
+  return candidates
 }
