@@ -161,9 +161,15 @@ export async function productSearch(
   try {
     await engine.launch()
 
-    // Stage 5+6: discover from primary sources (one Claude call for all)
+    // Build keyword list for Playwright link filtering (classifieds)
+    const keywords = [intent.brand, intent.model, ...intent.attributes, ...intent.keywords]
+      .filter(Boolean).map(k => k!.toLowerCase()).flatMap(k => k.split(/\s+/))
+      .concat(query.toLowerCase().split(/\s+/).filter(w => w.length > 2))
+      .filter((v, i, a) => a.indexOf(v) === i)  // unique
+
+    // Stage 5+6: discover from primary sources
     const primarySources    = primary.map(p => p.source)
-    const primaryCandidates = await discoverFromSources(primarySources, query, apiKey, MAX_PER_SOURCE)
+    const primaryCandidates = await discoverFromSources(primarySources, query, keywords, apiKey, engine, MAX_PER_SOURCE)
     logger.info("[Search] Primary candidates", { count: primaryCandidates.length })
 
     // Stage 7+8+9: verify + scrape primary candidates
@@ -176,7 +182,7 @@ export async function productSearch(
         reason: `only ${allResults.length} results from primary`,
       })
       const fallbackSources    = fallback.map(p => p.source)
-      const fallbackCandidates = await discoverFromSources(fallbackSources, query, apiKey, MAX_PER_SOURCE)
+      const fallbackCandidates = await discoverFromSources(fallbackSources, query, keywords, apiKey, engine, MAX_PER_SOURCE)
       logger.info("[Search] Fallback candidates", { count: fallbackCandidates.length })
       await scrapeAndCollect(fallbackCandidates)
       logger.info("[Search] Fallback done", { results: allResults.length })
