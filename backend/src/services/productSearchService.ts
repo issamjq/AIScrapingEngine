@@ -243,7 +243,7 @@ async function discoverAndExtract(
 
   const data = await callClaude(apiKey, {
     model:      "claude-sonnet-4-6",
-    max_tokens: 16000,
+    max_tokens: 8192,
     tools:      [{ type: "web_search_20250305", name: "web_search" }],
     messages:   [{ role: "user", content: prompt }],
     beta:       "web-search-2025-03-05",
