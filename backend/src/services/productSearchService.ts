@@ -203,68 +203,67 @@ function expandQueries(intent: ProductIntent, original: string, countryHint: str
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Stage 3: Search DuckDuckGo with Playwright → collect marketplace URLs
+// Stage 3: Search DuckDuckGo via fetch (HTML endpoint needs no JavaScript)
 // ─────────────────────────────────────────────────────────────────────────────
 
+const DDG_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+]
+
 async function searchDuckDuckGo(
-  query:  string,
-  engine: ScraperEngine
+  query: string
 ): Promise<Array<{ url: string; title: string }>> {
-  const context = await engine.browser!.newContext({
-    userAgent: engine._randomUserAgent(),
-    locale:    "en-US",
-    viewport:  { width: 1366, height: 768 },
-  })
   try {
-    await context.route("**/*", (route: any) => {
-      if (["image", "font", "media", "stylesheet"].includes(route.request().resourceType()))
-        route.abort()
-      else route.continue()
+    const ua   = DDG_AGENTS[Math.floor(Math.random() * DDG_AGENTS.length)]
+    const src  = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`
+    const resp = await fetch(src, {
+      headers: {
+        "User-Agent":      ua,
+        "Accept":          "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer":         "https://duckduckgo.com/",
+      },
+      signal: AbortSignal.timeout(15_000),
     })
+    const html = await resp.text()
 
-    const page = await context.newPage()
-    const url  = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}&kl=us-en`
-    await page.goto(url, { timeout: 20_000, waitUntil: "domcontentloaded" }).catch(() => {})
-
-    const results = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll(".result__title a, .result a.result__a"))
-        .map((el: any) => {
-          const href  = el.getAttribute("href") || ""
-          const title = el.textContent?.trim() || ""
-          // DuckDuckGo wraps links: //duckduckgo.com/l/?uddg=<encoded>
-          let realUrl = href
-          try {
-            if (href.includes("uddg=")) {
-              const params = new URL("https:" + href).searchParams
-              realUrl = decodeURIComponent(params.get("uddg") || href)
-            } else if (href.startsWith("http")) {
-              realUrl = href
-            }
-          } catch { /* keep href as-is */ }
-          return { url: realUrl, title }
-        })
-        .filter((r: any) => r.url.startsWith("http") && !r.url.includes("duckduckgo.com"))
-    }) as Array<{ url: string; title: string }>
+    // Parse anchor tags: <a class="result__a" href="//duckduckgo.com/l/?...uddg=...">Title</a>
+    const results: Array<{ url: string; title: string }> = []
+    const anchorRe = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g
+    let m: RegExpExecArray | null
+    while ((m = anchorRe.exec(html)) !== null) {
+      const href  = m[1]
+      const title = m[2].replace(/<[^>]+>/g, "").trim()
+      let realUrl = href
+      try {
+        if (href.includes("uddg=")) {
+          const params = new URL("https:" + href).searchParams
+          realUrl = decodeURIComponent(params.get("uddg") || href)
+        }
+      } catch { /* keep href */ }
+      if (realUrl.startsWith("http") && !realUrl.includes("duckduckgo.com")) {
+        results.push({ url: realUrl, title })
+      }
+    }
 
     logger.info("[Search] DDG results", { query, count: results.length })
     return results
   } catch (err: any) {
     logger.warn("[Search] DDG failed", { query, error: err.message })
     return []
-  } finally {
-    await context.close().catch(() => {})
   }
 }
 
 async function collectMarketplaceUrls(
-  queries:     string[],
-  engine:      ScraperEngine
+  queries: string[]
 ): Promise<Array<{ url: string; title: string; source: string }>> {
-  const seen      = new Set<string>()
+  const seen       = new Set<string>()
   const candidates: Array<{ url: string; title: string; source: string }> = []
 
   for (const q of queries) {
-    const results = await searchDuckDuckGo(q, engine)
+    const results = await searchDuckDuckGo(q)
     for (const r of results) {
       if (!r.url || seen.has(r.url)) continue
       if (!isMarketplaceUrl(r.url))  continue
@@ -444,7 +443,7 @@ export async function productSearch(
     await engine.launch()
 
     // Stage 3: search DuckDuckGo → collect marketplace URLs
-    const candidates = await collectMarketplaceUrls(queries, engine)
+    const candidates = await collectMarketplaceUrls(queries)
     logger.info("[Search] Candidates", { count: candidates.length })
 
     if (candidates.length === 0) {
