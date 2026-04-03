@@ -132,7 +132,7 @@ export async function productSearch(
       const srcBatch = tier.slice(i, i + DISCOVERY_CONCURRENCY)
       const candidateBatches = await Promise.all(
         srcBatch.map(({ source, target }) =>
-          discoverCandidates(source, query, keywords, target, engine)
+          discoverCandidates(source, query, keywords, target)
         )
       )
       const candidates = candidateBatches.flat()
