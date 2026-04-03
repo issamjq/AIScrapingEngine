@@ -322,7 +322,8 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const [lastQuery, setLastQuery]             = useState("")
   const [searchError, setSearchError]         = useState<string | null>(null)
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textareaRef  = useRef<HTMLTextAreaElement>(null)
+  const searchingRef = useRef(false)   // ref-based guard — prevents duplicate concurrent requests
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -353,7 +354,8 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
 
   async function handleSearch() {
     const q = query.trim()
-    if (!q || phase === "searching") return
+    if (!q || searchingRef.current) return   // ref check is synchronous — no race condition
+    searchingRef.current = true
 
     setPhase("searching")
     setSearchError(null)
@@ -361,7 +363,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setLastQuery(q)
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 75_000)
+    const timeoutId  = setTimeout(() => controller.abort(), 90_000)
 
     try {
       const token = await getToken()
@@ -396,6 +398,8 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
         setSearchError(err.message || "Search failed")
       }
       setPhase("idle")
+    } finally {
+      searchingRef.current = false
     }
   }
 

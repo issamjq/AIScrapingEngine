@@ -10,7 +10,7 @@ import { logger } from "./logger"
 // ── Concurrency queue ──────────────────────────────────────────────
 // Limits how many Claude requests run in parallel across all users.
 // Raise MAX_CONCURRENT if you upgrade to a higher Anthropic tier.
-const MAX_CONCURRENT = 3
+const MAX_CONCURRENT = 2
 let   running        = 0
 const waitQueue: Array<() => void> = []
 
@@ -71,14 +71,14 @@ async function fetchWithRetry(
   })
 
   if (response.status === 429) {
-    if (attempt >= 4) {
+    if (attempt >= 3) {
       throw new Error("Rate limit reached — please wait a moment and try again.")
     }
-    // Respect Retry-After header if present, cap at 60s, with exponential backoff
+    // Retry-After header capped at 25s so 2 retries still fit inside the 90s client timeout
     const retryAfter = parseInt(response.headers.get("retry-after") || "20", 10)
-    const backoff    = Math.min(retryAfter * 1000 * attempt, 60_000)
-    logger.warn(`[ClaudeClient] 429 rate limit — waiting ${backoff / 1000}s before retry ${attempt + 1}`)
-    await new Promise((r) => setTimeout(r, backoff))
+    const waitMs     = Math.min(retryAfter * 1000, 25_000)
+    logger.warn(`[ClaudeClient] 429 rate limit — waiting ${waitMs / 1000}s before retry ${attempt + 1}`)
+    await new Promise((r) => setTimeout(r, waitMs))
     return fetchWithRetry(apiKey, req, attempt + 1)
   }
 
