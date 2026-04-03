@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react"
+import spinnerGif from "@/assets/spinner.gif"
 import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
@@ -238,13 +239,13 @@ function SearchingState({ query }: { query: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-8 text-center">
-      {/* Animated icon */}
-      <div className="relative">
-        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
-          <Sparkles className="h-8 w-8 text-primary" />
-        </div>
-        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary/20 animate-ping" />
-      </div>
+      {/* Animated mascot */}
+      <img
+        src={spinnerGif}
+        alt="Searching…"
+        className="h-28 w-28 object-contain"
+        draggable={false}
+      />
 
       <div className="space-y-1.5">
         <p className="text-base font-semibold">Finding best prices for</p>
