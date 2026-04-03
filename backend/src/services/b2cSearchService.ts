@@ -1,4 +1,5 @@
 import { callClaude } from "../utils/claudeClient"
+import { ScraperEngine } from "../scraper/engine"
 import { logger } from "../utils/logger"
 
 export interface B2CResult {
@@ -11,78 +12,68 @@ export interface B2CResult {
   currency:      string
   availability:  string
   imageUrl:      string | null
-  location:      string | null   // e.g. "Beirut, Lebanon" or "Dubai - Marina"
-  details:       string | null   // e.g. "150,000 km · 2010 · Coupe" or "256GB · Space Black"
   priceSource:   "scraped" | "not_found"
 }
 
-const VALID_CONDITIONS = ["New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"]
+// ── Step 1: Claude web search ─────────────────────────────────────
+async function b2cWebSearch(
+  query:       string,
+  apiKey:      string,
+  countryHint: string
+): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
 
-// ── Main export ───────────────────────────────────────────────────
-export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
   const geoLine = countryHint
-    ? `The user is in ${countryHint}. Search ${countryHint} marketplaces first, then expand regionally and globally.`
+    ? `The user is in ${countryHint}. Prioritise marketplaces popular there, then expand regionally and globally.`
     : `Search globally across all major marketplaces.`
 
+  // Product-type hints so Claude knows which sites to search
   const siteHints =
-    `Site guidance by product type (pick whichever fits the query):\n` +
-    `• Cars / vehicles → OLX (olx.com.lb / olx.ae / olx.com.sa), Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch, OpenSooq, Haraj\n` +
-    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Back Market, eBay, Dubizzle\n` +
-    `• Fashion / luxury → Ounass, Namshi, Farfetch, eBay, Vestiaire Collective\n` +
-    `• Furniture / home → IKEA AE, Noon, Amazon AE, PAN Emirates\n` +
+    `Site guidance by product type (use whichever fits the query):\n` +
+    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch (carswitch.com), OpenSooq (ae.opensooq.com), Haraj (haraj.com.sa), AutoTrader, Avito\n` +
+    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Sharaf DG, Virgin Megastore, Back Market, eBay, Souq\n` +
+    `• Fashion / luxury → Ounass, Level Shoes, Namshi, Farfetch, eBay, Vestiaire Collective\n` +
+    `• Furniture / home → IKEA AE, West Elm, PAN Emirates, noon, Amazon\n` +
     `• General goods → Amazon AE, Noon, Carrefour AE, LuLu Hypermarket, eBay\n` +
-    `• Used / second-hand → OLX, Dubizzle, eBay, OpenSooq, Haraj`
+    `• Any product → also check local classified sites: Dubizzle, OLX, Melltoo, Facebook Marketplace`
 
   const prompt =
-    `You are a real-time price discovery API. Find REAL, active listings for: "${query}"\n\n` +
+    `You are a price discovery API. Your output must ALWAYS be a raw JSON array — never plain text.\n\n` +
+    `Search for: "${query}"\n` +
     `${geoLine}\n\n` +
     `${siteHints}\n\n` +
-    `Search strategy:\n` +
-    `1. Search for "${query} for sale" on multiple platforms — search the user's country first, then globally.\n` +
-    `2. For each platform, find INDIVIDUAL LISTING PAGES (not category pages, not search result pages).\n` +
-    `3. Visit each listing page and read the actual price shown on that page.\n` +
-    `4. ONLY include a result when you have confirmed a real price is shown on that specific page.\n\n` +
-    `STRICT RULES — violating these will make the API useless:\n` +
-    `- NEVER include a page that says "No results found", "No listings", or "0 results".\n` +
-    `- NEVER make up or estimate a price. Only include prices you actually READ on the listing page.\n` +
-    `- NEVER include search or category pages that don't show a specific price for one item.\n` +
-    `- DO include both new and used/second-hand listings.\n` +
-    `- Aim for 8–15 individual listings from at least 3 different platforms.\n\n` +
-    `For each confirmed listing extract:\n` +
-    `- retailer: platform name (e.g. "OLX Lebanon", "Dubizzle UAE", "Amazon AE")\n` +
-    `- url: direct URL to the listing page\n` +
-    `- title: exact product title shown on the page\n` +
-    `- condition: one of "New", "Used - Good", "Used - Fair", "Used - Poor", "Refurbished", "Unknown"\n` +
-    `- price: number (e.g. 10000) — never a string, never null if you confirmed a price\n` +
-    `- originalPrice: crossed-out/was-price if on sale, otherwise null\n` +
-    `- currency: the currency shown (USD, AED, GBP, EUR, SAR, LBP, etc.)\n` +
-    `- availability: "In Stock", "Out of Stock", or "Unknown"\n` +
-    `- imageUrl: product image URL from the listing (null if not visible)\n` +
-    `- location: city/area shown on listing (e.g. "Beirut - Ras Al Nabaa", "Dubai - Deira") — null if not shown\n` +
-    `- details: key specs in one line (e.g. "150,000 km · 2010 · Coupe" for cars, "256GB · Space Black" for phones) — null if not applicable\n\n` +
-    `OUTPUT: Return ONLY the raw JSON array. No markdown, no explanation, no text before or after.\n\n` +
-    `[{"retailer":"OLX Lebanon","url":"https://www.olx.com.lb/item/...","title":"Infiniti G37 Coupe 2010","condition":"Used - Good","price":10000,"originalPrice":null,"currency":"USD","availability":"In Stock","imageUrl":"https://...","location":"Beirut - Ras Al Nabaa","details":"150,000 km · 2010 · Coupe"}]`
+    `Rules:\n` +
+    `1. Use web search now to find pages about this item.\n` +
+    `2. Include BOTH new AND used/second-hand listings.\n` +
+    `3. Specific listing URLs are preferred, but search/category page URLs are ALSO acceptable.\n` +
+    `4. If you can only find category pages or general search pages — include them. They are valid.\n` +
+    `5. Aim for 10–15 results from different platforms.\n\n` +
+    `CRITICAL OUTPUT RULES:\n` +
+    `- Output ONLY the JSON array. Zero other text.\n` +
+    `- NEVER write "I was unable to find", "I apologize", or any explanation.\n` +
+    `- NEVER return an empty response. If you found any relevant page at all, include it.\n` +
+    `- If specific listings are unavailable, use the search results page URL for that platform.\n\n` +
+    `JSON format (this is your entire response — nothing before, nothing after):\n` +
+    `[{"retailer":"YallaMotor","url":"https://uae.yallamotor.com/used-cars/infiniti/g37","title":"Infiniti G37 2010 for sale UAE","condition":"Unknown"}]`
 
-  logger.info("[B2CSearch] Starting", { query, countryHint })
+  logger.info("[B2CSearch] Web search start", { query, countryHint })
 
   try {
     const data = await callClaude(apiKey, {
-      model:      "claude-sonnet-4-6",
-      max_tokens: 8192,
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 4096,
       tools:      [{ type: "web_search_20250305", name: "web_search" }],
       messages:   [{ role: "user", content: prompt }],
       beta:       "web-search-2025-03-05",
     })
 
-    // Extract the final text block from Claude's response
     const text = (data?.content ?? [])
       .filter((b: any) => b.type === "text" && b.text)
       .map((b: any) => b.text as string)
       .join("\n")
 
-    logger.info("[B2CSearch] Claude response", { chars: text.length, snippet: text.slice(0, 400) })
+    logger.info("[B2CSearch] Raw response length", { chars: text.length, snippet: text.slice(0, 400) })
 
-    // Parse JSON — handle code-fenced block or bare array
+    // Extract JSON — handle code-fenced block, bare array, or wrapped object
     let parsed: any[] = []
     try {
       const fenced = text.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/)
@@ -90,53 +81,232 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
         parsed = JSON.parse(fenced[1])
       } else {
         const arrMatch = text.match(/\[[\s\S]*\]/)
-        if (arrMatch) parsed = JSON.parse(arrMatch[0])
+        if (arrMatch) {
+          parsed = JSON.parse(arrMatch[0])
+        } else {
+          const objMatch = text.match(/\{[\s\S]*\}/)
+          if (objMatch) {
+            const obj = JSON.parse(objMatch[0])
+            for (const key of ["results", "listings", "items", "products", "data"]) {
+              if (Array.isArray(obj[key])) { parsed = obj[key]; break }
+            }
+          }
+        }
       }
     } catch (parseErr: any) {
       logger.warn("[B2CSearch] JSON parse error", { error: parseErr.message, snippet: text.slice(0, 400) })
       return []
     }
 
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      logger.warn("[B2CSearch] Empty result", { snippet: text.slice(0, 400) })
-      return []
+    if (parsed.length === 0) {
+      logger.warn("[B2CSearch] No JSON array found — trying URL fallback", { snippet: text.slice(0, 400) })
+      // Haiku sometimes returns conversational text mentioning URLs — extract them directly
+      const urlMatches: string[] = text.match(/https?:\/\/[^\s"'<>)\]]+/g) ?? []
+      const uniqueUrls: string[] = [...new Set(urlMatches)]
+        .filter((u: string) => !u.includes("anthropic.com") && u.length > 25)
+        .slice(0, 12)
+      if (uniqueUrls.length > 0) {
+        parsed = uniqueUrls.map((url: string) => {
+          const host: string = (() => { try { return new URL(url).hostname.replace("www.", "") } catch { return url } })()
+          const retailer = host.split(".")[0].charAt(0).toUpperCase() + host.split(".")[0].slice(1)
+          return { retailer, url, title: query, condition: "Unknown" }
+        })
+        logger.info("[B2CSearch] URL fallback extracted", { count: parsed.length })
+      } else {
+        return []
+      }
     }
 
-    // Normalize + validate each result
-    const results: B2CResult[] = parsed
-      .filter((r: any) => r.retailer && typeof r.url === "string" && r.url.startsWith("http") && r.title)
-      .map((r: any) => {
-        const rawPrice    = typeof r.price === "number" ? r.price : parseFloat(r.price)
-        const rawOriginal = typeof r.originalPrice === "number" ? r.originalPrice : parseFloat(r.originalPrice)
-        const price         = isFinite(rawPrice)    && rawPrice    > 0 ? rawPrice    : null
-        const originalPrice = isFinite(rawOriginal) && rawOriginal > 0 ? rawOriginal : null
-        return {
-          retailer:      String(r.retailer).trim(),
-          url:           String(r.url).trim(),
-          title:         String(r.title).trim(),
-          condition:     VALID_CONDITIONS.includes(r.condition) ? r.condition : "Unknown",
-          price,
-          originalPrice: originalPrice !== null && originalPrice > (price ?? 0) ? originalPrice : null,
-          currency:      String(r.currency || "AED").trim(),
-          availability:  String(r.availability || "Unknown").trim(),
-          imageUrl:      r.imageUrl ? String(r.imageUrl).trim() : null,
-          location:      r.location ? String(r.location).trim() : null,
-          details:       r.details  ? String(r.details).trim()  : null,
-          priceSource:   price !== null ? ("scraped" as const) : ("not_found" as const),
-        }
+    // Normalize URLs — add https:// if scheme is missing
+    const normalized = parsed.map((r: any) => ({
+      ...r,
+      url: r.url && !r.url.startsWith("http") ? `https://${r.url.replace(/^\/\//, "")}` : r.url,
+    }))
+
+    const valid = normalized.filter((r: any) => r.retailer && r.url?.startsWith("http") && r.title)
+
+    // Sort: country-hint matching domains rise to the top before dedup
+    // Claude may return them anywhere in the list, but we always prioritise them
+    const countrySlug = countryHint.toLowerCase().replace(/\s+/g, "")
+    const withPriority = valid.map((r: any) => {
+      try {
+        const domain = new URL(r.url).hostname.toLowerCase()
+        const isLocalSite = countrySlug && domain.includes(countrySlug)
+        return { r, priority: isLocalSite ? 0 : 1 }
+      } catch { return { r, priority: 1 } }
+    })
+    withPriority.sort((a, b) => a.priority - b.priority)
+
+    // Deduplicate: keep only the first result per domain, cap at 5 unique sites
+    const seenDomains = new Set<string>()
+    const deduped = withPriority
+      .map(({ r }) => r)
+      .filter((r: any) => {
+        try {
+          const domain = new URL(r.url).hostname.replace("www.", "")
+          if (seenDomains.has(domain)) return false
+          seenDomains.add(domain)
+          return seenDomains.size <= 5   // hard cap: 5 unique websites max
+        } catch { return false }
       })
 
-    logger.info("[B2CSearch] Done", { total: parsed.length, valid: results.length })
+    logger.info("[B2CSearch] Web search done", { total: parsed.length, valid: valid.length, sites: deduped.length })
+    return deduped
+  } catch (err: any) {
+    logger.error("[B2CSearch] Web search error", { error: (err as any).message })
+    throw err
+  }
+}
 
-    // Sort: price-found first (ascending), then no-price results at the end
-    return results.sort((a, b) => {
+// ── Simple concurrency limiter ────────────────────────────────────
+async function withConcurrency<T>(
+  tasks:     Array<() => Promise<T>>,
+  maxActive: number
+): Promise<T[]> {
+  const results: T[]              = new Array(tasks.length)
+  const active:  Promise<void>[]  = []
+
+  for (let i = 0; i < tasks.length; i++) {
+    const idx = i
+    const p   = (async () => { results[idx] = await tasks[idx]() })()
+    active.push(p)
+    if (active.length >= maxActive) await Promise.race(active)
+    // clean settled
+    for (let j = active.length - 1; j >= 0; j--) {
+      active[j] = active[j].then(() => {
+        active.splice(j, 1)
+      }).catch(() => {
+        active.splice(j, 1)
+      })
+    }
+  }
+
+  await Promise.allSettled(active)
+  return results
+}
+
+// ── Step 2a: Drill into search/category pages → individual listing URLs ──
+async function drillIntoSearchPages(
+  searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
+  engine:      ScraperEngine,
+  query:       string
+): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
+  // Extract keywords from query to filter extracted links (e.g. ["infiniti","g37","coupe","2010"])
+  const queryKeywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+
+  const result: typeof searchPages = []
+
+  // Drill into ALL search pages (already capped at 5 unique sites from web search step)
+  // Get 3 individual listing URLs per site → max 5 × 3 = 15 total listings
+  for (const sp of searchPages) {
+    try {
+      const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
+      if (links.length > 0) {
+        for (const url of links) {
+          result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
+        }
+      } else {
+        result.push(sp)   // no relevant links found — keep the search page itself
+      }
+    } catch {
+      result.push(sp)
+    }
+  }
+
+  logger.info("[B2CSearch] Drill-down complete", { sites: searchPages.length, listings: result.length })
+  return result
+}
+
+// ── Step 2b: Scrape each URL for price ────────────────────────────
+async function scrapeUrls(
+  items:  Array<{ retailer: string; url: string; title: string; condition: string }>,
+  apiKey: string,
+  engine: ScraperEngine,
+  query:  string
+): Promise<B2CResult[]> {
+  const tasks = items.map((item) => async (): Promise<B2CResult> => {
+    try {
+      const result = await engine.scrape(item.url, {}, {
+        timeout:        20_000,
+        blockResources: ["font", "media"],   // keep images for Vision AI
+        searchQuery:    query,               // tells Vision AI which listing card to pick
+      })
+      return {
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         result.title || item.title,
+        condition:     item.condition || "Unknown",
+        price:         result.price,
+        originalPrice: result.originalPrice,
+        currency:      result.currency || "AED",
+        availability:  result.availability || "unknown",
+        imageUrl:      result.imageUrl,
+        priceSource:   result.price !== null ? "scraped" : "not_found",
+      }
+    } catch (err: any) {
+      logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
+      return {
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         item.title,
+        condition:     item.condition || "Unknown",
+        price:         null,
+        originalPrice: null,
+        currency:      "AED",
+        availability:  "unknown",
+        imageUrl:      null,
+        priceSource:   "not_found",
+      }
+    }
+  })
+
+  // 2 concurrent scrapes — prevents Vision AI 429 rate limit (50k tokens/min)
+  // Each Vision call ~5k tokens → 2 concurrent = 10k tokens/batch, well within limit
+  return await withConcurrency(tasks, 2)
+}
+
+// ── Main export ───────────────────────────────────────────────────
+export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
+  // Step 1: AI web search — finds search/category page URLs
+  const webResults = await b2cWebSearch(query, apiKey, countryHint)
+  if (webResults.length === 0) return []
+
+  const engine = new ScraperEngine()
+  try {
+    await engine.launch()
+
+    // Step 2a: Drill into search pages to get individual listing URLs
+    const listings = await drillIntoSearchPages(webResults, engine, query)
+    logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
+
+    // Step 2b: Scrape individual listings for price + details
+    let scraped: B2CResult[]
+    try {
+      scraped = await scrapeUrls(listings, apiKey, engine, query)
+    } catch (err: any) {
+      logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
+      scraped = listings.map((item) => ({
+        retailer:      item.retailer,
+        url:           item.url,
+        title:         item.title,
+        condition:     item.condition || "Unknown",
+        price:         null,
+        originalPrice: null,
+        currency:      "AED",
+        availability:  "unknown",
+        imageUrl:      null,
+        priceSource:   "not_found" as const,
+      }))
+    }
+
+    // Sort: price-found first (ascending), then no-price at the end
+    return scraped.sort((a, b) => {
       if (a.price !== null && b.price !== null) return a.price - b.price
       if (a.price !== null) return -1
       if (b.price !== null) return 1
       return 0
     })
-  } catch (err: any) {
-    logger.error("[B2CSearch] Error", { error: err.message })
-    throw err
+  } finally {
+    await engine.close().catch(() => {})
   }
 }

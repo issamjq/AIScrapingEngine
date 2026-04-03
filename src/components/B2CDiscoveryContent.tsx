@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef } from "react"
-import spinnerGif from "@/assets/spinner.gif"
 import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink, Lock,
-  TrendingDown, AlertCircle, Search, Globe, CheckCircle2, Zap, MapPin,
+  TrendingDown, AlertCircle, Search, Globe, Eye, CheckCircle2,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
@@ -41,19 +40,16 @@ function ConditionBadge({ condition }: { condition: string }) {
 
 // ── Price card ────────────────────────────────────────────────────
 interface B2CResult {
-  seller:         string
-  url:            string
-  title:          string
-  condition:      string
-  price:          number | null
-  original_price: number | null
-  currency:       string
-  availability:   string
-  image:          string | null
-  location:       string | null
-  details:        string | null
-  source:         string
-  score:          number
+  retailer:      string
+  url:           string
+  title:         string
+  condition:     string
+  price:         number | null
+  originalPrice: number | null
+  currency:      string
+  availability:  string
+  imageUrl:      string | null
+  priceSource:   "scraped" | "not_found"
 }
 
 function formatPrice(price: number, currency: string) {
@@ -70,21 +66,20 @@ function PriceCard({
   rank:    number
 }) {
   const hasPrice    = result.price !== null
-  const hasDiscount = result.original_price !== null && result.original_price > (result.price ?? 0)
+  const hasDiscount = result.originalPrice !== null && result.originalPrice > (result.price ?? 0)
   const discount    = hasDiscount
-    ? Math.round(((result.original_price! - result.price!) / result.original_price!) * 100)
+    ? Math.round(((result.originalPrice! - result.price!) / result.originalPrice!) * 100)
     : 0
-  const displayName = result.source || result.seller
 
   return (
     <div className={`relative rounded-2xl border bg-card overflow-hidden transition-shadow hover:shadow-md ${
       isBest ? "border-primary/40 shadow-sm" : ""
     }`}>
-      {/* Best match banner */}
+      {/* Best price banner */}
       {isBest && (
         <div className="flex items-center gap-1.5 bg-primary px-4 py-1.5">
           <TrendingDown className="h-3.5 w-3.5 text-primary-foreground" />
-          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Match</span>
+          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Price</span>
         </div>
       )}
 
@@ -92,9 +87,9 @@ function PriceCard({
         {/* Rank + image */}
         <div className="flex flex-col items-center gap-2 shrink-0">
           <span className="text-xs font-bold text-muted-foreground/50 w-6 text-center">#{rank}</span>
-          {result.image ? (
+          {result.imageUrl ? (
             <img
-              src={result.image}
+              src={result.imageUrl}
               alt={result.title}
               className="w-14 h-14 rounded-lg object-contain bg-muted/30 border"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
@@ -102,7 +97,7 @@ function PriceCard({
           ) : (
             <div className="w-14 h-14 rounded-lg bg-muted/40 border flex items-center justify-center">
               <span className="text-lg font-bold text-muted-foreground/40 select-none">
-                {displayName.charAt(0).toUpperCase()}
+                {result.retailer.charAt(0).toUpperCase()}
               </span>
             </div>
           )}
@@ -111,36 +106,16 @@ function PriceCard({
         {/* Info */}
         <div className="flex-1 min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">{displayName}</span>
+            <span className="text-xs font-semibold text-muted-foreground">{result.retailer}</span>
             <ConditionBadge condition={result.condition} />
             {result.availability === "Out of Stock" && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">
                 Out of Stock
               </span>
             )}
-            {result.score > 0 && (
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground ml-auto">
-                {result.score}% match
-              </span>
-            )}
           </div>
 
           <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
-
-          {/* Location + details */}
-          {(result.location || result.details) && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-              {result.location && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3 shrink-0" />
-                  {result.location}
-                </span>
-              )}
-              {result.details && (
-                <span className="opacity-70">{result.details}</span>
-              )}
-            </div>
-          )}
 
           {/* Price row */}
           {hasPrice ? (
@@ -151,7 +126,7 @@ function PriceCard({
               {hasDiscount && (
                 <>
                   <span className="text-sm text-muted-foreground line-through">
-                    {formatPrice(result.original_price!, result.currency)}
+                    {formatPrice(result.originalPrice!, result.currency)}
                   </span>
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
                     -{discount}%
@@ -189,38 +164,38 @@ function PriceCard({
 }
 
 // ── Loading animation ─────────────────────────────────────────────
-// Phase timings (seconds from start) — match Claude web search pipeline
+// Phase timings (seconds from start) — roughly match backend pipeline
 const PHASES = [
   {
-    key:     "searching",
+    key:     "web-search",
     icon:    Search,
-    label:   "Searching Marketplaces",
-    detail:  "AI scanning global marketplaces for this product…",
+    label:   "Web Search",
+    detail:  "Searching marketplaces and classifieds globally…",
     startAt: 0,
-    doneAt:  15,
+    doneAt:  18,
   },
   {
-    key:     "reading",
+    key:     "scraping",
     icon:    Globe,
-    label:   "Reading Listings",
-    detail:  "AI reading listing pages to extract prices…",
-    startAt: 15,
-    doneAt:  35,
-  },
-  {
-    key:     "extracting",
-    icon:    Zap,
-    label:   "Extracting Prices",
-    detail:  "Identifying prices, conditions, and availability…",
-    startAt: 35,
+    label:   "Scraping Pages",
+    detail:  "Opening listing pages and extracting data…",
+    startAt: 18,
     doneAt:  50,
   },
   {
-    key:     "ranking",
-    icon:    Sparkles,
-    label:   "Ranking Results",
-    detail:  "Sorting by best price across all platforms…",
+    key:     "vision",
+    icon:    Eye,
+    label:   "Vision AI",
+    detail:  "AI reading screenshots to extract prices…",
     startAt: 50,
+    doneAt:  80,
+  },
+  {
+    key:     "sorting",
+    icon:    Sparkles,
+    label:   "Finalizing",
+    detail:  "Ranking results by best price…",
+    startAt: 80,
     doneAt:  999,
   },
 ] as const
@@ -239,13 +214,13 @@ function SearchingState({ query }: { query: string }) {
 
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-8 text-center">
-      {/* Animated mascot */}
-      <img
-        src={spinnerGif}
-        alt="Searching…"
-        className="h-28 w-28 object-contain"
-        draggable={false}
-      />
+      {/* Animated icon */}
+      <div className="relative">
+        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center animate-pulse">
+          <Sparkles className="h-8 w-8 text-primary" />
+        </div>
+        <div className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-primary/20 animate-ping" />
+      </div>
 
       <div className="space-y-1.5">
         <p className="text-base font-semibold">Finding best prices for</p>
@@ -299,7 +274,7 @@ function SearchingState({ query }: { query: string }) {
       </div>
 
       <p className="text-xs text-muted-foreground/50">
-        This takes up to 60 seconds — AI is searching and reading listings
+        This takes up to 90 seconds — running the full AI pipeline
       </p>
     </div>
   )
@@ -322,8 +297,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const [lastQuery, setLastQuery]             = useState("")
   const [searchError, setSearchError]         = useState<string | null>(null)
 
-  const textareaRef  = useRef<HTMLTextAreaElement>(null)
-  const searchingRef = useRef(false)   // ref-based guard — prevents duplicate concurrent requests
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -354,8 +328,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
 
   async function handleSearch() {
     const q = query.trim()
-    if (!q || searchingRef.current) return   // ref check is synchronous — no race condition
-    searchingRef.current = true
+    if (!q || phase === "searching") return
 
     setPhase("searching")
     setSearchError(null)
@@ -363,11 +336,11 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setLastQuery(q)
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 90_000)
+    const timeoutId  = setTimeout(() => controller.abort(), 110_000)
 
     try {
       const token = await getToken()
-      const res = await fetch(`${API}/api/search`, {
+      const res = await fetch(`${API}/api/discovery/b2c-search`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body:    JSON.stringify({ query: q }),
@@ -393,13 +366,11 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     } catch (err: any) {
       clearTimeout(timeoutId)
       if (err.name === "AbortError") {
-        setSearchError("Search timed out — AI is taking too long. Please try again.")
+        setSearchError("Search timed out — the AI pipeline is taking too long. Please try again.")
       } else {
         setSearchError(err.message || "Search failed")
       }
       setPhase("idle")
-    } finally {
-      searchingRef.current = false
     }
   }
 
@@ -530,7 +501,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                 }
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {results.filter((r) => r.price !== null).length} prices found · Sorted by best match
+                {results.filter((r) => r.price !== null).length} prices found · Sorted by lowest price
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={handleNewSearch} className="shrink-0">
@@ -554,7 +525,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
               <PriceCard
                 key={result.url}
                 result={result}
-                isBest={idx === 0 && result.score >= 40}
+                isBest={idx === 0 && result.price !== null}
                 rank={idx + 1}
               />
             ))}
