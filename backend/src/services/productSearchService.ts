@@ -220,23 +220,24 @@ async function discoverAndExtract(
     }`
 
   const prompt =
-    `You are a real-time product search API. Find REAL listings for sale matching:\n\n` +
-    `${intentSummary}\n\n` +
-    `Search queries (use all):\n` +
+    `You are a product search API. Your output must ALWAYS be a raw JSON array — never plain text, never an explanation.\n\n` +
+    `Find listings for sale matching:\n${intentSummary}\n\n` +
+    `Search queries (use all of them):\n` +
     queries.map((q, i) => `${i + 1}. "${q}"`).join("\n") + `\n\n` +
     `${geoLine}\n\n` +
     `${SITE_GUIDE}\n\n` +
     `Instructions:\n` +
     `1. Search the above queries across at least 4 different platforms.\n` +
-    `2. Find individual product listings that have a price and are for sale.\n` +
+    `2. Extract product listings — prices may come from search result snippets, listing pages, or category pages.\n` +
     `3. Include both new and used listings.\n` +
-    `4. Return 10–15 results total.\n\n` +
-    `RULES:\n` +
-    `- NEVER invent a price. Only include prices you actually found in search results.\n` +
-    `- NEVER include pages showing "no results" or "0 listings".\n` +
-    `- Each result must be one specific item with its own URL and price.\n` +
-    `- Output ONLY the raw JSON array. No explanation, no markdown, nothing else.\n\n` +
-    `JSON format:\n` +
+    `4. Return 10–15 results. If you can only find a few, return those.\n\n` +
+    `CRITICAL OUTPUT RULES:\n` +
+    `- Output ONLY the JSON array. Zero other text before or after it.\n` +
+    `- NEVER write "I was unable to find", "I apologize", "⚠️", or any explanation whatsoever.\n` +
+    `- NEVER return an empty array []. If you found any relevant listing at all, include it.\n` +
+    `- If a price is shown in search snippets (e.g. "$10,000"), include that listing — you do not need to visit each page.\n` +
+    `- Do NOT invent prices that you did not see anywhere in search results.\n\n` +
+    `JSON format (your entire response — nothing before, nothing after):\n` +
     `[{"title":"Infiniti G37 Coupe 2010","price":10000,"original_price":null,"currency":"USD","image":"https://...","condition":"Used - Good","location":"Beirut - Ras Al Nabaa","seller":"Private Seller","availability":"In Stock","url":"https://www.olx.com.lb/item/...","source":"OLX Lebanon","details":"150,000 km · 2010 · Coupe"}]`
 
   logger.info("[Search] Discovery+extraction start", { queries, countryHint })
