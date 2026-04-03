@@ -201,15 +201,13 @@ async function drillIntoSearchPages(
   for (const sp of searchPages) {
     try {
       const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
-      if (links.length > 0) {
-        for (const url of links) {
-          result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
-        }
-      } else {
-        result.push(sp)   // no relevant links found — keep the search page itself
+      // Only keep individual listing URLs — never fall back to the search/list page itself
+      // (scraping a list page causes Vision AI to pick a price from a random card on the page)
+      for (const url of links) {
+        result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
       }
     } catch {
-      result.push(sp)
+      // skip this source entirely on error
     }
   }
 
