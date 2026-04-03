@@ -17,17 +17,19 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **B2C stable** | `c9f5560` (v1.0.66) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. Endpoint: `/api/discovery/b2c-search`. Files: `b2cSearchService.ts` + `B2CDiscoveryContent.tsx` |
+| **B2C stable** | `f702913` (v1.0.87) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. Never falls back to list pages — drops source if 0 individual listings found. Endpoint: `/api/discovery/b2c-search`. Files: `b2cSearchService.ts` + `B2CDiscoveryContent.tsx` |
+| **B2C old stable** | `c9f5560` (v1.0.66) | Earlier stable before list-page fix |
 
 **To restore B2C to stable:**
 ```bash
-git show c9f5560:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
-git show c9f5560:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+git show f702913:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
+git show f702913:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
 ```
 Then bump version + push.
 
-**Why v1.0.66 and not v1.0.67:**
-- v1.0.66 = Claude web_search + Playwright drill-down ✅
+**Why v1.0.87:**
+- v1.0.87 = Claude web_search + Playwright drill-down + no list page fallback ✅
+- v1.0.66 = same but could still return list pages ⚠️
 - v1.0.67 = removed Playwright, pure Claude only ❌ (broke classifieds)
 
 ---
