@@ -9,7 +9,26 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.0.57
+**Current version:** v1.0.85
+
+---
+
+## Stable Checkpoints — "go back to stable" means restore these
+
+| Checkpoint | Git commit | What works |
+|---|---|---|
+| **B2C stable** | `c9f5560` (v1.0.66) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. Endpoint: `/api/discovery/b2c-search`. Files: `b2cSearchService.ts` + `B2CDiscoveryContent.tsx` |
+
+**To restore B2C to stable:**
+```bash
+git show c9f5560:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
+git show c9f5560:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+```
+Then bump version + push.
+
+**Why v1.0.66 and not v1.0.67:**
+- v1.0.66 = Claude web_search + Playwright drill-down ✅
+- v1.0.67 = removed Playwright, pure Claude only ❌ (broke classifieds)
 
 ---
 
