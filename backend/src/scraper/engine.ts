@@ -132,6 +132,11 @@ export class ScraperEngine {
         logger.debug("[Scraper] goto timed out, extracting anyway", { url, error: err.message })
       })
 
+      // Wait for JS-rendered prices to settle (critical for custom React/Vue/Angular shops).
+      // networkidle = no network requests for 500ms → JS has finished rendering prices.
+      // Cap at 5s so we never block on analytics/chat beacons that never stop.
+      await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
+
       if (waitForSelector) {
         await page.waitForSelector(waitForSelector, { timeout: 10000 }).catch(() => {
           logger.debug("[Scraper] waitForSelector timed out", { waitForSelector })
@@ -301,10 +306,10 @@ export class ScraperEngine {
                 if (/\/(product-category|categories|category|browse|shop)\//i.test(pathLower)) continue
 
                 // Must match query keywords in the URL path:
-                // - 3+ keyword query: require 2 matches (prevents "pro" alone matching "macbook-pro")
-                // - 1-2 keyword query: require 1 match
+                // Short queries (≤3 words): require ALL — "apple airpods pro" filters out "apple-airpods-4"
+                // Long queries (4+ words): require 75% — allows storage/color variants in URL
                 // OR have a numeric listing ID (4+ consecutive digits) in the path
-                const minMatches   = keywords.length >= 3 ? 2 : 1
+                const minMatches   = keywords.length <= 3 ? keywords.length : Math.ceil(keywords.length * 0.75)
                 const matchCount   = keywords.filter((k) => pathLower.includes(k)).length
                 const hasKeyword   = keywords.length > 0 && matchCount >= minMatches
                 const hasNumericId = /\/\d{4,}/.test(pathLower)

@@ -346,13 +346,10 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
       }))
     }
 
-    // Sort: price-found first (ascending), then no-price at the end
-    return scraped.sort((a, b) => {
-      if (a.price !== null && b.price !== null) return a.price - b.price
-      if (a.price !== null) return -1
-      if (b.price !== null) return 1
-      return 0
-    })
+    // Only show results with a confirmed price — no-price listings are useless to the user
+    return scraped
+      .filter(r => r.price !== null)
+      .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
   } finally {
     await engine.close().catch(() => {})
   }

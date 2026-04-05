@@ -20,22 +20,63 @@ export async function extractWithVision(
 }> {
   if (!apiKey) throw new Error("No ANTHROPIC_API_KEY")
 
+  const pageUrl  = page.url()
+  const queryLine = searchQuery ? `\nTarget product being searched: "${searchQuery}"\n` : ""
+
+  // ── Step 1: Dismiss overlays (cookie banners, chat widgets, GDPR popups) ──────
+  // These often cover the price and make Vision return null.
+  await page.evaluate(() => {
+    const patterns = [
+      // Cookie consent buttons (most common)
+      "#onetrust-accept-btn-handler",
+      ".cc-btn.cc-allow",
+      "#accept-cookies",
+      "#cookie-accept",
+      ".cookie-accept",
+      '[id*="accept"][id*="cookie"]',
+      '[class*="accept"][class*="cookie"]',
+      // Generic accept/agree buttons visible on screen
+      'button[id*="accept"]',
+      'button[id*="agree"]',
+      'button[class*="accept"]',
+      'button[class*="agree"]',
+      // Generic close buttons for popups/modals
+      '[aria-label="Close"]',
+      '[aria-label="close"]',
+      '[aria-label="Accept all"]',
+      '[aria-label="I Accept"]',
+      '[class*="popup"] [class*="close"]',
+      '[class*="modal"] [class*="close"]',
+      '[class*="overlay"] [class*="close"]',
+      '[id*="popup"] button',
+      // Chat widgets (hide, don't close — they cover content)
+      '[id*="chat-widget"]',
+      '[class*="chat-widget"]',
+      '[id="launcher"]',
+    ]
+    for (const s of patterns) {
+      try {
+        const el = document.querySelector(s) as HTMLElement | null
+        // Only interact with visible elements (offsetParent !== null = visible)
+        if (!el || el.offsetParent === null) continue
+        // Hide chat widgets instead of clicking (clicking opens them)
+        if (s.includes("chat") || s.includes("launcher")) {
+          el.style.display = "none"
+        } else {
+          el.click()
+          break  // one dismiss is enough
+        }
+      } catch { /* ignore */ }
+    }
+  }).catch(() => {})
+
+  // Brief pause for dismiss animation to complete
+  await new Promise(r => setTimeout(r, 400))
   await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {})
 
-  const screenshotBuffer = await page.screenshot({
-    type:     "jpeg",
-    quality:  75,
-    fullPage: false,
-    clip:     { x: 0, y: 0, width: 1366, height: 768 },
-  })
-  const base64Image = screenshotBuffer.toString("base64")
-  const pageUrl = page.url()
-
-  const queryLine = searchQuery
-    ? `\nTarget product being searched: "${searchQuery}"\n`
-    : ""
-
-  const prompt = `You are analyzing a product page screenshot from an e-commerce website (${pageUrl}).${queryLine}
+  // ── Build the Vision prompt ───────────────────────────────────────────────────
+  const prompt =
+    `You are analyzing a product page screenshot from an e-commerce website (${pageUrl}).${queryLine}
 Extract the following fields from what you see on screen and return ONLY a JSON object:
 
 {
@@ -55,47 +96,74 @@ Rules:
 - IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results)${searchQuery ? ` and you know the target product is "${searchQuery}"` : ""}, find the listing card that BEST MATCHES the target product and extract its price and title. Do NOT pick a random card — look for the exact model/variant. If none match exactly, pick the closest match. Never return null just because multiple items are shown.
 - Return ONLY the JSON object, no explanation, no markdown`
 
-  const body = JSON.stringify({
-    model:      "claude-haiku-4-5-20251001",
-    max_tokens: 256,
-    messages: [{
-      role:    "user",
-      content: [
-        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
-        { type: "text",  text: prompt },
-      ],
-    }],
-  })
-
   const headers = {
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
     "content-type":      "application/json",
   }
 
-  let response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+  // ── Core Vision call — takes screenshot at given scroll position ──────────────
+  const callVisionAt = async (scrollY: number): Promise<any> => {
+    if (scrollY > 0) {
+      await page.evaluate((y: number) => window.scrollTo(0, y), scrollY).catch(() => {})
+      await new Promise(r => setTimeout(r, 350))
+    }
 
-  // Retry once on 429 — Tier 2 (450k tokens/min) makes this rare; 5s covers transient spikes
-  if (response.status === 429) {
-    logger.info("[AI Scraper] Vision 429 — waiting 5s then retrying", { url: pageUrl })
-    await new Promise(r => setTimeout(r, 5_000))
-    response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+    const screenshotBuffer = await page.screenshot({
+      type:     "jpeg",
+      quality:  75,
+      fullPage: false,
+      clip:     { x: 0, y: 0, width: 1366, height: 900 },  // 900px — captures more content
+    })
+    const base64Image = screenshotBuffer.toString("base64")
+
+    const body = JSON.stringify({
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 256,
+      messages: [{
+        role:    "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
+          { type: "text",  text: prompt },
+        ],
+      }],
+    })
+
+    let response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+
+    // Retry once on 429 — Tier 2 (450k tokens/min) makes this rare
+    if (response.status === 429) {
+      logger.info("[AI Scraper] Vision 429 — waiting 5s then retrying", { url: pageUrl })
+      await new Promise(r => setTimeout(r, 5_000))
+      response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+    }
+
+    if (!response.ok) {
+      const err = await response.text().catch(() => "")
+      throw new Error(`Claude Vision API ${response.status}: ${err}`)
+    }
+
+    const data    = await response.json()
+    const rawText = data?.content?.[0]?.text || "{}"
+
+    let parsed: any = {}
+    try {
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+      if (jsonMatch) parsed = JSON.parse(jsonMatch[0])
+    } catch {
+      logger.warn("[AI Scraper] Failed to parse Claude Vision response", { rawText })
+    }
+    return parsed
   }
 
-  if (!response.ok) {
-    const err = await response.text().catch(() => "")
-    throw new Error(`Claude Vision API ${response.status}: ${err}`)
-  }
+  // ── Attempt 1: screenshot at top of page ──────────────────────────────────────
+  let parsed = await callVisionAt(0)
 
-  const data    = await response.json()
-  const rawText = data?.content?.[0]?.text || "{}"
-
-  let parsed: any = {}
-  try {
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (jsonMatch) parsed = JSON.parse(jsonMatch[0])
-  } catch {
-    logger.warn("[AI Scraper] Failed to parse Claude Vision response", { rawText })
+  // ── Attempt 2: if price is null, scroll down and retry ───────────────────────
+  // Handles sites where the price is below a large hero image or sticky header.
+  if (parsed.price == null) {
+    logger.info("[AI Scraper] Price null at scroll=0 — retrying at scroll=450", { url: pageUrl })
+    parsed = await callVisionAt(450)
   }
 
   logger.info("[AI Scraper] Vision extraction result", {
