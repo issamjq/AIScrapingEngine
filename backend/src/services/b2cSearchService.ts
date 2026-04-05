@@ -210,6 +210,35 @@ async function drillIntoSearchPages(
   return result
 }
 
+// Generic CSS price selectors for common e-commerce platforms.
+// Tried first (preferSelectors:true) — Vision AI only fires if all return null.
+// This drastically reduces Vision API token usage for Shopify + WooCommerce sites.
+const B2C_PRICE_SELECTORS = [
+  // Shopify
+  ".price__regular .price-item--regular",
+  ".price-item.price-item--regular",
+  ".price-item--regular",
+  ".price-item--sale",
+  "[data-product-price]",
+  // WooCommerce
+  ".price ins .woocommerce-Price-amount bdi",
+  ".price > .woocommerce-Price-amount bdi",
+  ".price .woocommerce-Price-amount bdi",
+  ".woocommerce-Price-amount bdi",
+  // Generic structured data
+  '[itemprop="price"]',
+  ".product__price",
+  ".product-price",
+]
+
+const B2C_TITLE_SELECTORS = [
+  "h1.product_title",       // WooCommerce
+  "h1.product__title",      // Shopify
+  "h1.title",
+  'h1[itemprop="name"]',
+  "h1",
+]
+
 // ── Step 2b: Scrape each URL for price ────────────────────────────
 async function scrapeUrls(
   items:  Array<{ retailer: string; url: string; title: string; condition: string }>,
@@ -219,17 +248,23 @@ async function scrapeUrls(
 ): Promise<B2CResult[]> {
   const results: B2CResult[] = []
 
-  // Sequential with 3s gap — the web search call (fired ~12s earlier) consumes
-  // most of the 50k-token/min org budget; spacing Vision calls avoids cascading 429s.
+  // Sequential with 3s gap between Vision-capable calls.
+  // preferSelectors:true means CSS selectors run first; Vision only fires as fallback
+  // for sites where all CSS selectors return null. Shopify/WooCommerce sites will
+  // resolve via CSS and never touch the Vision token budget.
   for (let i = 0; i < items.length; i++) {
     if (i > 0) await new Promise(r => setTimeout(r, 3_000))
 
     const item = items[i]
     try {
-      const result = await engine.scrape(item.url, {}, {
+      const result = await engine.scrape(item.url, {
+        price:          B2C_PRICE_SELECTORS,
+        title:          B2C_TITLE_SELECTORS,
+        preferSelectors: true,              // CSS first — Vision only if all selectors fail
+      }, {
         timeout:        20_000,
-        blockResources: ["font", "media"],   // keep images for Vision AI
-        searchQuery:    query,               // tells Vision AI which listing card to pick
+        blockResources: ["font", "media"],  // keep images loaded in case Vision is needed
+        searchQuery:    query,              // tells Vision AI which listing card to pick
       })
       results.push({
         retailer:      item.retailer,
