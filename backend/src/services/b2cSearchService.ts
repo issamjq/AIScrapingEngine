@@ -272,12 +272,12 @@ async function scrapeUrls(
   const tasks = items.map((item) => async (): Promise<B2CResult> => {
     try {
       const result = await engine.scrape(item.url, {
-        price:           B2C_PRICE_SELECTORS,
+        price:           [],                // no CSS price selectors — pipeline: JSON-LD → Vision AI
         title:           B2C_TITLE_SELECTORS,
-        preferSelectors: true,              // JSON-LD → CSS → Vision AI
+        preferSelectors: true,              // JSON-LD first, then Vision AI (CSS skipped for price)
       }, {
         timeout:        20_000,
-        blockResources: ["font", "media"],  // keep images loaded in case Vision is needed
+        blockResources: ["font", "media"],  // keep images loaded for Vision AI
         searchQuery:    query,              // tells Vision AI which listing card to pick
       })
       return {
