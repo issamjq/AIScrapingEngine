@@ -185,6 +185,20 @@ async function withConcurrency<T>(
   return results
 }
 
+// ── Detect if a URL is already an individual product/listing page ─────────────
+function isProductPage(url: string): boolean {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    // Shopify: /products/slug (not just /products or /products/)
+    if (/\/products\/[^/]{3,}\/?$/.test(path)) return true
+    // WooCommerce: /product/slug
+    if (/\/product\/[^/]{3,}\/?$/.test(path)) return true
+    // Generic listing patterns
+    if (/\/(item|listing|ad|p)\/[^/]/.test(path)) return true
+    return false
+  } catch { return false }
+}
+
 // ── Step 2a: Drill into search/category pages → individual listing URLs ──
 async function drillIntoSearchPages(
   searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
@@ -197,10 +211,18 @@ async function drillIntoSearchPages(
   const result: typeof searchPages = []
 
   // Drill into ALL search pages (already capped at 5 unique sites from web search step)
-  // Get 3 individual listing URLs per site → max 5 × 3 = 15 total listings
+  // Get 2 individual listing URLs per site → max 5 × 2 = 10 total listings
   for (const sp of searchPages) {
     try {
-      const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
+      // If Claude already returned a specific product page URL, skip drill-down
+      // (e.g. Shopify /products/slug — drilling in finds only image gallery URLs)
+      if (isProductPage(sp.url)) {
+        result.push(sp)
+        logger.info("[B2CSearch] Product page — using directly", { url: sp.url })
+        continue
+      }
+
+      const links = await engine.getListingUrls(sp.url, 2, queryKeywords)
       // Only keep individual listing URLs — never fall back to the search/list page itself
       // (scraping a list page causes Vision AI to pick a price from a random card on the page)
       for (const url of links) {

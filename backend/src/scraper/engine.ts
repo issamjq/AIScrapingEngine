@@ -273,11 +273,18 @@ export class ScraperEngine {
                 if (segments.length < 3)     continue
                 if (/[?&](page|sort|filter|order)=/i.test(u.search)) continue
 
+                // Skip image and binary asset URLs
+                if (/\.(jpg|jpeg|png|webp|gif|svg|avif|bmp|ico|tiff?|pdf|zip|mp4|mp3)(\?|#|$)/i.test(u.pathname)) continue
+
                 const pathLower = u.pathname.toLowerCase()
 
-                // Must match at least one query keyword in the URL path
+                // Must match query keywords in the URL path:
+                // - 3+ keyword query: require 2 matches (prevents "pro" alone matching "macbook-pro")
+                // - 1-2 keyword query: require 1 match
                 // OR have a numeric listing ID (4+ consecutive digits) in the path
-                const hasKeyword   = keywords.length > 0 && keywords.some((k) => pathLower.includes(k))
+                const minMatches   = keywords.length >= 3 ? 2 : 1
+                const matchCount   = keywords.filter((k) => pathLower.includes(k)).length
+                const hasKeyword   = keywords.length > 0 && matchCount >= minMatches
                 const hasNumericId = /\/\d{4,}/.test(pathLower)
 
                 if (!hasKeyword && !hasNumericId) continue

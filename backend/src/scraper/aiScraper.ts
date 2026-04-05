@@ -55,25 +55,32 @@ Rules:
 - IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results)${searchQuery ? ` and you know the target product is "${searchQuery}"` : ""}, find the listing card that BEST MATCHES the target product and extract its price and title. Do NOT pick a random card — look for the exact model/variant. If none match exactly, pick the closest match. Never return null just because multiple items are shown.
 - Return ONLY the JSON object, no explanation, no markdown`
 
-  const response = await fetch(CLAUDE_API, {
-    method:  "POST",
-    headers: {
-      "x-api-key":         apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type":      "application/json",
-    },
-    body: JSON.stringify({
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 256,
-      messages: [{
-        role:    "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
-          { type: "text",  text: prompt },
-        ],
-      }],
-    }),
+  const body = JSON.stringify({
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 256,
+    messages: [{
+      role:    "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/jpeg", data: base64Image } },
+        { type: "text",  text: prompt },
+      ],
+    }],
   })
+
+  const headers = {
+    "x-api-key":         apiKey,
+    "anthropic-version": "2023-06-01",
+    "content-type":      "application/json",
+  }
+
+  let response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+
+  // Retry once on 429 rate limit — wait 12 seconds then try again
+  if (response.status === 429) {
+    logger.info("[AI Scraper] Vision 429 — waiting 12s then retrying", { url: pageUrl })
+    await new Promise(r => setTimeout(r, 12_000))
+    response = await fetch(CLAUDE_API, { method: "POST", headers, body })
+  }
 
   if (!response.ok) {
     const err = await response.text().catch(() => "")
