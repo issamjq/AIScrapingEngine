@@ -137,7 +137,7 @@ async function b2cWebSearch(
     })
     withPriority.sort((a, b) => a.priority - b.priority)
 
-    // Deduplicate: keep only the first result per domain, cap at 7 unique sites
+    // Deduplicate: keep only the first result per domain, cap at 10 unique sites
     const seenDomains = new Set<string>()
     const deduped = withPriority
       .map(({ r }) => r)
@@ -146,7 +146,7 @@ async function b2cWebSearch(
           const domain = new URL(r.url).hostname.replace("www.", "")
           if (seenDomains.has(domain)) return false
           seenDomains.add(domain)
-          return seenDomains.size <= 7   // Tier 2: 450k tokens/min — can handle 7 sites
+          return seenDomains.size <= 10  // Tier 2: 450k tokens/min — handles 10 sites easily
         } catch { return false }
       })
 
@@ -309,7 +309,7 @@ async function scrapeUrls(
     }
   })
 
-  return withConcurrency(tasks, 3)
+  return withConcurrency(tasks, 4)
 }
 
 // ── Main export ───────────────────────────────────────────────────

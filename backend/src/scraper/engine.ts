@@ -312,7 +312,10 @@ export class ScraperEngine {
                 const minMatches   = keywords.length <= 3 ? keywords.length : Math.ceil(keywords.length * 0.75)
                 const matchCount   = keywords.filter((k) => pathLower.includes(k)).length
                 const hasKeyword   = keywords.length > 0 && matchCount >= minMatches
-                const hasNumericId = /\/\d{4,}/.test(pathLower)
+                // Numeric ID checked on pathname ONLY (not query string).
+                // ?variant=44104843198643 is a Shopify param, not a listing ID —
+                // it must not bypass the keyword filter.
+                const hasNumericId = /\/\d{4,}/.test(u.pathname.toLowerCase())
 
                 if (!hasKeyword && !hasNumericId) continue
 
