@@ -365,9 +365,22 @@ export class ScraperEngine {
               }
               if (data["@type"] !== "Product") continue
 
-              // offers can be a single object or an array
+              // offers can be a single object or an array of per-variant offers (Shopify)
               const rawOffers = data.offers
-              const offers: any = Array.isArray(rawOffers) ? rawOffers[0] : rawOffers
+              let offers: any
+              if (Array.isArray(rawOffers)) {
+                // For variant URLs (e.g. ?variant=44104843198643), find the offer
+                // whose URL matches the current variant — avoids picking the wrong
+                // variant's price when offers[0] is a different (more expensive) SKU
+                const variantParam = (() => {
+                  try { return new URL(window.location.href).searchParams.get("variant") } catch { return null }
+                })()
+                offers = variantParam
+                  ? (rawOffers.find((o: any) => o.url && String(o.url).includes(`variant=${variantParam}`)) || rawOffers[0])
+                  : rawOffers[0]
+              } else {
+                offers = rawOffers
+              }
               if (!offers) continue
 
               const priceStr = offers.price ?? offers.lowPrice
