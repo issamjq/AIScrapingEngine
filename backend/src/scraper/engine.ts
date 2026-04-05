@@ -167,15 +167,30 @@ export class ScraperEngine {
           availability        = parseAvailability(rawAvailabilityText)
         }
       } else {
-        rawTitleText        = await this._extractFirst(page, titleSelectors)
-        rawPriceText        = await this._extractFirst(page, priceSelectors)
-        rawAvailabilityText = await this._extractFirst(page, availabilitySelectors)
-        const parsed        = parsePrice(rawPriceText, currency)
-        price               = parsed.price
-        originalPrice       = null
-        detectedCurrency    = parsed.currency
-        availability        = parseAvailability(rawAvailabilityText)
+        // Step 1: JSON-LD structured data — always server-rendered in Shopify/WooCommerce
+        // initial HTML before any JavaScript executes. Most reliable for known platforms.
+        const schema = await this._extractFromSchema(page, currency)
+        if (schema.price !== null) {
+          price            = schema.price
+          originalPrice    = schema.originalPrice
+          detectedCurrency = schema.currency
+          rawPriceText     = String(schema.price)
+          rawTitleText     = schema.title
+          availability     = schema.availability
+          logger.info("[Scraper] Extracted from JSON-LD schema", { url, price, currency: detectedCurrency })
+        } else {
+          // Step 2: CSS selectors (platform-specific, may miss if JS-rendered)
+          rawTitleText        = await this._extractFirst(page, titleSelectors)
+          rawPriceText        = await this._extractFirst(page, priceSelectors)
+          rawAvailabilityText = await this._extractFirst(page, availabilitySelectors)
+          const parsed        = parsePrice(rawPriceText, currency)
+          price               = parsed.price
+          originalPrice       = null
+          detectedCurrency    = parsed.currency
+          availability        = parseAvailability(rawAvailabilityText)
+        }
 
+        // Step 3: Vision AI fallback — only if both JSON-LD and CSS found nothing
         if (price === null && aiApiKey) {
           logger.info("[Scraper] Selectors found no price, trying Claude Vision fallback", { url })
           const aiResult = await extractWithVision(page, currency, aiApiKey, searchQuery).catch(() => null)
@@ -325,6 +340,64 @@ export class ScraperEngine {
       return []
     } finally {
       await context.close().catch(() => {})
+    }
+  }
+
+  async _extractFromSchema(page: any, defaultCurrency: string): Promise<{
+    price:         number | null
+    originalPrice: number | null
+    currency:      string
+    title:         string | null
+    availability:  string
+  }> {
+    try {
+      return await page.evaluate((fallbackCurrency: string) => {
+        const none = { price: null, originalPrice: null, currency: fallbackCurrency, title: null, availability: "unknown" }
+        try {
+          const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+          for (const script of scripts) {
+            try {
+              let data: any = JSON.parse((script as HTMLScriptElement).textContent || "")
+              // Unwrap @graph arrays (some sites wrap all schema in a @graph)
+              if (data["@graph"]) {
+                data = (data["@graph"] as any[]).find((n: any) => n["@type"] === "Product") || {}
+              }
+              if (data["@type"] !== "Product") continue
+
+              // offers can be a single object or an array
+              const rawOffers = data.offers
+              const offers: any = Array.isArray(rawOffers) ? rawOffers[0] : rawOffers
+              if (!offers) continue
+
+              const priceStr = offers.price ?? offers.lowPrice
+              if (priceStr == null) continue
+              const price = parseFloat(String(priceStr).replace(/[^0-9.]/g, ""))
+              if (isNaN(price) || price <= 0) continue
+
+              const currency = offers.priceCurrency || fallbackCurrency
+
+              // Original price from highPrice (sale vs regular)
+              let originalPrice: number | null = null
+              if (offers.highPrice != null) {
+                const hi = parseFloat(String(offers.highPrice).replace(/[^0-9.]/g, ""))
+                if (!isNaN(hi) && hi > price) originalPrice = hi
+              }
+
+              const title: string | null = typeof data.name === "string" ? data.name : null
+
+              const avail = String(offers.availability || "").toLowerCase()
+              const availability = avail.includes("instock") ? "In Stock"
+                                 : avail.includes("outofstock") ? "Out of Stock"
+                                 : "unknown"
+
+              return { price, originalPrice, currency, title, availability }
+            } catch { continue }
+          }
+          return none
+        } catch { return none }
+      }, defaultCurrency)
+    } catch {
+      return { price: null, originalPrice: null, currency: defaultCurrency, title: null, availability: "unknown" }
     }
   }
 
