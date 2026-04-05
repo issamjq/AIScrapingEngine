@@ -230,11 +230,15 @@ async function drillIntoSearchPages(
 // Tried first (preferSelectors:true) — Vision AI only fires if all return null.
 // This drastically reduces Vision API token usage for Shopify + WooCommerce sites.
 const B2C_PRICE_SELECTORS = [
-  // Shopify
+  // Shopify — sale price FIRST: only present on the main product when on sale.
+  // Related-product carousels only use .price-item--regular, so this selector
+  // naturally skips them and returns the discounted price (e.g. $125 not $1,025).
+  ".price-item--sale",
+  ".price-item.price-item--sale",
+  // Shopify — regular price (fallback when not on sale)
   ".price__regular .price-item--regular",
   ".price-item.price-item--regular",
   ".price-item--regular",
-  ".price-item--sale",
   "[data-product-price]",
   // WooCommerce
   ".price ins .woocommerce-Price-amount bdi",
