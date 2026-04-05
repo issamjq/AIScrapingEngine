@@ -158,33 +158,6 @@ async function b2cWebSearch(
   }
 }
 
-// ── Simple concurrency limiter ────────────────────────────────────
-async function withConcurrency<T>(
-  tasks:     Array<() => Promise<T>>,
-  maxActive: number
-): Promise<T[]> {
-  const results: T[]              = new Array(tasks.length)
-  const active:  Promise<void>[]  = []
-
-  for (let i = 0; i < tasks.length; i++) {
-    const idx = i
-    const p   = (async () => { results[idx] = await tasks[idx]() })()
-    active.push(p)
-    if (active.length >= maxActive) await Promise.race(active)
-    // clean settled
-    for (let j = active.length - 1; j >= 0; j--) {
-      active[j] = active[j].then(() => {
-        active.splice(j, 1)
-      }).catch(() => {
-        active.splice(j, 1)
-      })
-    }
-  }
-
-  await Promise.allSettled(active)
-  return results
-}
-
 // ── Detect if a URL is already an individual product/listing page ─────────────
 function isProductPage(url: string): boolean {
   try {
@@ -244,14 +217,21 @@ async function scrapeUrls(
   engine: ScraperEngine,
   query:  string
 ): Promise<B2CResult[]> {
-  const tasks = items.map((item) => async (): Promise<B2CResult> => {
+  const results: B2CResult[] = []
+
+  // Sequential with 3s gap — the web search call (fired ~12s earlier) consumes
+  // most of the 50k-token/min org budget; spacing Vision calls avoids cascading 429s.
+  for (let i = 0; i < items.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 3_000))
+
+    const item = items[i]
     try {
       const result = await engine.scrape(item.url, {}, {
         timeout:        20_000,
         blockResources: ["font", "media"],   // keep images for Vision AI
         searchQuery:    query,               // tells Vision AI which listing card to pick
       })
-      return {
+      results.push({
         retailer:      item.retailer,
         url:           item.url,
         title:         result.title || item.title,
@@ -262,10 +242,10 @@ async function scrapeUrls(
         availability:  result.availability || "unknown",
         imageUrl:      result.imageUrl,
         priceSource:   result.price !== null ? "scraped" : "not_found",
-      }
+      })
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
-      return {
+      results.push({
         retailer:      item.retailer,
         url:           item.url,
         title:         item.title,
@@ -276,13 +256,11 @@ async function scrapeUrls(
         availability:  "unknown",
         imageUrl:      null,
         priceSource:   "not_found",
-      }
+      })
     }
-  })
+  }
 
-  // 2 concurrent scrapes — prevents Vision AI 429 rate limit (50k tokens/min)
-  // Each Vision call ~5k tokens → 2 concurrent = 10k tokens/batch, well within limit
-  return await withConcurrency(tasks, 2)
+  return results
 }
 
 // ── Main export ───────────────────────────────────────────────────

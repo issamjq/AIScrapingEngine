@@ -257,8 +257,9 @@ export class ScraperEngine {
       const evalLinks = () => page.evaluate(
         ({ pageUrl, keywords }: { pageUrl: string; keywords: string[] }) => {
           try {
-            const baseHost = new URL(pageUrl).hostname
-            const seen     = new Set<string>()
+            const baseHost   = new URL(pageUrl).hostname
+            const sourcePath = new URL(pageUrl).pathname
+            const seen       = new Set<string>()
             const out: string[] = []
 
             for (const el of Array.from(document.querySelectorAll("a[href]"))) {
@@ -268,15 +269,20 @@ export class ScraperEngine {
                 const u        = new URL(href)
                 const segments = u.pathname.split("/").filter(Boolean)
 
-                if (u.hostname !== baseHost) continue
-                if (href === pageUrl)        continue
-                if (segments.length < 3)     continue
+                if (u.hostname !== baseHost)  continue
+                if (href === pageUrl)          continue
+                // Skip same-pathname links that differ only by fragment/anchor (e.g. #main, #)
+                if (u.pathname === sourcePath) continue
+                if (segments.length < 3)       continue
                 if (/[?&](page|sort|filter|order)=/i.test(u.search)) continue
 
                 // Skip image and binary asset URLs
                 if (/\.(jpg|jpeg|png|webp|gif|svg|avif|bmp|ico|tiff?|pdf|zip|mp4|mp3)(\?|#|$)/i.test(u.pathname)) continue
 
                 const pathLower = u.pathname.toLowerCase()
+
+                // Skip category/list pages — we want individual product/listing pages only
+                if (/\/(product-category|categories|category|browse|shop)\//i.test(pathLower)) continue
 
                 // Must match query keywords in the URL path:
                 // - 3+ keyword query: require 2 matches (prevents "pro" alone matching "macbook-pro")
