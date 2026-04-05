@@ -75,11 +75,10 @@ Rules:
 
   let response = await fetch(CLAUDE_API, { method: "POST", headers, body })
 
-  // Retry once on 429 rate limit — wait 30s (rate limit window is 60s; web search
-  // consumes most of the budget, so we need to wait for it to partially clear)
+  // Retry once on 429 — Tier 2 (450k tokens/min) makes this rare; 5s covers transient spikes
   if (response.status === 429) {
-    logger.info("[AI Scraper] Vision 429 — waiting 30s then retrying", { url: pageUrl })
-    await new Promise(r => setTimeout(r, 30_000))
+    logger.info("[AI Scraper] Vision 429 — waiting 5s then retrying", { url: pageUrl })
+    await new Promise(r => setTimeout(r, 5_000))
     response = await fetch(CLAUDE_API, { method: "POST", headers, body })
   }
 

@@ -137,7 +137,7 @@ async function b2cWebSearch(
     })
     withPriority.sort((a, b) => a.priority - b.priority)
 
-    // Deduplicate: keep only the first result per domain, cap at 5 unique sites
+    // Deduplicate: keep only the first result per domain, cap at 7 unique sites
     const seenDomains = new Set<string>()
     const deduped = withPriority
       .map(({ r }) => r)
@@ -146,7 +146,7 @@ async function b2cWebSearch(
           const domain = new URL(r.url).hostname.replace("www.", "")
           if (seenDomains.has(domain)) return false
           seenDomains.add(domain)
-          return seenDomains.size <= 5   // hard cap: 5 unique websites max
+          return seenDomains.size <= 7   // Tier 2: 450k tokens/min — can handle 7 sites
         } catch { return false }
       })
 
@@ -156,6 +156,22 @@ async function b2cWebSearch(
     logger.error("[B2CSearch] Web search error", { error: (err as any).message })
     throw err
   }
+}
+
+// ── Concurrency limiter ───────────────────────────────────────────────────────
+async function withConcurrency<T>(tasks: Array<() => Promise<T>>, limit: number): Promise<T[]> {
+  const results: T[] = new Array(tasks.length)
+  const executing    = new Set<Promise<void>>()
+
+  for (let i = 0; i < tasks.length; i++) {
+    const idx = i
+    const p: Promise<void> = (async () => { results[idx] = await tasks[idx]() })()
+      .finally(() => executing.delete(p))
+    executing.add(p)
+    if (executing.size >= limit) await Promise.race(executing)
+  }
+  await Promise.all(executing)
+  return results
 }
 
 // ── Detect if a URL is already an individual product/listing page ─────────────
@@ -183,8 +199,8 @@ async function drillIntoSearchPages(
 
   const result: typeof searchPages = []
 
-  // Drill into ALL search pages (already capped at 5 unique sites from web search step)
-  // Get 2 individual listing URLs per site → max 5 × 2 = 10 total listings
+  // Drill into ALL search pages (already capped at 7 unique sites from web search step)
+  // Get 3 individual listing URLs per site → max 7 × 3 = 21 total listings
   for (const sp of searchPages) {
     try {
       // If Claude already returned a specific product page URL, skip drill-down
@@ -195,7 +211,7 @@ async function drillIntoSearchPages(
         continue
       }
 
-      const links = await engine.getListingUrls(sp.url, 2, queryKeywords)
+      const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
       // Only keep individual listing URLs — never fall back to the search/list page itself
       // (scraping a list page causes Vision AI to pick a price from a random card on the page)
       for (const url of links) {
@@ -246,27 +262,21 @@ async function scrapeUrls(
   engine: ScraperEngine,
   query:  string
 ): Promise<B2CResult[]> {
-  const results: B2CResult[] = []
-
-  // Sequential with 3s gap between Vision-capable calls.
-  // preferSelectors:true means CSS selectors run first; Vision only fires as fallback
-  // for sites where all CSS selectors return null. Shopify/WooCommerce sites will
-  // resolve via CSS and never touch the Vision token budget.
-  for (let i = 0; i < items.length; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 3_000))
-
-    const item = items[i]
+  // 3-concurrent scraping — Tier 2 (450k tokens/min) has ample headroom.
+  // JSON-LD extraction runs first (no Vision tokens used for Shopify/WooCommerce),
+  // so Vision only fires for truly unknown sites.
+  const tasks = items.map((item) => async (): Promise<B2CResult> => {
     try {
       const result = await engine.scrape(item.url, {
-        price:          B2C_PRICE_SELECTORS,
-        title:          B2C_TITLE_SELECTORS,
-        preferSelectors: true,              // CSS first — Vision only if all selectors fail
+        price:           B2C_PRICE_SELECTORS,
+        title:           B2C_TITLE_SELECTORS,
+        preferSelectors: true,              // JSON-LD → CSS → Vision AI
       }, {
         timeout:        20_000,
         blockResources: ["font", "media"],  // keep images loaded in case Vision is needed
         searchQuery:    query,              // tells Vision AI which listing card to pick
       })
-      results.push({
+      return {
         retailer:      item.retailer,
         url:           item.url,
         title:         result.title || item.title,
@@ -277,10 +287,10 @@ async function scrapeUrls(
         availability:  result.availability || "unknown",
         imageUrl:      result.imageUrl,
         priceSource:   result.price !== null ? "scraped" : "not_found",
-      })
+      }
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
-      results.push({
+      return {
         retailer:      item.retailer,
         url:           item.url,
         title:         item.title,
@@ -291,11 +301,11 @@ async function scrapeUrls(
         availability:  "unknown",
         imageUrl:      null,
         priceSource:   "not_found",
-      })
+      }
     }
-  }
+  })
 
-  return results
+  return withConcurrency(tasks, 3)
 }
 
 // ── Main export ───────────────────────────────────────────────────
