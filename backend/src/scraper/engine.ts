@@ -171,12 +171,13 @@ export class ScraperEngine {
         // initial HTML before any JavaScript executes. Most reliable for known platforms.
         const schema = await this._extractFromSchema(page, currency)
         if (schema.price !== null) {
-          price            = schema.price
-          originalPrice    = schema.originalPrice
-          detectedCurrency = schema.currency
-          rawPriceText     = String(schema.price)
-          rawTitleText     = schema.title
-          availability     = schema.availability
+          price               = schema.price
+          originalPrice       = schema.originalPrice
+          detectedCurrency    = schema.currency
+          rawPriceText        = String(schema.price)
+          rawTitleText        = schema.title
+          rawAvailabilityText = null
+          availability        = schema.availability
           logger.info("[Scraper] Extracted from JSON-LD schema", { url, price, currency: detectedCurrency })
         } else {
           // Step 2: CSS selectors (platform-specific, may miss if JS-rendered)
