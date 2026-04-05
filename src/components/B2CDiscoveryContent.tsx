@@ -531,44 +531,17 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             ))}
           </div>
 
-          {/* Blurred / locked cards */}
+          {/* Blurred / locked cards — temporarily disabled for debugging */}
           {blurredCards.length > 0 && (
-            <div className="relative rounded-2xl overflow-hidden">
-              {/* Lock overlay */}
-              <div className="absolute inset-0 backdrop-blur-sm bg-background/70 z-10 flex items-center justify-center">
-                <div className="text-center bg-card border shadow-xl rounded-2xl px-8 py-6 max-w-xs mx-4">
-                  <div className="flex justify-center mb-3">
-                    <div className="rounded-full bg-primary/10 p-3">
-                      <Lock className="h-6 w-6 text-primary" />
-                    </div>
-                  </div>
-                  <p className="text-base font-bold mb-1">
-                    {blurredCards.length} more deal{blurredCards.length !== 1 ? "s" : ""} found
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Upgrade to unlock all results and never miss a better price
-                  </p>
-                  <Button
-                    className="w-full gap-1.5"
-                    onClick={() => onNavigate?.("plans")}
-                  >
-                    <Sparkles className="h-4 w-4" />
-                    Unlock all results
-                  </Button>
-                </div>
-              </div>
-
-              {/* Ghost blurred cards */}
-              <div className="space-y-3 opacity-20 pointer-events-none select-none">
-                {blurredCards.map((result, idx) => (
-                  <PriceCard
-                    key={result.url}
-                    result={result}
-                    isBest={false}
-                    rank={visibleCards.length + idx + 1}
-                  />
-                ))}
-              </div>
+            <div className="space-y-3">
+              {blurredCards.map((result, idx) => (
+                <PriceCard
+                  key={result.url}
+                  result={result}
+                  isBest={false}
+                  rank={visibleCards.length + idx + 1}
+                />
+              ))}
             </div>
           )}
         </div>

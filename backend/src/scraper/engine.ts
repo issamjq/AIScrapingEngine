@@ -184,6 +184,7 @@ export class ScraperEngine {
           rawTitleText        = await this._extractFirst(page, titleSelectors)
           rawPriceText        = await this._extractFirst(page, priceSelectors)
           rawAvailabilityText = await this._extractFirst(page, availabilitySelectors)
+          logger.info("[Scraper] CSS selector raw", { url, rawPriceText, rawTitleText })
           const parsed        = parsePrice(rawPriceText, currency)
           price               = parsed.price
           originalPrice       = null
