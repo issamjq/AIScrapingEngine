@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.0.85
+**Current version:** v1.0.105
 
 ---
 
@@ -17,20 +17,29 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **B2C stable** | `f702913` (v1.0.87) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. Never falls back to list pages — drops source if 0 individual listings found. Endpoint: `/api/discovery/b2c-search`. Files: `b2cSearchService.ts` + `B2CDiscoveryContent.tsx` |
-| **B2C old stable** | `c9f5560` (v1.0.66) | Earlier stable before list-page fix |
+| **LATEST STABLE** | `f20dff8` (v1.0.105) | Fully AI-powered B2C: JSON-LD → Vision AI (no CSS). Overlays dismissed, scroll retry, networkidle wait, strict keyword matching, no-price results hidden, 10 sites, 4 concurrent scrapers. All prices correct (tested: apple airpods pro Lebanon). |
+| **B2C old stable** | `f702913` (v1.0.87) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. |
+| **B2C oldest stable** | `c9f5560` (v1.0.66) | Earlier stable before list-page fix |
 
-**To restore B2C to stable:**
+**To restore to LATEST STABLE (v1.0.105):**
 ```bash
-git show f702913:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
-git show f702913:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+git show f20dff8:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
+git show f20dff8:backend/src/scraper/aiScraper.ts > backend/src/scraper/aiScraper.ts
+git show f20dff8:backend/src/scraper/engine.ts > backend/src/scraper/engine.ts
+git show f20dff8:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
 ```
 Then bump version + push.
 
-**Why v1.0.87:**
-- v1.0.87 = Claude web_search + Playwright drill-down + no list page fallback ✅
-- v1.0.66 = same but could still return list pages ⚠️
-- v1.0.67 = removed Playwright, pure Claude only ❌ (broke classifieds)
+**Why v1.0.105 is best:**
+- Fully AI-powered: JSON-LD (free/instant for Shopify/WooCommerce) → Vision AI (any website)
+- No CSS selectors → no carousel price bugs
+- Cookie/popup dismissal before screenshot → Vision sees the actual price
+- Scroll retry at 450px if price null → catches prices below fold
+- networkidle wait → JS-rendered prices loaded before screenshot
+- Strict keyword filter: ≤3 words = ALL must match (no wrong products)
+- numericId check on pathname only (not query string — prevents ?variant= bypass)
+- No-price results filtered out before frontend
+- 10 sites searched, 4 concurrent scrapers
 
 ---
 
