@@ -207,7 +207,35 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
     const results = await b2cSearch(queryText, apiKey, countryHint)
     logger.info("[B2CSearch] Done", { email, count: results.length })
 
+    // Save to search history (fire-and-forget — never block the response)
+    if (results.length > 0) {
+      dbQuery(
+        `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [email, queryText, countryHint, JSON.stringify(results), results.length]
+      ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
+    }
+
     res.json({ success: true, data: { query: queryText, results, limit } })
+  } catch (err) { next(err) }
+})
+
+// GET /api/discovery/b2c-history
+discoveryRouter.get("/b2c-history", async (req, res, next) => {
+  try {
+    const email = (req as AuthRequest).email
+    if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
+
+    const { rows } = await dbQuery(
+      `SELECT id, query, country_hint, results, result_count, searched_at
+       FROM b2c_search_history
+       WHERE user_email = $1
+       ORDER BY searched_at DESC
+       LIMIT 20`,
+      [email]
+    )
+
+    res.json({ success: true, data: rows })
   } catch (err) { next(err) }
 })
 

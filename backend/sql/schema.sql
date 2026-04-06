@@ -372,3 +372,18 @@ VALUES
     true, true, 4
   )
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================
+-- B2C Search History
+-- =============================================================
+CREATE TABLE IF NOT EXISTS b2c_search_history (
+  id           BIGSERIAL PRIMARY KEY,
+  user_email   TEXT        NOT NULL,
+  query        TEXT        NOT NULL,
+  country_hint TEXT        NOT NULL DEFAULT '',
+  results      JSONB       NOT NULL DEFAULT '[]',
+  result_count INTEGER     NOT NULL DEFAULT 0,
+  searched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_b2c_history_user_email ON b2c_search_history (user_email, searched_at DESC);

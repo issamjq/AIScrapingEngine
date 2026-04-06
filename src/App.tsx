@@ -221,7 +221,7 @@ function AppInner() {
 
       // RSP / Scraping Engine pages
       case "discovering":     return <DiscoveringContent role={role} onNavigate={navigate} />
-      case "price-board":     return <PriceBoardContent role={role} />
+      case "price-board":     return <PriceBoardContent role={role} onNavigate={navigate} />
       case "tracked-urls":    return <TrackedUrlsContent role={role} />
       case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />
       case "companies":       return isB2C ? <DashboardContent role={role} /> : <CompaniesContent role={role} />
