@@ -137,6 +137,34 @@ export class ScraperEngine {
       // Cap at 5s so we never block on analytics/chat beacons that never stop.
       await page.waitForLoadState("networkidle", { timeout: 5000 }).catch(() => {})
 
+      // ── Bot-protection redirect detector ────────────────────────────────────
+      // If the site redirected us to a captcha / access-denied / search page,
+      // the final URL will differ from what we asked for.
+      // Scraping a bot-wall page wastes Vision tokens and returns garbage.
+      // Detect and bail out immediately with a null result.
+      const finalUrl = page.url()
+      if (finalUrl && finalUrl !== url) {
+        const isBotWall =
+          /captcha|challenge|blocked|access.?denied|sgcaptcha|\.well-known|\/login|\/signin/i.test(finalUrl)
+        const isSearchRedirect =
+          /\/q-[a-z0-9]|[?&](q|query|s|search|keyword)=/i.test(finalUrl)
+        let crossedDomain = false
+        try {
+          crossedDomain = new URL(finalUrl).hostname !== new URL(url).hostname
+        } catch { /* ignore */ }
+
+        if (isBotWall || isSearchRedirect || crossedDomain) {
+          logger.warn("[Scraper] Bot-protection redirect — skipping", { url, finalUrl })
+          await context.close().catch(() => {})
+          return {
+            success: false, title: null, price: null, originalPrice: null,
+            currency, availability: "unknown", imageUrl: null,
+            rawPriceText: null, rawAvailabilityText: null,
+            scrapeStatus: "bot_blocked", errorMessage: `Redirected to: ${finalUrl}`,
+          }
+        }
+      }
+
       if (waitForSelector) {
         await page.waitForSelector(waitForSelector, { timeout: 10000 }).catch(() => {
           logger.debug("[Scraper] waitForSelector timed out", { waitForSelector })
@@ -307,7 +335,11 @@ export class ScraperEngine {
                 // Works across any website — not site-specific.
 
                 // 1. Category / taxonomy pages (ecommerce)
-                if (/\/(product-category|categories|category|browse|collections?)(\/|$)/i.test(pathLower)) continue
+                // NOTE: Shopify product URLs contain BOTH /collections/ AND /products/ in the path
+                // e.g. /collections/apple-airpods/products/apple-airpods-pro-3?variant=123
+                // Block /collections/ only when there is NO /products/ segment → pure category page
+                if (/\/(product-category|categories|category|browse)(\/|$)/i.test(pathLower)) continue
+                if (/\/collections?\//i.test(pathLower) && !/\/products\//.test(pathLower)) continue
 
                 // 2. Search result pages by PATH — any site that puts search terms in path
                 //    Examples: /q-apple-airpods-pro/ (OLX/Dubizzle), /search/apple-airpods/,
