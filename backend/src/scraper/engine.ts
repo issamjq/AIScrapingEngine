@@ -302,8 +302,13 @@ export class ScraperEngine {
 
                 const pathLower = u.pathname.toLowerCase()
 
-                // Skip category/list pages — we want individual product/listing pages only
+                // Skip category/list/search pages — we want individual product/listing pages only
                 if (/\/(product-category|categories|category|browse|shop)\//i.test(pathLower)) continue
+                // Skip search-result pages: OLX uses /q-keyword/, dubizzle uses ?q=, others use /search/
+                // These are filtered views of many listings, not individual item pages
+                if (/\/q-[a-z0-9]/i.test(pathLower)) continue
+                if (/\/(search|results|find|listing-search)(\/|$)/i.test(pathLower)) continue
+                if (/[?&](q|query|s|search|keyword)=/i.test(u.search)) continue
 
                 // Must match query keywords in the URL path:
                 // Short queries (≤3 words): require ALL — "apple airpods pro" filters out "apple-airpods-4"

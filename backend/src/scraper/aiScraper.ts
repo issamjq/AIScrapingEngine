@@ -94,6 +94,7 @@ Rules:
 - title: the main product heading, include size/variant (e.g. "Marvis Classic Strong Mint 75ml")
 - availability: "in_stock" if Add to Cart / Buy Now is active, "out_of_stock" if sold out, else "unknown"
 - IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results)${searchQuery ? ` and you know the target product is "${searchQuery}"` : ""}, find the listing card that BEST MATCHES the target product and extract its price and title. Do NOT pick a random card — look for the exact model/variant. If none match exactly, pick the closest match. Never return null just because multiple items are shown.
+- CRITICAL — accessories rule: If the search is for a complete product (e.g. "Apple AirPods Pro"), do NOT pick listings for accessories, parts, or add-ons (e.g. "case only", "charging case", "ear tips", "cable", "charger", "strap", "cover"). Only pick a listing for the FULL product itself. If the only listings visible are accessories/parts with no full product listing, return price: null.
 - Return ONLY the JSON object, no explanation, no markdown`
 
   const headers = {
