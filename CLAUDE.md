@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.0.105
+**Current version:** v1.0.113
 
 ---
 
@@ -17,16 +17,17 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **LATEST STABLE** | `f20dff8` (v1.0.105) | Fully AI-powered B2C: JSON-LD → Vision AI (no CSS). Overlays dismissed, scroll retry, networkidle wait, strict keyword matching, no-price results hidden, 10 sites, 4 concurrent scrapers. All prices correct (tested: apple airpods pro Lebanon). |
+| **LATEST STABLE** | `4504db8` (v1.0.113) | All of v1.0.105 + B2C search history (Price Activity), per-stage timer, 240s timeout, product-swap redirect detector, exact date/time in history, fixed geo routing (no hardcoded UAE domains). |
+| **Previous stable** | `f20dff8` (v1.0.105) | Fully AI-powered B2C: JSON-LD → Vision AI (no CSS). Overlays dismissed, scroll retry, networkidle wait, strict keyword matching, no-price results hidden, 10 sites, 4 concurrent scrapers. |
 | **B2C old stable** | `f702913` (v1.0.87) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. |
-| **B2C oldest stable** | `c9f5560` (v1.0.66) | Earlier stable before list-page fix |
 
-**To restore to LATEST STABLE (v1.0.105):**
+**To restore to LATEST STABLE (v1.0.113):**
 ```bash
-git show f20dff8:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
-git show f20dff8:backend/src/scraper/aiScraper.ts > backend/src/scraper/aiScraper.ts
-git show f20dff8:backend/src/scraper/engine.ts > backend/src/scraper/engine.ts
-git show f20dff8:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+git show 4504db8:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
+git show 4504db8:backend/src/scraper/aiScraper.ts > backend/src/scraper/aiScraper.ts
+git show 4504db8:backend/src/scraper/engine.ts > backend/src/scraper/engine.ts
+git show 4504db8:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+git show 4504db8:src/components/PriceBoardContent.tsx > src/components/PriceBoardContent.tsx
 ```
 Then bump version + push.
 

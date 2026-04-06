@@ -23,24 +23,13 @@ async function b2cWebSearch(
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
 
   const geoLine = countryHint
-    ? `The user is in ${countryHint}. Prioritise marketplaces popular there, then expand regionally and globally.`
+    ? `The user is in ${countryHint}. Use your knowledge to find the best marketplaces and retailers for this product IN ${countryHint} first — whatever platforms people actually use there. Then expand regionally and globally if needed.`
     : `Search globally across all major marketplaces.`
-
-  // Product-type hints so Claude knows which sites to search
-  const siteHints =
-    `Site guidance by product type (use whichever fits the query):\n` +
-    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (yallamotor.com), CarSwitch (carswitch.com), OpenSooq (opensooq.com), Haraj (haraj.com.sa), AutoTrader, Avito, OLX local version\n` +
-    `• Electronics / phones → Amazon (use country-appropriate domain), Noon (noon.com), Sharaf DG, Back Market, eBay, local electronics retailers\n` +
-    `• Fashion / luxury → Ounass, Namshi, Farfetch, eBay, Vestiaire Collective, local boutiques\n` +
-    `• Furniture / home → IKEA (local domain), Amazon, Noon, local home stores\n` +
-    `• General goods → Amazon (local domain), Carrefour, LuLu, eBay, local supermarkets\n` +
-    `• Any product → also check classified sites popular in ${countryHint || "the user's country"}: Dubizzle, OLX, local Facebook Marketplace`
 
   const prompt =
     `You are a price discovery API. Your output must ALWAYS be a raw JSON array — never plain text.\n\n` +
     `Search for: "${query}"\n` +
     `${geoLine}\n\n` +
-    `${siteHints}\n\n` +
     `Rules:\n` +
     `1. Use web search now to find pages about this item.\n` +
     `2. Include BOTH new AND used/second-hand listings.\n` +
