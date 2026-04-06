@@ -153,8 +153,21 @@ export class ScraperEngine {
           crossedDomain = new URL(finalUrl).hostname !== new URL(url).hostname
         } catch { /* ignore */ }
 
-        if (isBotWall || isSearchRedirect || crossedDomain) {
-          logger.warn("[Scraper] Bot-protection redirect — skipping", { url, finalUrl })
+        // Also detect product-swap redirects (same domain, different product slug).
+        // e.g. /samsung-galaxy-s24-ultra/ → /samsung-galaxy-s25-ultra/
+        // Extract last meaningful path segment from both URLs and compare.
+        let isProductSwap = false
+        try {
+          const origSlug  = new URL(url).pathname.replace(/\/$/, "").split("/").pop() || ""
+          const finalSlug = new URL(finalUrl).pathname.replace(/\/$/, "").split("/").pop() || ""
+          // If both slugs are non-trivial and differ → different product
+          if (origSlug.length > 4 && finalSlug.length > 4 && origSlug !== finalSlug) {
+            isProductSwap = true
+          }
+        } catch { /* ignore */ }
+
+        if (isBotWall || isSearchRedirect || crossedDomain || isProductSwap) {
+          logger.warn("[Scraper] Bad redirect — skipping", { url, finalUrl, isBotWall, isSearchRedirect, crossedDomain, isProductSwap })
           await context.close().catch(() => {})
           return {
             success: false, title: null, price: null, originalPrice: null,

@@ -164,53 +164,46 @@ function PriceCard({
 }
 
 // ── Loading animation ─────────────────────────────────────────────
-// Phase timings (seconds from start) — roughly match backend pipeline
+// Phase timings (seconds from start) — match actual backend pipeline
 const PHASES = [
-  {
-    key:     "web-search",
-    icon:    Search,
-    label:   "Web Search",
-    detail:  "Searching marketplaces and classifieds globally…",
-    startAt: 0,
-    doneAt:  18,
-  },
-  {
-    key:     "scraping",
-    icon:    Globe,
-    label:   "Scraping Pages",
-    detail:  "Opening listing pages and extracting data…",
-    startAt: 18,
-    doneAt:  50,
-  },
-  {
-    key:     "vision",
-    icon:    Eye,
-    label:   "Vision AI",
-    detail:  "AI reading screenshots to extract prices…",
-    startAt: 50,
-    doneAt:  80,
-  },
-  {
-    key:     "sorting",
-    icon:    Sparkles,
-    label:   "Finalizing",
-    detail:  "Ranking results by best price…",
-    startAt: 80,
-    doneAt:  999,
-  },
+  { key: "web-search", icon: Search,   label: "Web Search",    detail: "Searching marketplaces and classifieds globally…", startAt: 0,   doneAt: 20  },
+  { key: "scraping",   icon: Globe,    label: "Scraping Pages", detail: "Opening listing pages and extracting data…",       startAt: 20,  doneAt: 90  },
+  { key: "vision",     icon: Eye,      label: "Vision AI",      detail: "AI reading screenshots to extract prices…",        startAt: 90,  doneAt: 150 },
+  { key: "sorting",    icon: Sparkles, label: "Finalizing",     detail: "Ranking results by best price…",                   startAt: 150, doneAt: 999 },
 ] as const
 
+// Format elapsed seconds → "42s" or "1 min 22s"
+function formatElapsed(s: number) {
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  const rem = s % 60
+  return rem > 0 ? `${m} min ${rem}s` : `${m} min`
+}
+
 function SearchingState({ query }: { query: string }) {
-  const [elapsed, setElapsed] = useState(0)
+  const [elapsed, setElapsed]               = useState(0)
+  // Track when each phase started (to show per-phase time)
+  const [phaseStart, setPhaseStart]         = useState<Record<number, number>>({ 0: 0 })
+  const prevActiveIdx                       = useState(-1)
 
   useEffect(() => {
     const start = Date.now()
-    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500)
+    const t = setInterval(() => {
+      const secs = Math.floor((Date.now() - start) / 1000)
+      setElapsed(secs)
+    }, 500)
     return () => clearInterval(t)
   }, [])
 
-  const activeIdx = PHASES.findLastIndex((p) => elapsed >= p.startAt)
+  const activeIdx   = PHASES.findLastIndex((p) => elapsed >= p.startAt)
   const activePhase = PHASES[activeIdx] ?? PHASES[0]
+
+  // Record when each phase becomes active
+  useEffect(() => {
+    if (activeIdx >= 0 && !(activeIdx in phaseStart)) {
+      setPhaseStart(prev => ({ ...prev, [activeIdx]: elapsed }))
+    }
+  }, [activeIdx])
 
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-8 text-center">
@@ -230,20 +223,24 @@ function SearchingState({ query }: { query: string }) {
       {/* Pipeline steps */}
       <div className="w-full max-w-xs space-y-2">
         {PHASES.map((phase, idx) => {
-          const Icon = phase.icon
+          const Icon      = phase.icon
           const isDone    = elapsed >= phase.doneAt
           const isActive  = idx === activeIdx
           const isPending = idx > activeIdx
+          // Time spent in this phase
+          const phaseElapsed = isActive
+            ? elapsed - (phaseStart[idx] ?? elapsed)
+            : isDone
+            ? (phaseStart[idx + 1] ?? elapsed) - (phaseStart[idx] ?? 0)
+            : 0
 
           return (
             <div
               key={phase.key}
               className={`flex items-center gap-3 rounded-xl px-4 py-2.5 border transition-all ${
-                isActive
-                  ? "border-primary/40 bg-primary/5 text-foreground"
-                  : isDone
-                  ? "border-emerald-500/20 bg-emerald-500/5 text-muted-foreground"
-                  : "border-border/40 bg-muted/20 text-muted-foreground/40"
+                isActive  ? "border-primary/40 bg-primary/5 text-foreground"
+                : isDone  ? "border-emerald-500/20 bg-emerald-500/5 text-muted-foreground"
+                : "border-border/40 bg-muted/20 text-muted-foreground/40"
               }`}
             >
               {/* Icon */}
@@ -268,13 +265,23 @@ function SearchingState({ query }: { query: string }) {
                   </p>
                 )}
               </div>
+
+              {/* Timer — show for active and done phases */}
+              {(isActive || isDone) && phaseElapsed > 0 && (
+                <span className={`text-[11px] font-mono shrink-0 tabular-nums ${
+                  isDone ? "text-emerald-600 dark:text-emerald-400" : "text-primary"
+                }`}>
+                  {formatElapsed(phaseElapsed)}
+                </span>
+              )}
             </div>
           )
         })}
       </div>
 
-      <p className="text-xs text-muted-foreground/50">
-        This takes up to 90 seconds — running the full AI pipeline
+      {/* Total elapsed */}
+      <p className="text-xs text-muted-foreground/60 font-mono tabular-nums">
+        {formatElapsed(elapsed)} elapsed · up to 4 min for full results
       </p>
     </div>
   )
@@ -336,7 +343,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setLastQuery(q)
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 110_000)
+    const timeoutId  = setTimeout(() => controller.abort(), 240_000)  // 4 min — backend can take 3min for 10 sites
 
     try {
       const token = await getToken()
