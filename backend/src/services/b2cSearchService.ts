@@ -204,8 +204,23 @@ async function drillIntoSearchPages(
   engine:      ScraperEngine,
   query:       string
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
-  // Extract keywords from query to filter extracted links (e.g. ["infiniti","g37","coupe","2010"])
-  const queryKeywords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2)
+  // Strip modifier/filler words — only keep actual product keywords for URL matching.
+  // "cheap headphones" → ["headphones"], "good laptop under 500" → ["laptop"], "used iphone" → ["iphone"]
+  const MODIFIER_WORDS = new Set([
+    // opinion/quality
+    "good", "best", "great", "nice", "bad", "worst", "perfect", "top", "amazing",
+    // price/budget
+    "cheap", "affordable", "budget", "expensive", "premium", "luxury", "price", "deal", "low", "high",
+    // condition
+    "used", "new", "old", "refurbished", "second", "hand",
+    // range words
+    "under", "over", "above", "below", "around", "less", "more", "than",
+    // filler
+    "for", "with", "the", "and", "or", "in", "at", "buy",
+  ])
+  const queryKeywords = query.toLowerCase().split(/\s+/)
+    .filter((w) => w.length > 2)
+    .filter((w) => !MODIFIER_WORDS.has(w) && !/^\d+$/.test(w))  // drop modifiers + bare prices like "500"
 
   const result: typeof searchPages = []
 
