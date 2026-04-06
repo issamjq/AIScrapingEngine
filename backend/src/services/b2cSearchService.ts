@@ -29,12 +29,12 @@ async function b2cWebSearch(
   // Product-type hints so Claude knows which sites to search
   const siteHints =
     `Site guidance by product type (use whichever fits the query):\n` +
-    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (uae.yallamotor.com), CarSwitch (carswitch.com), OpenSooq (ae.opensooq.com), Haraj (haraj.com.sa), AutoTrader, Avito\n` +
-    `• Electronics / phones → Amazon AE (amazon.ae), Noon (noon.com), Sharaf DG, Virgin Megastore, Back Market, eBay, Souq\n` +
-    `• Fashion / luxury → Ounass, Level Shoes, Namshi, Farfetch, eBay, Vestiaire Collective\n` +
-    `• Furniture / home → IKEA AE, West Elm, PAN Emirates, noon, Amazon\n` +
-    `• General goods → Amazon AE, Noon, Carrefour AE, LuLu Hypermarket, eBay\n` +
-    `• Any product → also check local classified sites: Dubizzle, OLX, Melltoo, Facebook Marketplace`
+    `• Cars / vehicles → Dubizzle (dubizzle.com), YallaMotor (yallamotor.com), CarSwitch (carswitch.com), OpenSooq (opensooq.com), Haraj (haraj.com.sa), AutoTrader, Avito, OLX local version\n` +
+    `• Electronics / phones → Amazon (use country-appropriate domain), Noon (noon.com), Sharaf DG, Back Market, eBay, local electronics retailers\n` +
+    `• Fashion / luxury → Ounass, Namshi, Farfetch, eBay, Vestiaire Collective, local boutiques\n` +
+    `• Furniture / home → IKEA (local domain), Amazon, Noon, local home stores\n` +
+    `• General goods → Amazon (local domain), Carrefour, LuLu, eBay, local supermarkets\n` +
+    `• Any product → also check classified sites popular in ${countryHint || "the user's country"}: Dubizzle, OLX, local Facebook Marketplace`
 
   const prompt =
     `You are a price discovery API. Your output must ALWAYS be a raw JSON array — never plain text.\n\n` +
