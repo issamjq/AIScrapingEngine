@@ -392,6 +392,22 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const visibleCards  = results.slice(0, visibleLimit)
   const blurredCards  = results.slice(visibleLimit)
 
+  // Group results by retailer. Within each group: sorted by price asc.
+  // Groups ordered by their lowest price (cheapest retailer first).
+  const allVisible = [...visibleCards, ...blurredCards]
+  const grouped = allVisible.reduce<Record<string, B2CResult[]>>((acc, r) => {
+    if (!acc[r.retailer]) acc[r.retailer] = []
+    acc[r.retailer].push(r)
+    return acc
+  }, {})
+  const retailerGroups = Object.entries(grouped)
+    .map(([retailer, items]) => ({
+      retailer,
+      items: items.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity)),
+      lowestPrice: Math.min(...items.map(r => r.price ?? Infinity)),
+    }))
+    .sort((a, b) => a.lowestPrice - b.lowestPrice)
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -501,7 +517,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                 }
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {results.filter((r) => r.price !== null).length} prices found · Sorted by lowest price
+                {results.length} price{results.length !== 1 ? "s" : ""} found across {retailerGroups.length} retailer{retailerGroups.length !== 1 ? "s" : ""} · Grouped by store, sorted cheapest first
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={handleNewSearch} className="shrink-0">
@@ -519,31 +535,39 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             </div>
           )}
 
-          {/* Visible cards */}
-          <div className="space-y-3">
-            {visibleCards.map((result, idx) => (
-              <PriceCard
-                key={result.url}
-                result={result}
-                isBest={idx === 0 && result.price !== null}
-                rank={idx + 1}
-              />
-            ))}
-          </div>
-
-          {/* Blurred / locked cards — temporarily disabled for debugging */}
-          {blurredCards.length > 0 && (
-            <div className="space-y-3">
-              {blurredCards.map((result, idx) => (
-                <PriceCard
-                  key={result.url}
-                  result={result}
-                  isBest={false}
-                  rank={visibleCards.length + idx + 1}
-                />
-              ))}
-            </div>
-          )}
+          {/* Results grouped by retailer */}
+          {retailerGroups.map((group, groupIdx) => {
+            let globalRank = 0
+            for (let i = 0; i < groupIdx; i++) globalRank += retailerGroups[i].items.length
+            return (
+              <div key={group.retailer} className="space-y-2">
+                {/* Retailer header */}
+                <div className="flex items-center gap-2 px-1">
+                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
+                    {group.retailer}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {group.items.length} listing{group.items.length !== 1 ? "s" : ""}
+                  </span>
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs font-semibold text-primary">
+                    from {group.items[0].currency} {group.lowestPrice.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {/* Cards */}
+                <div className="space-y-2">
+                  {group.items.map((result, itemIdx) => (
+                    <PriceCard
+                      key={result.url}
+                      result={result}
+                      isBest={groupIdx === 0 && itemIdx === 0}
+                      rank={globalRank + itemIdx + 1}
+                    />
+                  ))}
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 

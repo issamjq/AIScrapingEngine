@@ -302,13 +302,29 @@ export class ScraperEngine {
 
                 const pathLower = u.pathname.toLowerCase()
 
-                // Skip category/list/search pages — we want individual product/listing pages only
-                if (/\/(product-category|categories|category|browse|shop)\//i.test(pathLower)) continue
-                // Skip search-result pages: OLX uses /q-keyword/, dubizzle uses ?q=, others use /search/
-                // These are filtered views of many listings, not individual item pages
-                if (/\/q-[a-z0-9]/i.test(pathLower)) continue
-                if (/\/(search|results|find|listing-search)(\/|$)/i.test(pathLower)) continue
-                if (/[?&](q|query|s|search|keyword)=/i.test(u.search)) continue
+                // ── Universal list/search/filter page detector ──────────────
+                // These are pages showing MANY items, not an individual product/listing.
+                // Works across any website — not site-specific.
+
+                // 1. Category / taxonomy pages (ecommerce)
+                if (/\/(product-category|categories|category|browse|collections?)(\/|$)/i.test(pathLower)) continue
+
+                // 2. Search result pages by PATH — any site that puts search terms in path
+                //    Examples: /q-apple-airpods-pro/ (OLX/Dubizzle), /search/apple-airpods/,
+                //    /results/, /find/, /listing-search/
+                if (/\/(search|results|find|q-[a-z0-9]|listing-search)(\/|$)/i.test(pathLower)) continue
+
+                // 3. Search result pages by QUERY STRING — universal across all sites
+                //    ?q=, ?query=, ?s=, ?search=, ?keyword=, ?k=, ?text=, ?find=
+                if (/[?&](q|query|s|search|keyword|k|text|find)=/i.test(u.search)) continue
+
+                // 4. Detect when path segment IS the search query keywords joined by hyphens.
+                //    e.g. /mobile-phones-accessories/apple-airpods-pro/ where the last segment
+                //    exactly matches all keywords joined. Individual product pages always have
+                //    extra info (model number, variant, ID) beyond just the bare keywords.
+                const keywordsJoined = keywords.join("-")
+                const lastSegment    = segments[segments.length - 1].toLowerCase().replace(/\+/g, "-")
+                if (keywords.length >= 2 && lastSegment === keywordsJoined) continue
 
                 // Must match query keywords in the URL path:
                 // Short queries (≤3 words): require ALL — "apple airpods pro" filters out "apple-airpods-4"
