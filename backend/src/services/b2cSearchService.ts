@@ -15,6 +15,27 @@ export interface B2CResult {
   priceSource:   "scraped" | "not_found"
 }
 
+// ── Step 0: Query normalization (fix typos before searching) ──────
+async function normalizeQuery(query: string, apiKey: string): Promise<string> {
+  try {
+    const data = await callClaude(apiKey, {
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 100,
+      messages:   [{
+        role:    "user",
+        content: `Fix any spelling mistakes or typos in this product search query. Return ONLY the corrected query — nothing else, no explanation.\n\nQuery: "${query}"`,
+      }],
+    })
+    const corrected = (data?.content?.[0]?.text || "").trim().replace(/^["']|["']$/g, "")
+    if (corrected && corrected.length > 0 && corrected !== query) {
+      logger.info("[B2CSearch] Query normalized", { original: query, corrected })
+    }
+    return corrected || query
+  } catch {
+    return query  // if normalization fails, use original
+  }
+}
+
 // ── Step 1: Claude web search ─────────────────────────────────────
 async function b2cWebSearch(
   query:       string,
@@ -302,23 +323,30 @@ async function scrapeUrls(
 }
 
 // ── Main export ───────────────────────────────────────────────────
-export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<B2CResult[]> {
+export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<{ results: B2CResult[]; correctedQuery: string | null }> {
+  // Step 0: Normalize query — fix typos before searching
+  const originalQuery  = query
+  const correctedQuery = await normalizeQuery(query, apiKey)
+  const searchQuery    = correctedQuery || query
+  const wasCorrected   = searchQuery.toLowerCase() !== originalQuery.toLowerCase()
+
   // Step 1: AI web search — finds search/category page URLs
-  const webResults = await b2cWebSearch(query, apiKey, countryHint)
-  if (webResults.length === 0) return []
+  const webResults = await b2cWebSearch(searchQuery, apiKey, countryHint)
+  const empty = { results: [], correctedQuery: wasCorrected ? searchQuery : null }
+  if (webResults.length === 0) return empty
 
   const engine = new ScraperEngine()
   try {
     await engine.launch()
 
     // Step 2a: Drill into search pages to get individual listing URLs
-    const listings = await drillIntoSearchPages(webResults, engine, query)
+    const listings = await drillIntoSearchPages(webResults, engine, searchQuery)
     logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
 
     // Step 2b: Scrape individual listings for price + details
     let scraped: B2CResult[]
     try {
-      scraped = await scrapeUrls(listings, apiKey, engine, query)
+      scraped = await scrapeUrls(listings, apiKey, engine, searchQuery)
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
       scraped = listings.map((item) => ({
@@ -335,10 +363,10 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "")
       }))
     }
 
-    // Only show results with a confirmed price — no-price listings are useless to the user
-    return scraped
-      .filter(r => r.price !== null)
-      .sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
+    return {
+      results:        scraped.filter(r => r.price !== null).sort((a, b) => (a.price ?? 0) - (b.price ?? 0)),
+      correctedQuery: wasCorrected ? searchQuery : null,
+    }
   } finally {
     await engine.close().catch(() => {})
   }

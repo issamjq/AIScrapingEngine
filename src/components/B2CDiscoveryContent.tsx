@@ -302,6 +302,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const [results, setResults]                 = useState<B2CResult[]>([])
   const [visibleLimit, setVisibleLimit]       = useState(3)
   const [lastQuery, setLastQuery]             = useState("")
+  const [correctedQuery, setCorrectedQuery]   = useState<string | null>(null)
   const [searchError, setSearchError]         = useState<string | null>(null)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -340,6 +341,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setPhase("searching")
     setSearchError(null)
     setResults([])
+    setCorrectedQuery(null)
     setLastQuery(q)
 
     const controller = new AbortController()
@@ -368,6 +370,8 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       const data = json.data
       setResults(data.results || [])
       setVisibleLimit(data.limit ?? 3)
+      setCorrectedQuery(data.correctedQuery ?? null)
+      setLastQuery(data.query || q)
       setBalance((prev) => prev !== null ? Math.max(0, prev - 3) : null)
       setPhase("results")
     } catch (err: any) {
@@ -514,6 +518,16 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       {/* ── Results ── */}
       {phase === "results" && (
         <div className="space-y-4">
+          {/* Spell-correction banner */}
+          {correctedQuery && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm">
+              <span className="text-amber-600 dark:text-amber-400">✦</span>
+              <span className="text-amber-800 dark:text-amber-300">
+                Searched for <span className="font-semibold">"{correctedQuery}"</span> — we fixed your query automatically.
+              </span>
+            </div>
+          )}
+
           {/* Results header */}
           <div className="flex items-center justify-between gap-3">
             <div>
