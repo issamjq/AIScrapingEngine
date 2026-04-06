@@ -43,15 +43,15 @@ function formatPrice(price: number, currency: string) {
   return `${currency} ${price.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
 }
 
-function timeAgo(iso: string) {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  const h = Math.floor(m / 60)
-  const d = Math.floor(h / 24)
-  if (d > 0)  return `${d}d ago`
-  if (h > 0)  return `${h}h ago`
-  if (m > 0)  return `${m}m ago`
-  return "just now"
+function formatSearchedAt(iso: string) {
+  const d = new Date(iso)
+  const day   = d.getDate()
+  const month = d.toLocaleString("en-US", { month: "long" })
+  const h     = d.getHours()
+  const min   = String(d.getMinutes()).padStart(2, "0")
+  const ampm  = h >= 12 ? "pm" : "am"
+  const h12   = h % 12 || 12
+  return `${day} ${month} ${h12}:${min} ${ampm}`
 }
 
 // ── B2C history view ──────────────────────────────────────────────────────────
@@ -141,7 +141,7 @@ function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }
                 <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                   <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <Clock className="h-3 w-3" />
-                    {timeAgo(entry.searched_at)}
+                    {formatSearchedAt(entry.searched_at)}
                   </span>
                   <span className="text-[11px] text-muted-foreground">
                     {entry.result_count} price{entry.result_count !== 1 ? "s" : ""} found
