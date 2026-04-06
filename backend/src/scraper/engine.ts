@@ -342,9 +342,11 @@ export class ScraperEngine {
                 if (/\/collections?\//i.test(pathLower) && !/\/products\//.test(pathLower)) continue
 
                 // 2. Search result pages by PATH — any site that puts search terms in path
-                //    Examples: /q-apple-airpods-pro/ (OLX/Dubizzle), /search/apple-airpods/,
-                //    /results/, /find/, /listing-search/
-                if (/\/(search|results|find|q-[a-z0-9]|listing-search)(\/|$)/i.test(pathLower)) continue
+                //    /q-anything/ pattern: OLX, Dubizzle, and many classified sites
+                //    e.g. /q-apple-airpods-pro/, /ar/mobile-phones/q-apple-airpods-pro/,
+                //         /beirut/q-apple-airpods-pro/ — ALL contain /q- somewhere in path
+                if (/\/q-/i.test(pathLower)) continue
+                if (/\/(search|results|find|listing-search)(\/|$)/i.test(pathLower)) continue
 
                 // 3. Search result pages by QUERY STRING — universal across all sites
                 //    ?q=, ?query=, ?s=, ?search=, ?keyword=, ?k=, ?text=, ?find=
