@@ -220,7 +220,7 @@ async function drillIntoSearchPages(
   ])
   const queryKeywords = query.toLowerCase().split(/\s+/)
     .filter((w) => w.length > 2)
-    .filter((w) => !MODIFIER_WORDS.has(w) && !/^\d+$/.test(w))  // drop modifiers + bare prices like "500"
+    .filter((w) => !MODIFIER_WORDS.has(w) && !(/^\d+$/.test(w) && parseInt(w) >= 100))  // drop modifiers + bare prices (≥100) but keep model numbers like "16", "17", "24"
 
   const result: typeof searchPages = []
 
