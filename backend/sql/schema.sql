@@ -387,3 +387,25 @@ CREATE TABLE IF NOT EXISTS b2c_search_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_b2c_history_user_email ON b2c_search_history (user_email, searched_at DESC);
+
+-- =============================================================
+-- B2C Weekly / Monthly subscription plans (run once in Neon)
+-- =============================================================
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS price_aed_b2c  NUMERIC(10,2);
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS billing_period VARCHAR(20) DEFAULT 'monthly';
+
+INSERT INTO plans (key, name, tagline, price_usd_b2c, price_aed_b2c, price_note, billing_period, credits_b2b, credits_b2c, features_b2b, features_b2c, is_active, is_coming_soon, sort_order)
+VALUES
+  (
+    'weekly', 'Weekly', 'Try Spark AI for a week', 1.63, 5.99, '5.99 AED / week', 'weekly', 0, 30,
+    '[]',
+    '[{"text":"30 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Quick / Standard / Deep search modes","included":true},{"text":"Search any product worldwide","included":true},{"text":"AI spell-correction & geo-aware search","included":true},{"text":"Price Activity history","included":true},{"text":"Priority Support","included":false}]',
+    true, false, 5
+  ),
+  (
+    'monthly', 'Monthly', 'Best value — save vs weekly', 5.45, 19.99, '19.99 AED / month', 'monthly', 0, 90,
+    '[]',
+    '[{"text":"90 credits included","included":true},{"text":"All results unlocked — no blur","included":true},{"text":"Quick / Standard / Deep search modes","included":true},{"text":"Search any product worldwide","included":true},{"text":"AI spell-correction & geo-aware search","included":true},{"text":"Price Activity history","included":true},{"text":"Priority Support","included":true}]',
+    true, false, 6
+  )
+ON CONFLICT (key) DO NOTHING;

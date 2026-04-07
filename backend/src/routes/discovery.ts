@@ -192,7 +192,7 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
     }
 
     // Visible results limit per plan (rest are blurred on frontend)
-    const LIMITS: Record<string, number> = { free: 3, trial: 8, pro: 20, paid: 20, enterprise: 20 }
+    const LIMITS: Record<string, number> = { free: 3, trial: 8, pro: 20, paid: 20, enterprise: 20, weekly: 20, monthly: 20 }
     const limit = (user && UNLIMITED_ROLES.includes(user.role)) ? 20 : (LIMITS[subscription] ?? 3)
 
     // Detect user country from IP for geo-aware search

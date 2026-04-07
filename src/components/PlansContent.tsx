@@ -15,6 +15,8 @@ interface PlanRow {
   tagline: string
   price_usd_b2b: number
   price_usd_b2c: number
+  price_aed_b2c: number | null
+  billing_period: string | null
   price_note_b2b: string | null
   price_note_b2c: string | null
   credits_b2b: number | null
@@ -206,112 +208,190 @@ export function PlansContent(_: { role?: string }) {
         </div>
       )}
 
-      {/* Plan cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        {plans.map((plan) => {
-          const Icon      = PLAN_ICONS[plan.key] ?? Sparkles
-          const features  = isB2C ? plan.features_b2c : plan.features_b2b
-          const credits   = isB2C ? plan.credits_b2c  : plan.credits_b2b
-          const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
-          const priceNote = isB2C ? plan.price_note_b2c : plan.price_note_b2b
-          const isCurrent = plan.key === currentSub || (plan.key === "pro" && currentSub === "paid")
-          const isEnterprise = plan.key === "enterprise"
+      {/* ── B2C plan cards ── */}
+      {isB2C ? (
+        <div className="space-y-6">
+          {/* Weekly + Monthly side by side */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto w-full">
+            {plans.filter(p => p.key === "weekly" || p.key === "monthly").map((plan) => {
+              const features  = plan.features_b2c
+              const credits   = plan.credits_b2c
+              const aedPrice  = plan.price_aed_b2c
+              const isCurrent = plan.key === currentSub
+              const isMonthly = plan.key === "monthly"
 
-          return (
-            <div
-              key={plan.key}
-              className={`relative rounded-2xl border flex flex-col transition-all select-none ${
-                plan.key === "pro"
-                  ? "border-primary shadow-lg shadow-primary/10"
-                  : isEnterprise
-                  ? "border-dashed border-muted-foreground/30"
-                  : "border-border"
-              }`}
-            >
-              {plan.key === "pro" && (
-                <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
-                    <Sparkles className="h-3 w-3" />
-                    Most Popular
-                  </span>
-                </div>
-              )}
-
-              {isEnterprise && (
-                <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-sm rounded-2xl">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
-                    <Crown className="h-3.5 w-3.5" />
-                    Coming Soon
-                  </span>
-                  <p className="text-xs text-muted-foreground px-6 text-center">Enterprise plan is under construction</p>
-                </div>
-              )}
-
-              <div className="p-6 flex flex-col flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <div className="flex items-center gap-2">
-                    <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${plan.key === "pro" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                      <Icon className="h-4 w-4" />
+              return (
+                <div
+                  key={plan.key}
+                  className={`relative rounded-2xl border flex flex-col transition-all ${
+                    isMonthly ? "border-primary shadow-lg shadow-primary/10" : "border-border"
+                  }`}
+                >
+                  {isMonthly && (
+                    <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
+                        <Sparkles className="h-3 w-3" />
+                        Best Value
+                      </span>
                     </div>
-                    <span className="font-bold text-base">{plan.name}</span>
+                  )}
+                  <div className="p-6 flex flex-col flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${isMonthly ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                          <Sparkles className="h-4 w-4" />
+                        </div>
+                        <span className="font-bold text-base">{plan.name}</span>
+                      </div>
+                      {isCurrent && !isUnlimited && <Badge variant="secondary" className="text-[10px]">Current</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
+                    <div className="mb-4">
+                      <div className="flex items-end gap-1">
+                        <span className="text-4xl font-extrabold tracking-tight">
+                          {aedPrice ? `AED ${aedPrice}` : "—"}
+                        </span>
+                        <span className="text-sm text-muted-foreground mb-1.5">
+                          /{plan.billing_period === "weekly" ? "week" : "month"}
+                        </span>
+                      </div>
+                      {credits != null && (
+                        <p className="text-xs text-primary font-medium mt-1">{credits} credits included</p>
+                      )}
+                      {plan.billing_period === "monthly" && (
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5">
+                          Save ~40% vs weekly
+                        </p>
+                      )}
+                    </div>
+                    <div className="mb-5">
+                      {isCurrent && !isUnlimited ? (
+                        <Button variant="outline" className="w-full" disabled>Current plan</Button>
+                      ) : (
+                        <Button className={`w-full gap-2 ${!isMonthly ? "variant-outline" : ""}`} disabled>
+                          <Sparkles className="h-3.5 w-3.5" />
+                          Subscribe · Coming soon
+                        </Button>
+                      )}
+                    </div>
+                    <div className="border-t mb-4" />
+                    <ul className="space-y-2.5 flex-1">
+                      {(features || []).map((f) => (
+                        <li key={f.text} className="flex items-start gap-2.5 min-w-0">
+                          {f.included
+                            ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                            : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
+                          }
+                          <span className={`text-sm ${f.included ? "" : "text-muted-foreground/50"}`}>{f.text}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  {isCurrent && !isUnlimited && (
-                    <Badge variant="secondary" className="text-[10px]">Current</Badge>
-                  )}
                 </div>
+              )
+            })}
+          </div>
 
-                <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
-
-                <div className="mb-4">
-                  <div className="flex items-end gap-1">
-                    <span className="text-4xl font-extrabold tracking-tight">
-                      {formatPrice(priceUsd)}
-                    </span>
-                    {priceNote && (
-                      <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>
-                    )}
-                  </div>
-                  {credits != null && (
-                    <p className="text-xs text-primary font-medium mt-1">{credits} credits / cycle</p>
-                  )}
-                </div>
-
-                <div className="mb-5">
-                  {isCurrent && !isUnlimited ? (
-                    <Button variant="outline" className="w-full" disabled>Current plan</Button>
-                  ) : plan.is_coming_soon ? (
-                    <Button className="w-full gap-2" disabled>
-                      <Sparkles className="h-3.5 w-3.5" />
-                      Coming soon
-                    </Button>
-                  ) : (
-                    <Button variant="outline" className="w-full" disabled>
-                      {currentSub === "paid" && plan.key === "free" ? "Downgrade to Free" : "Select Plan"}
-                    </Button>
-                  )}
-                </div>
-
-                <div className="border-t mb-4" />
-
-                <ul className="space-y-2.5 flex-1">
-                  {features.map((f) => (
-                    <li key={f.text} className="flex items-start gap-2.5 min-w-0">
-                      {f.included
-                        ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
-                        : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
-                      }
-                      <span className={`text-sm whitespace-nowrap ${f.included ? "" : "text-muted-foreground/50"}`}>{f.text}</span>
-                    </li>
-                  ))}
-                </ul>
+          {/* Free plan — smaller */}
+          {plans.filter(p => p.key === "free").map((plan) => (
+            <div key={plan.key} className="rounded-2xl border bg-muted/30 px-6 py-5 max-w-2xl mx-auto w-full flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <p className="font-semibold text-sm">Free plan — always available</p>
+                <p className="text-xs text-muted-foreground mt-0.5">15 credits · 3 results visible · No credit card required</p>
               </div>
+              {currentSub === "free" && !isUnlimited
+                ? <Button variant="outline" size="sm" disabled>Current plan</Button>
+                : <Button variant="outline" size="sm" disabled>Downgrade to Free</Button>
+              }
             </div>
-          )
-        })}
-      </div>
+          ))}
+        </div>
+      ) : (
+        /* ── B2B plan cards (unchanged) ── */
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+          {plans.filter(p => !["weekly","monthly"].includes(p.key)).map((plan) => {
+            const Icon      = PLAN_ICONS[plan.key] ?? Sparkles
+            const features  = plan.features_b2b
+            const credits   = plan.credits_b2b
+            const priceUsd  = plan.price_usd_b2b
+            const priceNote = plan.price_note_b2b
+            const isCurrent = plan.key === currentSub || (plan.key === "pro" && currentSub === "paid")
+            const isEnterprise = plan.key === "enterprise"
+
+            return (
+              <div
+                key={plan.key}
+                className={`relative rounded-2xl border flex flex-col transition-all select-none ${
+                  plan.key === "pro" ? "border-primary shadow-lg shadow-primary/10"
+                  : isEnterprise    ? "border-dashed border-muted-foreground/30"
+                  : "border-border"
+                }`}
+              >
+                {plan.key === "pro" && (
+                  <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
+                      <Sparkles className="h-3 w-3" />Most Popular
+                    </span>
+                  </div>
+                )}
+                {isEnterprise && (
+                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-sm rounded-2xl">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
+                      <Crown className="h-3.5 w-3.5" />Coming Soon
+                    </span>
+                    <p className="text-xs text-muted-foreground px-6 text-center">Enterprise plan is under construction</p>
+                  </div>
+                )}
+                <div className="p-6 flex flex-col flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${plan.key === "pro" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <span className="font-bold text-base">{plan.name}</span>
+                    </div>
+                    {isCurrent && !isUnlimited && <Badge variant="secondary" className="text-[10px]">Current</Badge>}
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
+                  <div className="mb-4">
+                    <div className="flex items-end gap-1">
+                      <span className="text-4xl font-extrabold tracking-tight">{formatPrice(priceUsd)}</span>
+                      {priceNote && <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>}
+                    </div>
+                    {credits != null && <p className="text-xs text-primary font-medium mt-1">{credits} credits / cycle</p>}
+                  </div>
+                  <div className="mb-5">
+                    {isCurrent && !isUnlimited
+                      ? <Button variant="outline" className="w-full" disabled>Current plan</Button>
+                      : plan.is_coming_soon
+                      ? <Button className="w-full gap-2" disabled><Sparkles className="h-3.5 w-3.5" />Coming soon</Button>
+                      : <Button variant="outline" className="w-full" disabled>Select Plan</Button>
+                    }
+                  </div>
+                  <div className="border-t mb-4" />
+                  <ul className="space-y-2.5 flex-1">
+                    {(features || []).map((f) => (
+                      <li key={f.text} className="flex items-start gap-2.5 min-w-0">
+                        {f.included
+                          ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
+                          : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
+                        }
+                        <span className={`text-sm whitespace-nowrap ${f.included ? "" : "text-muted-foreground/50"}`}>{f.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       <p className="text-center text-xs text-muted-foreground pb-4">
-        All plans include a free trial. Paid plans coming soon. Questions? Contact us anytime.
+        {isB2C
+          ? "Payment integration coming soon. Plans and credits are ready — subscribe when Stripe launches."
+          : "All plans include a free trial. Paid plans coming soon. Questions? Contact us anytime."
+        }
       </p>
     </div>
   )
