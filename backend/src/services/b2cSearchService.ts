@@ -57,7 +57,7 @@ async function b2cWebSearch(
     `2. Include BOTH new AND used/second-hand listings.\n` +
     `3. Specific listing URLs are preferred, but search/category page URLs are ALSO acceptable.\n` +
     `4. If you can only find category pages or general search pages — include them. They are valid.\n` +
-    `5. Aim for 10–15 results from different platforms.\n\n` +
+    `5. Find EXACTLY ${siteCap} results from ${siteCap} different platforms/domains. No more, no less.\n\n` +
     `CRITICAL OUTPUT RULES:\n` +
     `- Output ONLY the JSON array. Zero other text.\n` +
     `- NEVER write "I was unable to find", "I apologize", or any explanation.\n` +
@@ -203,7 +203,8 @@ function isProductPage(url: string): boolean {
 async function drillIntoSearchPages(
   searchPages: Array<{ retailer: string; url: string; title: string; condition: string }>,
   engine:      ScraperEngine,
-  query:       string
+  query:       string,
+  concurrency: number = 3
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
   // Strip modifier/filler words — only keep actual product keywords for URL matching.
   // "cheap headphones" → ["headphones"], "good laptop under 500" → ["laptop"], "used iphone" → ["iphone"]
@@ -223,30 +224,22 @@ async function drillIntoSearchPages(
     .filter((w) => w.length > 2)
     .filter((w) => !MODIFIER_WORDS.has(w) && !(/^\d+$/.test(w) && parseInt(w) >= 100))  // drop modifiers + bare prices (≥100) but keep model numbers like "16", "17", "24"
 
-  const result: typeof searchPages = []
-
-  // Drill into ALL search pages (already capped at 7 unique sites from web search step)
-  // Get 3 individual listing URLs per site → max 7 × 3 = 21 total listings
-  for (const sp of searchPages) {
+  // Drill ALL sites in parallel (capped by concurrency) — sequential was the main latency bottleneck
+  const drillTasks = searchPages.map((sp) => async (): Promise<typeof searchPages> => {
     try {
-      // If Claude already returned a specific product page URL, skip drill-down
-      // (e.g. Shopify /products/slug — drilling in finds only image gallery URLs)
       if (isProductPage(sp.url)) {
-        result.push(sp)
         logger.info("[B2CSearch] Product page — using directly", { url: sp.url })
-        continue
+        return [sp]
       }
-
       const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
-      // Only keep individual listing URLs — never fall back to the search/list page itself
-      // (scraping a list page causes Vision AI to pick a price from a random card on the page)
-      for (const url of links) {
-        result.push({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition })
-      }
+      return links.map((url: string) => ({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition }))
     } catch {
-      // skip this source entirely on error
+      return []
     }
-  }
+  })
+
+  const nested = await withConcurrency(drillTasks, concurrency)
+  const result = nested.flat()
 
   logger.info("[B2CSearch] Drill-down complete", { sites: searchPages.length, listings: result.length })
   return result
@@ -287,24 +280,27 @@ const B2C_TITLE_SELECTORS = [
 
 // ── Step 2b: Scrape each URL for price ────────────────────────────
 async function scrapeUrls(
-  items:  Array<{ retailer: string; url: string; title: string; condition: string }>,
-  apiKey: string,
-  engine: ScraperEngine,
-  query:  string
+  items:   Array<{ retailer: string; url: string; title: string; condition: string }>,
+  apiKey:  string,
+  engine:  ScraperEngine,
+  query:   string,
+  siteCap: number = 10
 ): Promise<B2CResult[]> {
-  // 3-concurrent scraping — Tier 2 (450k tokens/min) has ample headroom.
-  // JSON-LD extraction runs first (no Vision tokens used for Shopify/WooCommerce),
-  // so Vision only fires for truly unknown sites.
+  // Timeout scales with depth: Quick=12s, Standard=15s, Deep=20s
+  // Faster modes give up sooner on slow sites so they don't drag out the whole search
+  const perSiteTimeout = siteCap <= 3 ? 12_000 : siteCap <= 6 ? 15_000 : 20_000
+
+  // 4-concurrent scraping — JSON-LD first (free for Shopify/WooCommerce), Vision AI fallback
   const tasks = items.map((item) => async (): Promise<B2CResult> => {
     try {
       const result = await engine.scrape(item.url, {
-        price:           [],                // no CSS price selectors — pipeline: JSON-LD → Vision AI
+        price:           [],
         title:           B2C_TITLE_SELECTORS,
-        preferSelectors: true,              // JSON-LD first, then Vision AI (CSS skipped for price)
+        preferSelectors: true,
       }, {
-        timeout:        20_000,
-        blockResources: ["font", "media"],  // keep images loaded for Vision AI
-        searchQuery:    query,              // tells Vision AI which listing card to pick
+        timeout:        perSiteTimeout,
+        blockResources: ["font", "media"],
+        searchQuery:    query,
       })
       return {
         retailer:      item.retailer,
@@ -355,14 +351,15 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
   try {
     await engine.launch()
 
-    // Step 2a: Drill into search pages to get individual listing URLs
-    const listings = await drillIntoSearchPages(webResults, engine, searchQuery)
+    // Step 2a: Drill into search pages to get individual listing URLs (parallel)
+    const drillConcurrency = siteCap <= 3 ? 3 : siteCap <= 6 ? 4 : 5
+    const listings = await drillIntoSearchPages(webResults, engine, searchQuery, drillConcurrency)
     logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
 
     // Step 2b: Scrape individual listings for price + details
     let scraped: B2CResult[]
     try {
-      scraped = await scrapeUrls(listings, apiKey, engine, searchQuery)
+      scraped = await scrapeUrls(listings, apiKey, engine, searchQuery, siteCap)
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
       scraped = listings.map((item) => ({
