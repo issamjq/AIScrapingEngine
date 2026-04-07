@@ -607,7 +607,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             {renderSearchBox()}
           </div>
 
-          {/* Category chips + expanded suggestions */}
+          {/* Category chips + dropdown suggestions */}
           <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
             {/* Category row */}
             <div className="flex flex-wrap gap-2 justify-center">
@@ -615,30 +615,48 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                 <button
                   key={cat.id}
                   onClick={() => pickSuggestions(cat.id)}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-sm font-medium transition-all ${
+                  className={`px-3.5 py-1.5 rounded-full border text-sm font-medium transition-all ${
                     activeCategory === cat.id
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5"
                   }`}
                 >
-                  <span>{cat.label}</span>
+                  {cat.label}
                 </button>
               ))}
             </div>
 
-            {/* Expanded suggestions — random 4 from selected category */}
+            {/* Dropdown panel — Claude.ai style */}
             {activeCategory && shownSuggestions.length > 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                {shownSuggestions.map((s) => (
+              <div className="w-full rounded-2xl border bg-card shadow-lg overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {CATEGORIES.find(c => c.id === activeCategory)?.label}
+                  </span>
                   <button
-                    key={s}
-                    onClick={() => setQuery(s)}
-                    className="text-left px-4 py-3 rounded-xl border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all group"
+                    onClick={() => { setActiveCategory(null); setShownSuggestions([]) }}
+                    className="p-1 rounded-md hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                   >
-                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">{s}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">Tap to search</p>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
-                ))}
+                </div>
+
+                {/* Suggestion grid — 3 columns like image 2 */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border">
+                  {shownSuggestions.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => { setQuery(s); setActiveCategory(null); setShownSuggestions([]) }}
+                      className="text-left px-4 py-4 bg-card hover:bg-primary/5 transition-colors group flex flex-col justify-between min-h-[80px]"
+                    >
+                      <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors leading-snug">{s}</p>
+                      <p className="text-[11px] text-muted-foreground mt-3">
+                        {CATEGORIES.find(c => c.id === activeCategory)?.label}
+                      </p>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
