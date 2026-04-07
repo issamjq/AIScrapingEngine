@@ -541,23 +541,26 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   }
 
   const renderSearchBox = (compact: boolean = false) => (
-      <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-        <div className={compact ? "p-3 pb-2" : "p-5 pb-3"}>
+      <div className={`bg-card rounded-2xl shadow-lg border border-border overflow-hidden ${compact ? "p-0" : ""}`}>
+        {/* Input area */}
+        <div className={compact ? "flex items-center gap-2 px-4 py-3" : "flex items-start gap-3 px-6 pt-6 pb-4"}>
+          <Sparkles className={`text-muted-foreground/50 shrink-0 ${compact ? "h-4 w-4 mt-0.5" : "h-5 w-5 mt-1"}`} />
           <Textarea
             ref={compact ? undefined : textareaRef}
             autoFocus={!compact}
             rows={compact ? 1 : 3}
-            className={`resize-none border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/50 ${compact ? "text-sm" : "text-base"}`}
-            placeholder={compact ? "Search again…" : "e.g. iPhone 16 Pro 256GB new\ne.g. cheap headphones Lebanon\ne.g. Infiniti G37 S Coupe 2010"}
+            className={`resize-none border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/40 ${compact ? "text-sm" : "text-base"}`}
+            placeholder={compact ? "Search again…" : "Ask away, I'm all ears..."}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch() }}
           />
         </div>
-        {/* Batch selector — premium 2026 segmented control */}
+
+        {/* Batch selector */}
         {!compact && (
-          <div className="border-t">
-            <div className="grid grid-cols-3 divide-x">
+          <div className={`mx-6 mb-4 border border-border rounded-xl overflow-hidden`}>
+            <div className="grid grid-cols-3 divide-x divide-border">
               {BATCH_OPTIONS.map((opt) => {
                 const active = batch === opt.value
                 return (
@@ -570,15 +573,11 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                         : "bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground"
                     }`}
                   >
-                    <span className={`text-[13px] font-bold tracking-tight ${active ? "text-background" : ""}`}>
-                      {opt.label}
-                    </span>
-                    <span className={`text-[10px] ${active ? "text-background/60" : "text-muted-foreground/60"}`}>
+                    <span className={`text-[13px] font-bold tracking-tight`}>{opt.label}</span>
+                    <span className={`text-[10px] ${active ? "opacity-60" : "opacity-50"}`}>
                       {opt.sites} · {opt.time} · {opt.credits} cr
                     </span>
-                    {active && (
-                      <span className="absolute top-1.5 right-2 text-[9px] text-background/50">✓</span>
-                    )}
+                    {active && <span className="absolute top-1.5 right-2 text-[9px] opacity-50">✓</span>}
                   </button>
                 )
               })}
@@ -586,32 +585,35 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
           </div>
         )}
 
-        <div className={`flex items-center justify-between gap-3 border-t bg-muted/20 ${compact ? "px-3 py-2" : "px-5 py-3"}`}>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
+        {/* Bottom bar */}
+        <div className={`flex items-center justify-between gap-3 border-t border-border ${compact ? "px-4 py-2.5" : "px-6 py-4"}`}>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground min-w-0">
             {!isUnlimited && (
-              <span className={`font-medium ${!canSearch ? "text-destructive" : ""}`}>
+              <span className={`font-medium ${!canSearch ? "text-destructive" : "text-foreground"}`}>
                 {balance !== null
-                  ? canSearch
-                    ? `${balance} credits remaining`
-                    : `${balance} credits — need ${batch}`
+                  ? canSearch ? `${balance} credits remaining` : `${balance} credits — need ${batch}`
                   : "Loading…"}
               </span>
             )}
             {isUnlimited && <span className="font-medium text-primary">Unlimited credits</span>}
-            {!compact && <span className="hidden sm:flex items-center gap-1 opacity-60">Web · Scrape · Vision AI</span>}
+            {!compact && <span className="hidden sm:inline opacity-50">Web · Scrape · Vision AI</span>}
           </div>
-          <Button
+          <button
             onClick={handleSearch}
             disabled={!query.trim() || !canSearch}
-            size={compact ? "sm" : "default"}
-            className="gap-2 rounded-xl shrink-0 font-semibold"
+            className={`flex items-center gap-2 font-medium rounded-xl shrink-0 transition-colors
+              ${compact ? "text-sm px-4 py-1.5" : "px-5 py-2.5"}
+              ${!query.trim() || !canSearch
+                ? "bg-muted text-muted-foreground cursor-not-allowed"
+                : "bg-foreground text-background hover:opacity-90"
+              }`}
           >
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {canSearch
-              ? <>Search <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : batch} credit{batch !== 1 ? "s" : ""}</span></>
+              ? <>{compact ? "Search" : "Search"} <span className="opacity-50 font-normal">· {isUnlimited ? "∞" : batch} cr</span></>
               : "No credits · Upgrade"
             }
-          </Button>
+          </button>
         </div>
         {searchError && (
           <div className="border-t bg-destructive/5 text-destructive text-sm px-5 py-3 flex items-start gap-2">
@@ -636,14 +638,16 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       {phase === "idle" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-8 px-2 py-12">
           <div className="text-center space-y-3">
-            <div className="flex items-center justify-center mb-2">
-              <img src="/spark-logo.gif" alt="Spark AI" className="h-20 w-20 object-contain drop-shadow-md" />
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center shadow-sm">
+                <span className="text-3xl">⚡</span>
+              </div>
             </div>
             <div>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Spark AI</h1>
-              <p className="text-sm font-semibold text-primary mt-1 tracking-wide uppercase">Price Discovery</p>
+              <p className="text-xs font-semibold text-muted-foreground mt-1 tracking-widest uppercase">Price Discovery</p>
             </div>
-            <p className="text-muted-foreground text-base max-w-md mx-auto">
+            <p className="text-muted-foreground text-base max-w-lg mx-auto">
               Search any product — AI finds the best prices across every marketplace worldwide
             </p>
           </div>
@@ -660,10 +664,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 <button
                   key={cat.id}
                   onClick={() => pickSuggestions(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-full border text-sm font-medium transition-all ${
+                  className={`px-6 py-2.5 rounded-full border text-sm font-medium shadow-sm transition-all ${
                     activeCategory === cat.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5"
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-card text-muted-foreground hover:border-foreground/40 hover:text-foreground hover:bg-muted/30"
                   }`}
                 >
                   {cat.label}
