@@ -707,7 +707,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 Recent searches
               </p>
               <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
-                {history.map((entry) => {
+                {history.slice(0, 3).map((entry) => {
                   const isOpen   = openHistoryId === entry.id
                   const cheapest = entry.results.reduce((best: any, r: any) =>
                     r.price !== null && (best === null || r.price < best.price) ? r : best, null)
@@ -868,7 +868,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 Recent searches
               </p>
               <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
-                {history.map((entry) => {
+                {history.slice(0, 3).map((entry) => {
                   const isOpen   = openHistoryId === entry.id
                   const cheapest = entry.results.reduce((best: any, r: any) =>
                     r.price !== null && (best === null || r.price < best.price) ? r : best, null)
