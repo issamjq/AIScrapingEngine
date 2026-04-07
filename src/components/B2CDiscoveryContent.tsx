@@ -685,6 +685,88 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
               </div>
             )}
           </div>
+
+          {/* ── History on idle screen ── */}
+          {history.length > 0 && (
+            <div className="w-full max-w-2xl pt-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                Recent searches
+              </p>
+              <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
+                {history.map((entry) => {
+                  const isOpen   = openHistoryId === entry.id
+                  const cheapest = entry.results.reduce((best: any, r: any) =>
+                    r.price !== null && (best === null || r.price < best.price) ? r : best, null)
+                  const fmtTime  = (() => {
+                    const d = new Date(entry.searched_at)
+                    const now = new Date()
+                    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86_400_000)
+                    const h = d.getHours(), min = String(d.getMinutes()).padStart(2, "0")
+                    const ampm = h >= 12 ? "pm" : "am", h12 = h % 12 || 12
+                    if (diffDays === 0 && now.getDate() === d.getDate()) return `${h12}:${min} ${ampm}`
+                    if (diffDays < 2) return `Yesterday ${h12}:${min} ${ampm}`
+                    return d.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                  })()
+
+                  return (
+                    <div key={entry.id}>
+                      <button
+                        onClick={() => setOpenHistoryId(isOpen ? null : entry.id)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${isOpen ? "bg-muted/20" : ""}`}
+                      >
+                        <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${isOpen ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                          <Search className="h-3.5 w-3.5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{entry.query}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-[11px] text-muted-foreground">{entry.result_count} result{entry.result_count !== 1 ? "s" : ""}</span>
+                            {cheapest && <span className="text-[11px] font-semibold text-primary">Best: {cheapest.currency} {cheapest.price?.toLocaleString()}</span>}
+                          </div>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground shrink-0">{fmtTime}</span>
+                        <span className="text-muted-foreground/40 text-xs">{isOpen ? "▲" : "▼"}</span>
+                      </button>
+
+                      {isOpen && (
+                        <div className="bg-muted/10 border-t divide-y">
+                          {entry.results.slice(0, 5).map((r: any, i: number) => {
+                            const isBest = r === cheapest
+                            return (
+                              <div key={r.url} className={`flex items-center gap-3 px-5 py-3 ${isBest ? "bg-primary/5" : ""}`}>
+                                <span className="text-xs font-bold text-muted-foreground/40 w-5 shrink-0 text-center">#{i + 1}</span>
+                                {r.imageUrl ? (
+                                  <img src={r.imageUrl} alt={r.title} className="w-9 h-9 rounded-lg object-contain bg-muted/30 border shrink-0"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-lg bg-muted/40 border flex items-center justify-center shrink-0">
+                                    <span className="text-xs font-bold text-muted-foreground/40">{r.retailer?.charAt(0)}</span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-semibold text-muted-foreground">{r.retailer}</p>
+                                  <p className="text-xs text-muted-foreground truncate">{r.title}</p>
+                                </div>
+                                <span className={`text-sm font-bold shrink-0 mr-1 ${isBest ? "text-primary" : ""}`}>
+                                  {r.currency} {r.price?.toLocaleString()}
+                                </span>
+                                <a href={r.url} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                                </a>
+                              </div>
+                            )
+                          })}
+                          {entry.results.length > 5 && (
+                            <p className="text-[11px] text-muted-foreground px-5 py-2">+{entry.results.length - 5} more in Price Activity</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
