@@ -184,8 +184,8 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
               )
             })}
 
-            {/* B2C: search history at the bottom — like Claude chat history */}
-            {isB2C && sidebarHistory.length > 0 && (
+            {/* B2C: search history at the bottom — hidden for now */}
+            {false && isB2C && sidebarHistory.length > 0 && (
               <SidebarGroup className="mt-auto">
                 <SidebarGroupLabel className="px-4 py-2">
                   <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
