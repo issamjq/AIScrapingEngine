@@ -502,8 +502,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     setActiveCategory(prev => prev === categoryId ? null : categoryId)
   }
 
-  function SearchBox({ compact = false }: { compact?: boolean }) {
-    return (
+  const renderSearchBox = (compact: boolean = false) => (
       <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
         <div className={compact ? "p-3 pb-2" : "p-5 pb-3"}>
           <Textarea
@@ -584,8 +583,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
           </div>
         )}
       </div>
-    )
-  }
+  )
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-80px)]">
@@ -607,7 +605,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
           </div>
 
           <div className="w-full max-w-2xl">
-            <SearchBox />
+            {renderSearchBox()}
           </div>
 
           {/* Category chips + expanded suggestions */}
@@ -723,7 +721,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
 
           {/* Bottom search bar — search again without scrolling back up */}
           <div className="pt-4 pb-2 max-w-2xl mx-auto w-full">
-            <SearchBox compact />
+            {renderSearchBox(true)}
           </div>
         </div>
       )}
