@@ -145,6 +145,7 @@ function AppInner() {
   const [retryCount, setRetryCount] = useState(0)
   const [userRole, setUserRole]                   = useState<string | null>(null)
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null)
+  const [discoveryResetKey, setDiscoveryResetKey]       = useState(0)
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
@@ -188,6 +189,11 @@ function AppInner() {
 
   function navigate(page: string) {
     if (isB2C && B2C_BLOCKED.has(page)) return
+    // Re-clicking Market Discovery while already there → reset to new search
+    if (page === "discovering" && currentPage === "discovering") {
+      setSelectedHistoryEntry(null)
+      setDiscoveryResetKey(k => k + 1)
+    }
     setCurrentPage(page)
   }
 
@@ -228,7 +234,7 @@ function AppInner() {
       case "settings":        return <SettingsContent role={role} onNavigate={navigate} initialTab={getHashSubTab()} />
 
       // RSP / Scraping Engine pages
-      case "discovering":     return <DiscoveringContent role={role} onNavigate={navigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={() => setSelectedHistoryEntry(null)} />
+      case "discovering":     return <DiscoveringContent key={discoveryResetKey} role={role} onNavigate={navigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={() => setSelectedHistoryEntry(null)} />
       case "price-board":     return <PriceBoardContent role={role} onNavigate={navigate} />
       case "tracked-urls":    return <TrackedUrlsContent role={role} />
       case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />

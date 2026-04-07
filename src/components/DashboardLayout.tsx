@@ -174,17 +174,23 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, o
                     {/* B2C: recent searches below Market Discovery */}
                     {isB2C && section.id === "rsp-ai" && sidebarHistory.length > 0 && (
                       <div className="mt-1 space-y-0.5 px-2">
-                        {sidebarHistory.map((entry) => (
-                          <button
-                            key={entry.id}
-                            onClick={() => { onSelectHistory?.(entry); onNavigate("discovering") }}
-                            className="w-full px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
-                          >
-                            <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors block">
-                              {entry.query}
-                            </span>
-                          </button>
-                        ))}
+                        {sidebarHistory.map((entry) => {
+                          const depth = entry.batch === 1 ? "Quick" : entry.batch === 2 ? "Standard" : entry.batch === 3 ? "Deep" : null
+                          return (
+                            <button
+                              key={entry.id}
+                              onClick={() => { onSelectHistory?.(entry); onNavigate("discovering") }}
+                              className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
+                            >
+                              <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
+                                {entry.query}
+                              </span>
+                              {depth && (
+                                <span className="text-[10px] text-muted-foreground/50 shrink-0">{depth}</span>
+                              )}
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                   </SidebarGroupContent>
