@@ -383,7 +383,7 @@ export function OnboardingContent({ onComplete }: Props) {
       {/* Logo */}
       <div className="flex items-center gap-2 mb-10">
         <img src="/spark-logo.gif" alt="Spark" className="h-10 w-10 object-contain" />
-        <span className="text-xl font-bold">Spark</span>
+        <span className="text-xl font-bold">Spark AI</span>
       </div>
 
       {step === 1 && (

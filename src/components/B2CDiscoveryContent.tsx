@@ -488,15 +488,16 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       {/* ── IDLE: centered like Claude / ChatGPT ── */}
       {phase === "idle" && (
         <div className="flex-1 flex flex-col items-center justify-center gap-8 px-2 py-12">
-          <div className="text-center space-y-2">
-            <div className="flex items-center justify-center mb-3">
-              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                <Compass className="h-7 w-7 text-primary" />
-              </div>
+          <div className="text-center space-y-3">
+            <div className="flex items-center justify-center mb-2">
+              <img src="/spark-logo.gif" alt="Spark AI" className="h-20 w-20 object-contain drop-shadow-md" />
             </div>
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">What are you looking for?</h1>
-            <p className="text-muted-foreground text-base">
-              AI searches every marketplace, scrapes prices, and finds you the best deal
+            <div>
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Spark AI</h1>
+              <p className="text-sm font-semibold text-primary mt-1 tracking-wide uppercase">Price Discovery</p>
+            </div>
+            <p className="text-muted-foreground text-base max-w-md mx-auto">
+              Search any product — AI finds the best prices across every marketplace worldwide
             </p>
           </div>
 

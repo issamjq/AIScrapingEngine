@@ -39,7 +39,7 @@ export function LoginPage() {
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12 text-primary-foreground">
         <div className="flex items-center gap-3">
           <img src="/spark-logo.gif" alt="Spark" className="h-10 w-10 object-contain" />
-          <span className="text-xl font-bold">Spark</span>
+          <span className="text-xl font-bold">Spark AI</span>
         </div>
 
         <div className="space-y-8">
@@ -68,7 +68,7 @@ export function LoginPage() {
         </div>
 
         <p className="text-primary-foreground/40 text-xs">
-          v{__APP_VERSION__} · Spark
+          v{__APP_VERSION__} · Spark AI
         </p>
       </div>
 
@@ -77,7 +77,7 @@ export function LoginPage() {
         {/* Mobile logo */}
         <div className="flex lg:hidden items-center gap-2 mb-10">
           <img src="/spark-logo.gif" alt="Spark" className="h-9 w-9 object-contain" />
-          <span className="text-lg font-bold">Spark</span>
+          <span className="text-lg font-bold">Spark AI</span>
         </div>
 
         <div className="w-full max-w-sm space-y-8">
