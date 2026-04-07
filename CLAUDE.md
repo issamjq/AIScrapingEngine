@@ -17,17 +17,20 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **LATEST STABLE** | `4504db8` (v1.0.113) | All of v1.0.105 + B2C search history (Price Activity), per-stage timer, 240s timeout, product-swap redirect detector, exact date/time in history, fixed geo routing (no hardcoded UAE domains). |
-| **Previous stable** | `f20dff8` (v1.0.105) | Fully AI-powered B2C: JSON-LD → Vision AI (no CSS). Overlays dismissed, scroll retry, networkidle wait, strict keyword matching, no-price results hidden, 10 sites, 4 concurrent scrapers. |
-| **B2C old stable** | `f702913` (v1.0.87) | B2C search: Claude web_search + Playwright drill-down + IP geo-detection. |
+| **LATEST STABLE** | `7ab42ee` (v1.1.0) | Spark AI rebrand (mascot logo, new name), centered Claude-style search UI, category suggestions, new versioning (patch 0-10 → minor bump), spell-correct, modifier word filter, geo-aware search (no hardcoded UAE domains), search history in Price Activity, per-stage timer, 240s timeout, product-swap detector. |
+| **Previous stable** | `4504db8` (v1.0.113) | All of v1.0.105 + B2C search history (Price Activity), per-stage timer, 240s timeout, product-swap redirect detector, exact date/time in history, fixed geo routing. |
+| **B2C old stable** | `f20dff8` (v1.0.105) | Fully AI-powered B2C: JSON-LD → Vision AI (no CSS). Overlays dismissed, scroll retry, networkidle wait, strict keyword matching, no-price results hidden, 10 sites, 4 concurrent scrapers. |
 
-**To restore to LATEST STABLE (v1.0.113):**
+**To restore to LATEST STABLE (v1.1.0):**
 ```bash
-git show 4504db8:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
-git show 4504db8:backend/src/scraper/aiScraper.ts > backend/src/scraper/aiScraper.ts
-git show 4504db8:backend/src/scraper/engine.ts > backend/src/scraper/engine.ts
-git show 4504db8:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
-git show 4504db8:src/components/PriceBoardContent.tsx > src/components/PriceBoardContent.tsx
+git show 7ab42ee:backend/src/services/b2cSearchService.ts > backend/src/services/b2cSearchService.ts
+git show 7ab42ee:backend/src/scraper/aiScraper.ts > backend/src/scraper/aiScraper.ts
+git show 7ab42ee:backend/src/scraper/engine.ts > backend/src/scraper/engine.ts
+git show 7ab42ee:src/components/B2CDiscoveryContent.tsx > src/components/B2CDiscoveryContent.tsx
+git show 7ab42ee:src/components/PriceBoardContent.tsx > src/components/PriceBoardContent.tsx
+git show 7ab42ee:src/components/DashboardLayout.tsx > src/components/DashboardLayout.tsx
+git show 7ab42ee:src/components/LoginPage.tsx > src/components/LoginPage.tsx
+git show 7ab42ee:scripts/bump-version.mjs > scripts/bump-version.mjs
 ```
 Then bump version + push.
 
