@@ -147,6 +147,11 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
     const queryText = (req.body.query || "").toString().trim()
     if (!queryText) return next(createError("query is required", 400, "VALIDATION_ERROR"))
 
+    // Batch: 1=Quick(3 sites/1 credit), 2=Standard(6 sites/2 credits), 3=Deep(10 sites/3 credits)
+    const batch   = Math.min(3, Math.max(1, parseInt(req.body.batch) || 3))
+    const siteCap = batch === 1 ? 3 : batch === 2 ? 6 : 10
+    const credits = batch  // 1, 2, or 3
+
     const apiKey = process.env.ANTHROPIC_API_KEY
     if (!apiKey) return next(createError("ANTHROPIC_API_KEY not configured", 503, "NOT_CONFIGURED"))
 
@@ -163,11 +168,11 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       subscription = "free"
     }
 
-    // Deduct 3 credits unless unlimited role
+    // Deduct credits based on batch size (1/2/3) unless unlimited role
     if (user && !UNLIMITED_ROLES.includes(user.role)) {
       const creditResult = await deductCredits(
-        email, 3,
-        "B2C AI price search (web search + price scrape + Vision AI)"
+        email, credits,
+        `B2C AI price search — ${batch === 1 ? "Quick (3 sites)" : batch === 2 ? "Standard (6 sites)" : "Deep (10 sites)"}`
       )
       if (!creditResult.success) {
         const wallet = await getWallet(email)
@@ -177,7 +182,7 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
             message:      `Insufficient credits. You need 3 credits but only have ${creditResult.balance}.`,
             code:         "USAGE_LIMIT_REACHED",
             balance:      creditResult.balance,
-            required:     3,
+            required:     credits,
             subscription,
             role:         user.role,
             trial_ends_at: user.trial_ends_at ?? null,
@@ -203,8 +208,8 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       } catch { /* geo lookup is best-effort — never block the search */ }
     }
 
-    logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint })
-    const { results, correctedQuery } = await b2cSearch(queryText, apiKey, countryHint)
+    logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint, batch, siteCap, credits })
+    const { results, correctedQuery } = await b2cSearch(queryText, apiKey, countryHint, siteCap)
     const finalQuery = correctedQuery ?? queryText
     logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery })
 
@@ -217,7 +222,7 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
     }
 
-    res.json({ success: true, data: { query: finalQuery, correctedQuery, results, limit } })
+    res.json({ success: true, data: { query: finalQuery, correctedQuery, results, limit, batch, credits } })
   } catch (err) { next(err) }
 })
 

@@ -305,6 +305,13 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const [lastQuery, setLastQuery]             = useState("")
   const [correctedQuery, setCorrectedQuery]   = useState<string | null>(null)
   const [searchError, setSearchError]         = useState<string | null>(null)
+  const [batch, setBatch]                     = useState(3)  // 1=Quick, 2=Standard, 3=Deep
+
+  const BATCH_OPTIONS = [
+    { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
+    { value: 2, label: "Standard", sites: "6 sites",  time: "~1 min", credits: 2 },
+    { value: 3, label: "Deep",     sites: "10 sites", time: "~3 min", credits: 3 },
+  ]
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
@@ -353,7 +360,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       const res = await fetch(`${API}/api/discovery/b2c-search`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body:    JSON.stringify({ query: q }),
+        body:    JSON.stringify({ query: q, batch }),
         signal:  controller.signal,
       })
       clearTimeout(timeoutId)
@@ -373,7 +380,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       setVisibleLimit(data.limit ?? 3)
       setCorrectedQuery(data.correctedQuery ?? null)
       setLastQuery(data.query || q)
-      setBalance((prev) => prev !== null ? Math.max(0, prev - 3) : null)
+      setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
       setPhase("results")
     } catch (err: any) {
       clearTimeout(timeoutId)
@@ -400,7 +407,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const subscription  = userProfile?.subscription ?? "free"
   const planLimit     = isUnlimited ? 20 : (RESULT_LIMIT[subscription] ?? 3)
 
-  const canSearch     = isUnlimited || (balance !== null && balance >= 3)
+  const canSearch     = isUnlimited || (balance !== null && balance >= batch)
   const visibleCards  = results.slice(0, visibleLimit)
   const blurredCards  = results.slice(visibleLimit)
 
@@ -510,11 +517,41 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch() }}
           />
         </div>
+        {/* Batch selector — only in full (non-compact) mode */}
+        {!compact && (
+          <div className="flex items-center gap-2 px-5 py-2 border-t bg-muted/10">
+            <span className="text-xs text-muted-foreground font-medium shrink-0">Search depth:</span>
+            <div className="flex gap-1.5">
+              {BATCH_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setBatch(opt.value)}
+                  className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
+                    batch === opt.value
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                  <span className={`opacity-60 font-normal ${batch === opt.value ? "text-primary-foreground" : ""}`}>
+                    · {opt.sites}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <span className="ml-auto text-[11px] text-muted-foreground hidden sm:block">{BATCH_OPTIONS.find(o => o.value === batch)?.time}</span>
+          </div>
+        )}
+
         <div className={`flex items-center justify-between gap-3 border-t bg-muted/20 ${compact ? "px-3 py-2" : "px-5 py-3"}`}>
           <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
             {!isUnlimited && (
               <span className={`font-medium ${!canSearch ? "text-destructive" : ""}`}>
-                {balance !== null ? (canSearch ? `${balance} credits remaining` : `${balance} credits — need 3`) : "Loading…"}
+                {balance !== null
+                  ? canSearch
+                    ? `${balance} credits remaining`
+                    : `${balance} credits — need ${batch}`
+                  : "Loading…"}
               </span>
             )}
             {isUnlimited && <span className="font-medium text-primary">Unlimited credits</span>}
@@ -528,7 +565,7 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
           >
             <Sparkles className="h-4 w-4" />
             {canSearch
-              ? <>{compact ? "Search" : "Search"} <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : "3"} credits</span></>
+              ? <>Search <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : batch} credit{batch !== 1 ? "s" : ""}</span></>
               : "No credits · Upgrade"
             }
           </Button>

@@ -40,7 +40,8 @@ async function normalizeQuery(query: string, apiKey: string): Promise<string> {
 async function b2cWebSearch(
   query:       string,
   apiKey:      string,
-  countryHint: string
+  countryHint: string,
+  siteCap:     number = 10
 ): Promise<Array<{ retailer: string; url: string; title: string; condition: string }>> {
 
   const geoLine = countryHint
@@ -156,7 +157,7 @@ async function b2cWebSearch(
           const domain = new URL(r.url).hostname.replace("www.", "")
           if (seenDomains.has(domain)) return false
           seenDomains.add(domain)
-          return seenDomains.size <= 10  // Tier 2: 450k tokens/min — handles 10 sites easily
+          return seenDomains.size <= siteCap  // capped by batch size
         } catch { return false }
       })
 
@@ -338,15 +339,15 @@ async function scrapeUrls(
 }
 
 // ── Main export ───────────────────────────────────────────────────
-export async function b2cSearch(query: string, apiKey: string, countryHint = ""): Promise<{ results: B2CResult[]; correctedQuery: string | null }> {
+export async function b2cSearch(query: string, apiKey: string, countryHint = "", siteCap = 10): Promise<{ results: B2CResult[]; correctedQuery: string | null }> {
   // Step 0: Normalize query — fix typos before searching
   const originalQuery  = query
   const correctedQuery = await normalizeQuery(query, apiKey)
   const searchQuery    = correctedQuery || query
   const wasCorrected   = searchQuery.toLowerCase() !== originalQuery.toLowerCase()
 
-  // Step 1: AI web search — finds search/category page URLs
-  const webResults = await b2cWebSearch(searchQuery, apiKey, countryHint)
+  // Step 1: AI web search — finds search/category page URLs (capped by siteCap)
+  const webResults = await b2cWebSearch(searchQuery, apiKey, countryHint, siteCap)
   const empty = { results: [], correctedQuery: wasCorrected ? searchQuery : null }
   if (webResults.length === 0) return empty
 
