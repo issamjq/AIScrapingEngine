@@ -38,10 +38,8 @@ export function LoginPage() {
       {/* Left panel — branding */}
       <div className="hidden lg:flex lg:w-1/2 bg-primary flex-col justify-between p-12 text-primary-foreground">
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-primary-foreground/10 flex items-center justify-center">
-            <BarChart3 className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <span className="text-xl font-bold">AI Scraping Engine</span>
+          <img src="/spark-logo.gif" alt="Spark" className="h-10 w-10 object-contain" />
+          <span className="text-xl font-bold">Spark</span>
         </div>
 
         <div className="space-y-8">
@@ -70,7 +68,7 @@ export function LoginPage() {
         </div>
 
         <p className="text-primary-foreground/40 text-xs">
-          v{__APP_VERSION__} · AI Scraping Engine
+          v{__APP_VERSION__} · Spark
         </p>
       </div>
 
@@ -78,10 +76,8 @@ export function LoginPage() {
       <div className="flex-1 flex flex-col items-center justify-center p-6 sm:p-12">
         {/* Mobile logo */}
         <div className="flex lg:hidden items-center gap-2 mb-10">
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <BarChart3 className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-bold">AI Scraping Engine</span>
+          <img src="/spark-logo.gif" alt="Spark" className="h-9 w-9 object-contain" />
+          <span className="text-lg font-bold">Spark</span>
         </div>
 
         <div className="w-full max-w-sm space-y-8">

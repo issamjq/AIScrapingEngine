@@ -7,9 +7,10 @@ export function TopNavigation() {
       {/* Left: mobile sidebar trigger + title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <SidebarTrigger className="shrink-0 md:hidden" />
-        <h1 className="text-base sm:text-xl font-semibold truncate hidden sm:block">
-          AI Scraping Engine
-        </h1>
+        <div className="hidden sm:flex items-center gap-2">
+          <img src="/spark-logo.gif" alt="Spark" className="h-7 w-7 object-contain" />
+          <h1 className="text-base sm:text-xl font-bold truncate">Spark</h1>
+        </div>
       </div>
 
       {/* Right: credits */}

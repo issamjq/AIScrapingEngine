@@ -104,10 +104,8 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole }:
           {/* Logo */}
           <SidebarHeader>
             <div className="flex items-center gap-2 px-4 py-3">
-              <div className="h-7 w-7 rounded-md bg-primary flex items-center justify-center shrink-0">
-                <BarChart3 className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="font-bold text-sm tracking-tight truncate">AI Scraping Engine</span>
+              <img src="/spark-logo.gif" alt="Spark" className="h-8 w-8 object-contain shrink-0" />
+              <span className="font-bold text-sm tracking-tight truncate">Spark</span>
             </div>
           </SidebarHeader>
 
