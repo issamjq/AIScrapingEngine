@@ -306,6 +306,8 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
   const [correctedQuery, setCorrectedQuery]   = useState<string | null>(null)
   const [searchError, setSearchError]         = useState<string | null>(null)
   const [batch, setBatch]                     = useState(3)  // 1=Quick, 2=Standard, 3=Deep
+  const [activeCategory, setActiveCategory]   = useState<string | null>(null)
+  const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -490,9 +492,6 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
       ],
     },
   ]
-
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
-  const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
 
   function pickSuggestions(categoryId: string) {
     const cat = CATEGORIES.find(c => c.id === categoryId)
