@@ -635,16 +635,18 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
       {/* ── IDLE: centered like Claude / ChatGPT ── */}
       {phase === "idle" && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-8 px-2 py-12">
-          <div className="text-center space-y-3">
-            <div className="flex items-center justify-center mb-4">
-              <img src="/spark-logo.gif" alt="Spark AI" className="h-20 w-20 object-contain drop-shadow-md" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-6 px-2 py-12">
+
+          {/* Hero — left-aligned like image 2 */}
+          <div className="w-full max-w-2xl">
+            <div className="flex items-center gap-4 mb-4">
+              <img src="/spark-logo.gif" alt="Spark AI" className="h-14 w-14 object-contain drop-shadow-md shrink-0" />
+              <div>
+                <p className="text-xs font-semibold text-primary tracking-widest uppercase mb-0.5">Price Discovery</p>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight">Spark AI</h1>
+              </div>
             </div>
-            <div>
-              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Spark AI</h1>
-              <p className="text-xs font-semibold text-muted-foreground mt-1 tracking-widest uppercase">Price Discovery</p>
-            </div>
-            <p className="text-muted-foreground text-base max-w-lg mx-auto">
+            <p className="text-muted-foreground text-base">
               Search any product — AI finds the best prices across every marketplace worldwide
             </p>
           </div>
