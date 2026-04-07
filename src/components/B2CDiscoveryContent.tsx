@@ -420,12 +420,80 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     }))
     .sort((a, b) => a.lowestPrice - b.lowestPrice)
 
-  const SUGGESTIONS = [
-    "iPhone 16 Pro Max 256GB",
-    "Sony WH-1000XM5 headphones",
-    "cheap gaming laptop",
-    "Infiniti G37 S Coupe",
+  // ── Category suggestion pools ─────────────────────────────────
+  const CATEGORIES = [
+    {
+      id: "electronics",
+      label: "Electronics",
+      emoji: "📱",
+      pool: [
+        "iPhone 16 Pro Max 256GB", "Samsung Galaxy S25 Ultra", "Sony WH-1000XM5",
+        "MacBook Air M3 15 inch", "iPad Pro M4", "AirPods Pro 2nd gen",
+        "DJI Mini 4 Pro drone", "PS5 console", "Xbox Series X",
+        "Canon EOS R50 camera", "Apple Watch Series 10", "Dyson V15 vacuum",
+        "Samsung 65 inch OLED TV", "Bose QuietComfort 45", "GoPro Hero 13",
+      ],
+    },
+    {
+      id: "cars",
+      label: "Cars",
+      emoji: "🚗",
+      pool: [
+        "Infiniti G37 S Coupe 2010", "Toyota Camry 2022", "BMW 3 Series 2021",
+        "Mercedes C200 2020", "Honda Civic 2023", "Nissan Patrol 2022",
+        "Ford Mustang GT 2021", "Audi A4 2021", "Kia Sportage 2023",
+        "Hyundai Tucson 2022", "Range Rover Sport 2020", "Porsche Cayenne 2021",
+        "Toyota Land Cruiser 2022", "Lexus ES 350 2022", "Volkswagen Golf GTI 2022",
+      ],
+    },
+    {
+      id: "fashion",
+      label: "Fashion",
+      emoji: "👟",
+      pool: [
+        "Nike Air Force 1 white", "Adidas Ultraboost 22", "New Balance 990v5",
+        "Zara puffer jacket", "Levi's 501 jeans", "Ray-Ban Aviator sunglasses",
+        "Louis Vuitton Neverfull MM", "Gucci Marmont bag", "Nike Dunk Low",
+        "Jordan 1 Retro High OG", "Rolex Submariner", "Omega Seamaster",
+        "Canada Goose jacket", "Moncler vest", "Balenciaga Triple S",
+      ],
+    },
+    {
+      id: "home",
+      label: "Home",
+      emoji: "🏠",
+      pool: [
+        "IKEA MALM bed frame", "Philips Hue smart bulbs", "Nespresso Vertuo",
+        "KitchenAid stand mixer", "Dyson Airwrap", "Instant Pot 7-in-1",
+        "Weber BBQ grill", "Roomba i7 robot vacuum", "LG French door fridge",
+        "Bosch dishwasher", "Samsung washing machine", "Vitamix blender",
+        "Breville espresso machine", "Air purifier HEPA", "Nest thermostat",
+      ],
+    },
+    {
+      id: "food",
+      label: "Food & Health",
+      emoji: "🛒",
+      pool: [
+        "Marvis Classic Whitening Toothpaste 75ml", "Optimum Nutrition whey protein",
+        "Manuka honey UMF 20", "Nescafe Gold 200g", "Lipton green tea",
+        "Centrum multivitamin", "Omega 3 fish oil capsules", "Collagen powder",
+        "Protein bars variety pack", "Medjool dates 1kg",
+        "Lavazza espresso beans", "Himalayan pink salt", "Chia seeds organic",
+      ],
+    },
   ]
+
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
+
+  function pickSuggestions(categoryId: string) {
+    const cat = CATEGORIES.find(c => c.id === categoryId)
+    if (!cat) return
+    const shuffled = [...cat.pool].sort(() => Math.random() - 0.5)
+    setShownSuggestions(shuffled.slice(0, 4))
+    setActiveCategory(prev => prev === categoryId ? null : categoryId)
+  }
 
   function SearchBox({ compact = false }: { compact?: boolean }) {
     return (
@@ -505,16 +573,41 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             <SearchBox />
           </div>
 
-          <div className="flex flex-wrap gap-2 justify-center max-w-xl">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => setQuery(s)}
-                className="px-3.5 py-1.5 rounded-full border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-colors"
-              >
-                {s}
-              </button>
-            ))}
+          {/* Category chips + expanded suggestions */}
+          <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
+            {/* Category row */}
+            <div className="flex flex-wrap gap-2 justify-center">
+              {CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => pickSuggestions(cat.id)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border text-sm font-medium transition-all ${
+                    activeCategory === cat.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5"
+                  }`}
+                >
+                  <span>{cat.emoji}</span>
+                  <span>{cat.label}</span>
+                </button>
+              ))}
+            </div>
+
+            {/* Expanded suggestions — random 4 from selected category */}
+            {activeCategory && shownSuggestions.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                {shownSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setQuery(s)}
+                    className="text-left px-4 py-3 rounded-xl border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all group"
+                  >
+                    <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors line-clamp-1">{s}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Tap to search</p>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
