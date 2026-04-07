@@ -232,7 +232,14 @@ async function drillIntoSearchPages(
         return [sp]
       }
       const links = await engine.getListingUrls(sp.url, 3, queryKeywords)
-      return links.map((url: string) => ({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition }))
+      if (links.length > 0) {
+        return links.map((url: string) => ({ retailer: sp.retailer, url, title: sp.title, condition: sp.condition }))
+      }
+      // getListingUrls found nothing — the page may itself be a product page
+      // (e.g. /shop/slug, .html product pages that isProductPage doesn't detect).
+      // Fall back to scraping the original URL directly.
+      logger.info("[B2CSearch] No listings found — falling back to original URL", { url: sp.url })
+      return [sp]
     } catch {
       return []
     }
