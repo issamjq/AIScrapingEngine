@@ -7,7 +7,6 @@ import {
   Package,
   Building2,
   ChevronDown,
-  Search,
 } from "lucide-react"
 import {
   Sidebar,
@@ -109,7 +108,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, o
         .then(r => r.json())
         .then(j => {
           if (active && j.success) {
-            setSidebarHistory((j.data || []).slice(0, 3).map((e: any) => ({
+            setSidebarHistory((j.data || []).map((e: any) => ({
               ...e,
               results: typeof e.results === "string" ? JSON.parse(e.results) : e.results,
             })))
@@ -179,10 +178,9 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, o
                           <button
                             key={entry.id}
                             onClick={() => { onSelectHistory?.(entry); onNavigate("discovering") }}
-                            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
+                            className="w-full px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
                           >
-                            <Search className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-                            <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
+                            <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors block">
                               {entry.query}
                             </span>
                           </button>
