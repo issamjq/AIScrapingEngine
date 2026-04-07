@@ -249,7 +249,10 @@ export function PlansContent(_: { role?: string }) {
                     <div className="mb-4">
                       <div className="flex items-end gap-1">
                         <span className="text-4xl font-extrabold tracking-tight">
-                          {aedPrice ? `AED ${aedPrice}` : "—"}
+                          {currency === "AED"
+                            ? (aedPrice ? `AED ${aedPrice}` : "—")
+                            : formatPrice(plan.price_usd_b2c)
+                          }
                         </span>
                         <span className="text-sm text-muted-foreground mb-1.5">
                           /{plan.billing_period === "weekly" ? "week" : "month"}
