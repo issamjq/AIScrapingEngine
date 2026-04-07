@@ -577,7 +577,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                     <span className={`text-[10px] ${active ? "opacity-60" : "opacity-50"}`}>
                       {opt.sites} · {opt.time} · {opt.credits} cr
                     </span>
-                    {active && <span className="absolute top-1.5 right-2 text-[9px] opacity-50">✓</span>}
                   </button>
                 )
               })}
@@ -639,9 +638,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         <div className="flex-1 flex flex-col items-center justify-center gap-8 px-2 py-12">
           <div className="text-center space-y-3">
             <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center shadow-sm">
-                <span className="text-3xl">⚡</span>
-              </div>
+              <img src="/spark-logo.gif" alt="Spark AI" className="h-20 w-20 object-contain drop-shadow-md" />
             </div>
             <div>
               <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">Spark AI</h1>
@@ -710,10 +707,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
           {/* ── History on idle screen ── */}
           {history.length > 0 && (
             <div className="w-full max-w-2xl pt-2">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-2 px-1">
                 Recent searches
               </p>
-              <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
+              <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-lg divide-y divide-border">
                 {history.slice(0, 3).map((entry) => {
                   const isOpen   = openHistoryId === entry.id
                   const cheapest = entry.results.reduce((best: any, r: any) =>
@@ -873,10 +870,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
           {/* ── Recent searches history — hidden when viewing a history entry from sidebar ── */}
           {!isHistoryView && history.length > 0 && (
             <div className="pt-2 pb-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 px-1">
                 Recent searches
               </p>
-              <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
+              <div className="rounded-2xl border border-border bg-card overflow-hidden shadow-lg divide-y divide-border">
                 {history.slice(0, 3).map((entry) => {
                   const isOpen   = openHistoryId === entry.id
                   const cheapest = entry.results.reduce((best: any, r: any) =>
