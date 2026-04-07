@@ -134,7 +134,6 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
           {/* Logo */}
           <SidebarHeader>
             <div className="flex items-center gap-2 px-4 py-3">
-              <img src="/spark-logo.gif" alt="Spark AI" className="h-8 w-8 object-contain shrink-0" />
               <span className="font-bold text-sm tracking-tight truncate">Spark AI</span>
             </div>
           </SidebarHeader>
@@ -167,44 +166,55 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
               const isOpen = !collapsed[section.id]
               return (
                 <SidebarGroup key={section.id}>
-                  <SidebarGroupLabel className="px-4 py-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                      {section.label}
-                    </span>
-                  </SidebarGroupLabel>
+                  {section.id !== "rsp-ai" && (
+                    <SidebarGroupLabel className="px-4 py-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                        {section.label}
+                      </span>
+                    </SidebarGroupLabel>
+                  )}
                   <SidebarGroupContent>
                     <SidebarMenu>
                       {section.items.map((item) => (
                         <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
                       ))}
                     </SidebarMenu>
-
-                    {/* B2C: recent searches below Market Discovery */}
-                    {isB2C && section.id === "rsp-ai" && sidebarHistory.length > 0 && (
-                      <div className="mt-1 space-y-0.5 px-2">
-                        {sidebarHistory.map((entry) => {
-                          const depth = entry.batch === 1 ? "Quick" : entry.batch === 2 ? "Standard" : entry.batch === 3 ? "Deep" : null
-                          return (
-                            <button
-                              key={entry.id}
-                              onClick={() => onSelectHistory?.(entry)}
-                              className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
-                            >
-                              <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
-                                {entry.query}
-                              </span>
-                              {depth && (
-                                <span className="text-[10px] text-muted-foreground/50 shrink-0">{depth}</span>
-                              )}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    )}
                   </SidebarGroupContent>
                 </SidebarGroup>
               )
             })}
+
+            {/* B2C: search history at the bottom — like Claude chat history */}
+            {isB2C && sidebarHistory.length > 0 && (
+              <SidebarGroup className="mt-auto">
+                <SidebarGroupLabel className="px-4 py-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Recent Searches
+                  </span>
+                </SidebarGroupLabel>
+                <SidebarGroupContent>
+                  <div className="space-y-0.5 px-2">
+                    {sidebarHistory.map((entry) => {
+                      const depth = entry.batch === 1 ? "Quick" : entry.batch === 2 ? "Standard" : entry.batch === 3 ? "Deep" : null
+                      return (
+                        <button
+                          key={entry.id}
+                          onClick={() => onSelectHistory?.(entry)}
+                          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
+                        >
+                          <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
+                            {entry.query}
+                          </span>
+                          {depth && (
+                            <span className="text-[10px] text-muted-foreground/50 shrink-0">{depth}</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
 
           </SidebarContent>
 

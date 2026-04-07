@@ -3,14 +3,10 @@ import { SidebarTrigger } from "./ui/sidebar"
 
 export function TopNavigation() {
   return (
-    <header className="flex h-14 sm:h-16 items-center justify-between border-b px-3 sm:px-6 bg-background sticky top-0 z-30">
+    <header className="flex h-14 sm:h-16 items-center justify-between px-3 sm:px-6 bg-background sticky top-0 z-30">
       {/* Left: mobile sidebar trigger + title */}
       <div className="flex items-center gap-2 sm:gap-4 min-w-0">
         <SidebarTrigger className="shrink-0 md:hidden" />
-        <div className="hidden sm:flex items-center gap-2">
-          <img src="/spark-logo.gif" alt="Spark AI" className="h-7 w-7 object-contain" />
-          <h1 className="text-base sm:text-xl font-bold truncate">Spark AI</h1>
-        </div>
       </div>
 
       {/* Right: credits */}
