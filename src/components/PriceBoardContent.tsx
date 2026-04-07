@@ -60,21 +60,30 @@ function batchLabel(batch: number | null): string | null {
 
 function formatSearchedAt(iso: string) {
   const d = new Date(iso)
-  const day   = d.getDate()
-  const month = d.toLocaleString("en-US", { month: "long" })
   const h     = d.getHours()
   const min   = String(d.getMinutes()).padStart(2, "0")
   const ampm  = h >= 12 ? "pm" : "am"
   const h12   = h % 12 || 12
-  return `${day} ${month} ${h12}:${min} ${ampm}`
+  return `${h12}:${min} ${ampm}`
 }
 
-// ── B2C history view ──────────────────────────────────────────────────────────
+function dateGroupLabel(iso: string): string {
+  const d    = new Date(iso)
+  const now  = new Date()
+  const diff = (now.getTime() - d.getTime()) / 86_400_000 // days
+  if (diff < 1 && now.getDate() === d.getDate()) return "Today"
+  if (diff < 2 && now.getDate() - d.getDate() === 1) return "Yesterday"
+  if (diff < 7)  return "Previous 7 days"
+  if (diff < 30) return "This month"
+  return d.toLocaleString("en-US", { month: "long", year: "numeric" })
+}
+
+// ── B2C history view — chat-style ─────────────────────────────────────────────
 function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }) {
-  const { user }                    = useAuth()
-  const [history, setHistory]       = useState<HistoryEntry[]>([])
-  const [loading, setLoading]       = useState(true)
-  const [expanded, setExpanded]     = useState<Set<number>>(new Set([0]))  // first entry open
+  const { user }              = useAuth()
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const [openId, setOpenId]   = useState<number | null>(null)  // one open at a time
 
   const load = useCallback(async () => {
     if (!user) return
@@ -84,13 +93,14 @@ function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }
       const res   = await fetch(`${API}/api/discovery/b2c-history`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      const json  = await res.json()
+      const json = await res.json()
       if (json.success) {
-        // Parse results JSON string if needed
-        setHistory((json.data || []).map((e: any) => ({
+        const parsed = (json.data || []).map((e: any) => ({
           ...e,
           results: typeof e.results === "string" ? JSON.parse(e.results) : e.results,
-        })))
+        }))
+        setHistory(parsed)
+        if (parsed.length > 0) setOpenId(parsed[0].id)  // open most recent by default
       }
     } catch { /* ignore */ }
     finally { setLoading(false) }
@@ -120,170 +130,166 @@ function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }
     )
   }
 
-  const toggle = (idx: number) => {
-    setExpanded(prev => {
-      const next = new Set(prev)
-      next.has(idx) ? next.delete(idx) : next.add(idx)
-      return next
-    })
+  // Group by date label
+  const groups: { label: string; entries: HistoryEntry[] }[] = []
+  for (const entry of history) {
+    const label = dateGroupLabel(entry.searched_at)
+    const last  = groups[groups.length - 1]
+    if (last && last.label === label) last.entries.push(entry)
+    else groups.push({ label, entries: [entry] })
   }
 
   return (
-    <div className="space-y-4">
-      {history.map((entry, idx) => {
-        const isOpen     = expanded.has(idx)
-        const cheapest   = entry.results.reduce<B2CResult | null>((best, r) =>
-          r.price !== null && (best === null || r.price < best.price!) ? r : best, null)
+    <div className="space-y-6">
+      {/* New search button */}
+      <div className="flex justify-end">
+        <Button onClick={() => onNavigate?.("discovering")} size="sm" className="gap-1.5">
+          <Sparkles className="h-3.5 w-3.5" />
+          New search
+        </Button>
+      </div>
 
-        return (
-          <div key={entry.id} className="rounded-2xl border bg-card overflow-hidden shadow-sm">
-            {/* Search header — clickable to expand/collapse */}
-            <button
-              onClick={() => toggle(idx)}
-              className="w-full flex items-start justify-between gap-3 px-5 py-4 hover:bg-muted/30 transition-colors text-left"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="font-semibold text-sm truncate">"{entry.query}"</span>
-                  {entry.country_hint && (
-                    <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      <MapPin className="h-3 w-3" />
-                      {entry.country_hint}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {formatSearchedAt(entry.searched_at)}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {entry.result_count} price{entry.result_count !== 1 ? "s" : ""} found
-                  </span>
-                  {formatDuration(entry.duration_seconds) && (
-                    <span className="text-[11px] text-muted-foreground">
-                      ⏱ {formatDuration(entry.duration_seconds)}
-                    </span>
-                  )}
-                  {batchLabel(entry.batch) && (
-                    <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
-                      {batchLabel(entry.batch)}
-                    </span>
-                  )}
-                  {cheapest && (
-                    <span className="text-[11px] font-semibold text-primary">
-                      Best: {formatPrice(cheapest.price!, cheapest.currency)}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <span className="text-xs text-muted-foreground shrink-0 mt-0.5">
-                {isOpen ? "▲" : "▼"}
-              </span>
-            </button>
+      {groups.map((group) => (
+        <div key={group.label}>
+          {/* Date group label */}
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+            {group.label}
+          </p>
 
-            {/* Results list */}
-            {isOpen && (
-              <div className="border-t divide-y">
-                {entry.results.map((r, i) => {
-                  const isBest      = r === cheapest
-                  const hasDiscount = r.originalPrice !== null && r.originalPrice > (r.price ?? 0)
-                  const discount    = hasDiscount
-                    ? Math.round(((r.originalPrice! - r.price!) / r.originalPrice!) * 100)
-                    : 0
+          <div className="rounded-2xl border bg-card overflow-hidden shadow-sm divide-y">
+            {group.entries.map((entry) => {
+              const isOpen   = openId === entry.id
+              const cheapest = entry.results.reduce<B2CResult | null>((best, r) =>
+                r.price !== null && (best === null || r.price < best.price!) ? r : best, null)
 
-                  return (
-                    <div
-                      key={r.url}
-                      className={`flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors ${
-                        isBest ? "bg-primary/5" : ""
-                      }`}
-                    >
-                      {/* Rank */}
-                      <span className="text-xs font-bold text-muted-foreground/40 w-5 shrink-0 text-center">
-                        #{i + 1}
-                      </span>
+              return (
+                <div key={entry.id}>
+                  {/* Chat row — clickable */}
+                  <button
+                    onClick={() => setOpenId(isOpen ? null : entry.id)}
+                    className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${
+                      isOpen ? "bg-muted/20" : ""
+                    }`}
+                  >
+                    {/* Icon */}
+                    <div className={`h-7 w-7 rounded-full flex items-center justify-center shrink-0 ${
+                      isOpen ? "bg-primary text-primary-foreground" : "bg-muted"
+                    }`}>
+                      <Search className="h-3.5 w-3.5" />
+                    </div>
 
-                      {/* Image */}
-                      {r.imageUrl ? (
-                        <img
-                          src={r.imageUrl}
-                          alt={r.title}
-                          className="w-10 h-10 rounded-lg object-contain bg-muted/30 border shrink-0"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-lg bg-muted/40 border flex items-center justify-center shrink-0">
-                          <span className="text-sm font-bold text-muted-foreground/40">
-                            {r.retailer.charAt(0)}
+                    {/* Query + meta */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{entry.query}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        {entry.country_hint && (
+                          <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                            <MapPin className="h-3 w-3" />
+                            {entry.country_hint}
                           </span>
-                        </div>
-                      )}
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-semibold text-muted-foreground">{r.retailer}</span>
-                          {r.condition !== "Unknown" && (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                              {r.condition}
-                            </Badge>
-                          )}
-                          {isBest && (
-                            <Badge className="text-[10px] px-1.5 py-0 gap-1 bg-primary/90">
-                              <Sparkles className="h-2.5 w-2.5" />
-                              Best price
-                            </Badge>
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{r.title}</p>
-                      </div>
-
-                      {/* Price */}
-                      <div className="text-right shrink-0">
-                        {r.price !== null ? (
-                          <div className="flex flex-col items-end">
-                            <span className={`text-sm font-bold ${isBest ? "text-primary" : ""}`}>
-                              {formatPrice(r.price, r.currency)}
-                            </span>
-                            {hasDiscount && (
-                              <span className="text-[10px] text-emerald-600 font-semibold">-{discount}%</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                        <span className="text-[11px] text-muted-foreground">
+                          {entry.result_count} result{entry.result_count !== 1 ? "s" : ""}
+                        </span>
+                        {cheapest && (
+                          <span className="text-[11px] font-semibold text-primary">
+                            Best: {formatPrice(cheapest.price!, cheapest.currency)}
+                          </span>
+                        )}
+                        {formatDuration(entry.duration_seconds) && (
+                          <span className="text-[11px] text-muted-foreground">⏱ {formatDuration(entry.duration_seconds)}</span>
+                        )}
+                        {batchLabel(entry.batch) && (
+                          <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                            {batchLabel(entry.batch)}
+                          </span>
                         )}
                       </div>
-
-                      {/* View deal */}
-                      <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </Button>
-                      </a>
                     </div>
-                  )
-                })}
 
-                {/* Re-search CTA */}
-                <div className="px-5 py-3 bg-muted/10 flex items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Want fresh prices?</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-xs h-7"
-                    onClick={() => onNavigate?.("discovering")}
-                  >
-                    <Search className="h-3 w-3" />
-                    Re-search · 3 credits
-                  </Button>
+                    {/* Time + chevron */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[11px] text-muted-foreground hidden sm:block">
+                        {formatSearchedAt(entry.searched_at)}
+                      </span>
+                      <span className="text-muted-foreground/50 text-xs">{isOpen ? "▲" : "▼"}</span>
+                    </div>
+                  </button>
+
+                  {/* Expanded results — like a chat reply */}
+                  {isOpen && (
+                    <div className="bg-muted/10 border-t">
+                      <div className="divide-y">
+                        {entry.results.map((r, i) => {
+                          const isBest      = r === cheapest
+                          const hasDiscount = r.originalPrice !== null && r.originalPrice > (r.price ?? 0)
+                          const discount    = hasDiscount
+                            ? Math.round(((r.originalPrice! - r.price!) / r.originalPrice!) * 100)
+                            : 0
+                          return (
+                            <div
+                              key={r.url}
+                              className={`flex items-center gap-3 px-5 py-3 hover:bg-muted/20 transition-colors ${isBest ? "bg-primary/5" : ""}`}
+                            >
+                              <span className="text-xs font-bold text-muted-foreground/40 w-5 shrink-0 text-center">#{i + 1}</span>
+                              {r.imageUrl ? (
+                                <img src={r.imageUrl} alt={r.title} className="w-10 h-10 rounded-lg object-contain bg-muted/30 border shrink-0"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-muted/40 border flex items-center justify-center shrink-0">
+                                  <span className="text-sm font-bold text-muted-foreground/40">{r.retailer.charAt(0)}</span>
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-semibold text-muted-foreground">{r.retailer}</span>
+                                  {r.condition !== "Unknown" && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">{r.condition}</Badge>
+                                  )}
+                                  {isBest && (
+                                    <Badge className="text-[10px] px-1.5 py-0 gap-1 bg-primary/90">
+                                      <Sparkles className="h-2.5 w-2.5" />Best price
+                                    </Badge>
+                                  )}
+                                </div>
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">{r.title}</p>
+                              </div>
+                              <div className="text-right shrink-0">
+                                {r.price !== null ? (
+                                  <div className="flex flex-col items-end">
+                                    <span className={`text-sm font-bold ${isBest ? "text-primary" : ""}`}>
+                                      {formatPrice(r.price, r.currency)}
+                                    </span>
+                                    {hasDiscount && <span className="text-[10px] text-emerald-600 font-semibold">-{discount}%</span>}
+                                  </div>
+                                ) : <span className="text-xs text-muted-foreground">—</span>}
+                              </div>
+                              <a href={r.url} target="_blank" rel="noopener noreferrer" className="shrink-0">
+                                <Button size="sm" variant="ghost" className="h-7 w-7 p-0 rounded-lg">
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </Button>
+                              </a>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      {/* Re-search footer */}
+                      <div className="px-5 py-3 border-t flex items-center justify-between gap-3">
+                        <span className="text-xs text-muted-foreground">Want fresh prices?</span>
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7"
+                          onClick={() => onNavigate?.("discovering")}>
+                          <Search className="h-3 w-3" />
+                          Re-search · {batchLabel(entry.batch) === "Quick" ? 1 : batchLabel(entry.batch) === "Standard" ? 2 : 3} credits
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              )
+            })}
           </div>
-        )
-      })}
+        </div>
+      ))}
     </div>
   )
 }

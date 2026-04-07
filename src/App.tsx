@@ -190,9 +190,11 @@ function AppInner() {
     setCurrentPage(page)
   }
 
-  // Redirect B2C users who land on a blocked page via direct URL hash
+  // Redirect B2C users: blocked pages → discovering, dashboard → discovering
   useEffect(() => {
-    if (isB2C && B2C_BLOCKED.has(currentPage)) setCurrentPage("dashboard")
+    if (isB2C && (B2C_BLOCKED.has(currentPage) || currentPage === "dashboard")) {
+      setCurrentPage("discovering")
+    }
   }, [isB2C, currentPage])
 
   if (loading || (user && appState === "loading")) return <AppLoader />

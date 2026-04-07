@@ -111,20 +111,23 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole }:
 
           <SidebarContent className="overflow-y-auto overflow-x-hidden">
 
-            {/* ── Dashboard home ── */}
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <NavButton
-                    item={{ title: "Dashboard", icon: Home, id: "dashboard" }}
-                    currentPage={currentPage}
-                    onNavigate={onNavigate}
-                  />
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-
-            <Separator className="mx-4 my-1 w-auto" />
+            {/* ── Dashboard home — hidden for B2C ── */}
+            {!isB2C && (
+              <>
+                <SidebarGroup>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      <NavButton
+                        item={{ title: "Dashboard", icon: Home, id: "dashboard" }}
+                        currentPage={currentPage}
+                        onNavigate={onNavigate}
+                      />
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+                <Separator className="mx-4 my-1 w-auto" />
+              </>
+            )}
 
             {/* ── RSP sections (collapsible) ── */}
             {rspSections.filter(s => !(isB2C && s.id === "rsp-catalog")).map((section) => {
