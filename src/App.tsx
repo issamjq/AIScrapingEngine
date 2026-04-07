@@ -189,7 +189,8 @@ function AppInner() {
 
   function navigate(page: string) {
     if (isB2C && B2C_BLOCKED.has(page)) return
-    // Re-clicking Market Discovery while already there → reset to new search
+    // Re-clicking Market Discovery nav while already there → reset to new search
+    // (NOT triggered by selectHistory — that calls setCurrentPage directly)
     if (page === "discovering" && currentPage === "discovering") {
       setSelectedHistoryEntry(null)
       setDiscoveryResetKey(k => k + 1)
@@ -198,6 +199,8 @@ function AppInner() {
   }
 
   function selectHistory(entry: any) {
+    // Set the entry first, then navigate without going through navigate()
+    // so the reset logic in navigate() doesn't clear it
     setSelectedHistoryEntry(entry)
     setCurrentPage("discovering")
   }

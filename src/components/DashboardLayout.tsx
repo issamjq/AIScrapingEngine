@@ -179,7 +179,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, o
                           return (
                             <button
                               key={entry.id}
-                              onClick={() => { onSelectHistory?.(entry); onNavigate("discovering") }}
+                              onClick={() => onSelectHistory?.(entry)}
                               className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
                             >
                               <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
