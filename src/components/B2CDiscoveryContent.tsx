@@ -310,6 +310,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
   const [history, setHistory]                 = useState<any[]>([])
   const [openHistoryId, setOpenHistoryId]     = useState<number | null>(null)
+  const [isHistoryView, setIsHistoryView]     = useState(false)
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -365,8 +366,9 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setSearchError(null)
     setQuery(entry.query || "")
     setVisibleLimit(20)
+    setIsHistoryView(true)
     setPhase("results")
-    onClearHistory?.()  // clear so navigating away + back doesn't re-trigger
+    onClearHistory?.()
   }, [selectedHistoryEntry])
 
   async function handleSearch() {
@@ -374,6 +376,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     if (!q || phase === "searching") return
 
     setPhase("searching")
+    setIsHistoryView(false)
     setSearchError(null)
     setResults([])
     setCorrectedQuery(null)
@@ -856,13 +859,15 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             )
           })}
 
-          {/* Bottom search bar — search again without scrolling back up */}
-          <div className="pt-4 pb-2 max-w-2xl mx-auto w-full">
-            {renderSearchBox(true)}
-          </div>
+          {/* Bottom search bar — hidden when viewing a history entry from sidebar */}
+          {!isHistoryView && (
+            <div className="pt-4 pb-2 max-w-2xl mx-auto w-full">
+              {renderSearchBox(true)}
+            </div>
+          )}
 
-          {/* ── Recent searches history ── */}
-          {history.length > 0 && (
+          {/* ── Recent searches history — hidden when viewing a history entry from sidebar ── */}
+          {!isHistoryView && history.length > 0 && (
             <div className="pt-2 pb-4">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
                 Recent searches
