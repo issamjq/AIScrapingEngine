@@ -131,28 +131,18 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole }:
               const isOpen = !collapsed[section.id]
               return (
                 <SidebarGroup key={section.id}>
-                  <SidebarGroupLabel asChild>
-                    <button
-                      onClick={() => toggle(section.id)}
-                      className="w-full flex items-center justify-between px-4 py-2 cursor-pointer select-none"
-                    >
-                      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        {section.label}
-                      </span>
-                      <ChevronDown
-                        className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 ${isOpen ? "" : "-rotate-90"}`}
-                      />
-                    </button>
+                  <SidebarGroupLabel className="px-4 py-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                      {section.label}
+                    </span>
                   </SidebarGroupLabel>
-                  {isOpen && (
-                    <SidebarGroupContent>
-                      <SidebarMenu>
-                        {section.items.map((item) => (
-                          <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
-                        ))}
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  )}
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {section.items.map((item) => (
+                        <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
                 </SidebarGroup>
               )
             })}
