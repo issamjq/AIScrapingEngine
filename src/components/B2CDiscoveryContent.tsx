@@ -621,7 +621,6 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                       : "border-border text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5"
                   }`}
                 >
-                  <span>{cat.emoji}</span>
                   <span>{cat.label}</span>
                 </button>
               ))}
