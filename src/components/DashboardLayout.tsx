@@ -220,7 +220,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
 
           {/* Footer: user menu + version */}
           <SidebarFooter className="pb-2">
-            <Separator className="mx-4 mb-2 w-auto" />
+            <Separator className="mb-2" />
             <div className="px-2">
               <UserMenuButton onNavigate={onNavigate} />
             </div>
