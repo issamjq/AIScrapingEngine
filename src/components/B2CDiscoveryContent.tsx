@@ -195,7 +195,8 @@ function SearchingState({ query }: { query: string }) {
     return () => clearInterval(t)
   }, [])
 
-  const activeIdx   = PHASES.findLastIndex((p) => elapsed >= p.startAt)
+  const reversedIdx = [...PHASES].reverse().findIndex((p: typeof PHASES[number]) => elapsed >= p.startAt)
+  const activeIdx   = reversedIdx === -1 ? 0 : PHASES.length - 1 - reversedIdx
   const activePhase = PHASES[activeIdx] ?? PHASES[0]
 
   // Record when each phase becomes active
@@ -419,106 +420,114 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     }))
     .sort((a, b) => a.lowestPrice - b.lowestPrice)
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold flex items-center gap-2">
-          <Compass className="h-5 w-5" />
-          Market Discovery
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Ask for anything — AI searches the web, scrapes prices, and ranks the best deals
-        </p>
-      </div>
+  const SUGGESTIONS = [
+    "iPhone 16 Pro Max 256GB",
+    "Sony WH-1000XM5 headphones",
+    "cheap gaming laptop",
+    "Infiniti G37 S Coupe",
+  ]
 
-      {/* ── Idle / Search input ── */}
-      {phase === "idle" && (
-        <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
-          {/* Input area */}
-          <div className="p-5 pb-3">
-            <Textarea
-              ref={textareaRef}
-              autoFocus
-              rows={3}
-              className="resize-none text-base border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/50"
-              placeholder={`e.g. Infiniti G37 S Coupe 2010 — best price UAE\ne.g. iPhone 16 Pro 256GB new\ne.g. Marvis Classic Whitening Toothpaste 75ml`}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch()
-              }}
-            />
-          </div>
-
-          {/* Bottom bar — like Midjourney */}
-          <div className="flex items-center justify-between gap-3 px-5 py-3 border-t bg-muted/20">
-            {/* Left: credit info */}
-            <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
-              {!isUnlimited && (
-                <span className={`font-medium ${!canSearch ? "text-destructive" : ""}`}>
-                  {balance !== null ? (
-                    canSearch
-                      ? `${balance} credits remaining`
-                      : `${balance} credits — need 3`
-                  ) : "Loading…"}
-                </span>
-              )}
-              {isUnlimited && (
-                <span className="font-medium text-primary">Unlimited credits</span>
-              )}
-              <span className="hidden sm:flex items-center gap-1 opacity-60">
-                Web · Scrape · Vision AI
+  function SearchBox({ compact = false }: { compact?: boolean }) {
+    return (
+      <div className="rounded-2xl border bg-card shadow-sm overflow-hidden">
+        <div className={compact ? "p-3 pb-2" : "p-5 pb-3"}>
+          <Textarea
+            ref={compact ? undefined : textareaRef}
+            autoFocus={!compact}
+            rows={compact ? 1 : 3}
+            className={`resize-none border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/50 ${compact ? "text-sm" : "text-base"}`}
+            placeholder={compact ? "Search again…" : "e.g. iPhone 16 Pro 256GB new\ne.g. cheap headphones Lebanon\ne.g. Infiniti G37 S Coupe 2010"}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch() }}
+          />
+        </div>
+        <div className={`flex items-center justify-between gap-3 border-t bg-muted/20 ${compact ? "px-3 py-2" : "px-5 py-3"}`}>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground min-w-0">
+            {!isUnlimited && (
+              <span className={`font-medium ${!canSearch ? "text-destructive" : ""}`}>
+                {balance !== null ? (canSearch ? `${balance} credits remaining` : `${balance} credits — need 3`) : "Loading…"}
               </span>
-            </div>
-
-            {/* Right: Search button (Midjourney-style with credit cost) */}
-            <Button
-              onClick={handleSearch}
-              disabled={!query.trim() || !canSearch}
-              className="gap-2 rounded-xl shrink-0 font-semibold"
-            >
-              <Sparkles className="h-4 w-4" />
-              {canSearch ? (
-                <>Search <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : "3"} credits</span></>
-              ) : (
-                "No credits · Upgrade"
-              )}
+            )}
+            {isUnlimited && <span className="font-medium text-primary">Unlimited credits</span>}
+            {!compact && <span className="hidden sm:flex items-center gap-1 opacity-60">Web · Scrape · Vision AI</span>}
+          </div>
+          <Button
+            onClick={handleSearch}
+            disabled={!query.trim() || !canSearch}
+            size={compact ? "sm" : "default"}
+            className="gap-2 rounded-xl shrink-0 font-semibold"
+          >
+            <Sparkles className="h-4 w-4" />
+            {canSearch
+              ? <>{compact ? "Search" : "Search"} <span className="opacity-60 font-normal">· {isUnlimited ? "∞" : "3"} credits</span></>
+              : "No credits · Upgrade"
+            }
+          </Button>
+        </div>
+        {searchError && (
+          <div className="border-t bg-destructive/5 text-destructive text-sm px-5 py-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />{searchError}
+          </div>
+        )}
+        {!canSearch && !isUnlimited && (
+          <div className="border-t bg-amber-500/5 text-amber-700 dark:text-amber-400 text-sm px-5 py-3 flex items-center justify-between gap-3">
+            <span>You need 3 credits per search.</span>
+            <Button size="sm" variant="outline" className="shrink-0" onClick={() => onNavigate?.("plans")}>
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />Upgrade
             </Button>
           </div>
+        )}
+      </div>
+    )
+  }
 
-          {/* Error */}
-          {searchError && (
-            <div className="mx-5 mb-4 rounded-xl bg-destructive/10 text-destructive text-sm px-4 py-3 flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              {searchError}
+  return (
+    <div className="flex flex-col min-h-[calc(100vh-80px)]">
+
+      {/* ── IDLE: centered like Claude / ChatGPT ── */}
+      {phase === "idle" && (
+        <div className="flex-1 flex flex-col items-center justify-center gap-8 px-2 py-12">
+          <div className="text-center space-y-2">
+            <div className="flex items-center justify-center mb-3">
+              <div className="h-14 w-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+                <Compass className="h-7 w-7 text-primary" />
+              </div>
             </div>
-          )}
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">What are you looking for?</h1>
+            <p className="text-muted-foreground text-base">
+              AI searches every marketplace, scrapes prices, and finds you the best deal
+            </p>
+          </div>
 
-          {!canSearch && !isUnlimited && (
-            <div className="mx-5 mb-4 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-sm px-4 py-3 flex items-center justify-between gap-3">
-              <span>You need 3 credits per search.</span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="shrink-0"
-                onClick={() => onNavigate?.("plans")}
+          <div className="w-full max-w-2xl">
+            <SearchBox />
+          </div>
+
+          <div className="flex flex-wrap gap-2 justify-center max-w-xl">
+            {SUGGESTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setQuery(s)}
+                className="px-3.5 py-1.5 rounded-full border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 hover:bg-primary/5 transition-colors"
               >
-                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                Upgrade
-              </Button>
-            </div>
-          )}
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── Searching ── */}
-      {phase === "searching" && <SearchingState query={lastQuery} />}
+      {/* ── SEARCHING: centered ── */}
+      {phase === "searching" && (
+        <div className="flex-1 flex items-center justify-center">
+          <SearchingState query={lastQuery} />
+        </div>
+      )}
 
-      {/* ── Results ── */}
+      {/* ── RESULTS ── */}
       {phase === "results" && (
-        <div className="space-y-4">
-          {/* Spell-correction banner */}
+        <div className="space-y-4 py-2">
           {correctedQuery && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm">
               <span className="text-amber-600 dark:text-amber-400">✦</span>
@@ -528,14 +537,12 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             </div>
           )}
 
-          {/* Results header */}
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">
                 {results.length === 0
                   ? `No results found for "${lastQuery}"`
-                  : `${results.length} result${results.length !== 1 ? "s" : ""} for "${lastQuery}"`
-                }
+                  : `${results.length} result${results.length !== 1 ? "s" : ""} for "${lastQuery}"`}
               </p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {results.length} price{results.length !== 1 ? "s" : ""} found across {retailerGroups.length} retailer{retailerGroups.length !== 1 ? "s" : ""} · Grouped by store, sorted cheapest first
@@ -556,26 +563,19 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             </div>
           )}
 
-          {/* Results grouped by retailer */}
           {retailerGroups.map((group, groupIdx) => {
             let globalRank = 0
             for (let i = 0; i < groupIdx; i++) globalRank += retailerGroups[i].items.length
             return (
               <div key={group.retailer} className="space-y-2">
-                {/* Retailer header */}
                 <div className="flex items-center gap-2 px-1">
-                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                    {group.retailer}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {group.items.length} listing{group.items.length !== 1 ? "s" : ""}
-                  </span>
+                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{group.retailer}</span>
+                  <span className="text-xs text-muted-foreground">{group.items.length} listing{group.items.length !== 1 ? "s" : ""}</span>
                   <div className="flex-1 h-px bg-border" />
                   <span className="text-xs font-semibold text-primary">
                     from {group.items[0].currency} {group.lowestPrice.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                   </span>
                 </div>
-                {/* Cards */}
                 <div className="space-y-2">
                   {group.items.map((result, itemIdx) => (
                     <PriceCard
@@ -589,6 +589,11 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
               </div>
             )
           })}
+
+          {/* Bottom search bar — search again without scrolling back up */}
+          <div className="pt-4 pb-2 max-w-2xl mx-auto w-full">
+            <SearchBox compact />
+          </div>
         </div>
       )}
 
