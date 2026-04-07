@@ -147,6 +147,7 @@ function AppInner() {
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null)
   const [discoveryResetKey, setDiscoveryResetKey]       = useState(0)
   const [userSubscription, setUserSubscription]         = useState<string | null>(null)
+  const [sidebarRefreshKey, setSidebarRefreshKey]       = useState(0)
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
@@ -239,7 +240,7 @@ function AppInner() {
       case "settings":        return <SettingsContent role={role} onNavigate={navigate} initialTab={getHashSubTab()} />
 
       // RSP / Scraping Engine pages
-      case "discovering":     return <DiscoveringContent key={discoveryResetKey} role={role} onNavigate={navigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={() => setSelectedHistoryEntry(null)} />
+      case "discovering":     return <DiscoveringContent key={discoveryResetKey} role={role} onNavigate={navigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={() => setSelectedHistoryEntry(null)} onSearchComplete={() => setSidebarRefreshKey(k => k + 1)} />
       case "price-board":     return <PriceBoardContent role={role} onNavigate={navigate} />
       case "tracked-urls":    return <TrackedUrlsContent role={role} />
       case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />
@@ -252,7 +253,7 @@ function AppInner() {
   }
 
   return (
-    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} userSubscription={userSubscription} onSelectHistory={selectHistory}>
+    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} userSubscription={userSubscription} onSelectHistory={selectHistory} sidebarRefreshKey={sidebarRefreshKey}>
       {renderContent()}
     </DashboardLayout>
   )

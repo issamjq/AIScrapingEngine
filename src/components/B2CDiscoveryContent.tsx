@@ -289,7 +289,7 @@ function SearchingState({ query }: { query: string }) {
 }
 
 // ── Main component ────────────────────────────────────────────────
-export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearHistory }: { onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void }) {
+export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearHistory, onSearchComplete }: { onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void; onSearchComplete?: () => void }) {
   const { user }                              = useAuth()
 
   const [loading, setLoading]                 = useState(true)
@@ -346,7 +346,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               results: typeof e.results === "string" ? JSON.parse(e.results) : e.results,
             }))
             setHistory(parsed)
-            if (parsed.length > 0) setOpenHistoryId(parsed[0].id)
           }
         }
       } catch { /* silent */ }
@@ -412,6 +411,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       setLastQuery(data.query || q)
       setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
       setPhase("results")
+      onSearchComplete?.()  // tell sidebar to re-fetch history
       // Refresh history so the new search appears in the list
       try {
         const t2 = await getToken()
@@ -631,7 +631,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   )
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-80px)]">
+    <div className="flex flex-col">
 
       {/* ── IDLE: centered like Claude / ChatGPT ── */}
       {phase === "idle" && (

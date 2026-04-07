@@ -64,6 +64,7 @@ interface DashboardLayoutProps {
   userRole?:         string
   userSubscription?: string | null
   onSelectHistory?:  (entry: any) => void
+  sidebarRefreshKey?: number
 }
 
 function NavButton({
@@ -94,7 +95,7 @@ function NavButton({
   )
 }
 
-export function DashboardLayout({ children, currentPage, onNavigate, userRole, userSubscription, onSelectHistory }: DashboardLayoutProps) {
+export function DashboardLayout({ children, currentPage, onNavigate, userRole, userSubscription, onSelectHistory, sidebarRefreshKey }: DashboardLayoutProps) {
   const { user }  = useAuth()
   const isB2C     = userRole === "b2c"
   // B2C free plan hides Price Activity — pro/trial/weekly/monthly can see it
@@ -120,7 +121,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
         })
     ).catch(() => {})
     return () => { active = false }
-  }, [isB2C, user, currentPage])  // re-fetch when navigating back (catches new searches)
+  }, [isB2C, user, currentPage, sidebarRefreshKey])  // sidebarRefreshKey increments after each new search
 
   const toggle = (id: string) =>
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
