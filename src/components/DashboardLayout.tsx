@@ -165,8 +165,8 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
             ).map((section) => {
               const isOpen = !collapsed[section.id]
               return (
-                <SidebarGroup key={section.id}>
-                  {section.id !== "rsp-ai" && (
+                <SidebarGroup key={section.id} className={section.id === "rsp-monitoring" ? "pt-0" : ""}>
+                  {section.id !== "rsp-ai" && section.id !== "rsp-monitoring" && (
                     <SidebarGroupLabel className="px-4 py-2">
                       <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                         {section.label}
@@ -193,7 +193,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
                   </span>
                 </SidebarGroupLabel>
                 <SidebarGroupContent>
-                  <div className="space-y-0.5 px-2">
+                  <div className="space-y-0.5 px-2 overflow-y-auto max-h-[360px]">
                     {sidebarHistory.map((entry) => {
                       const depth = entry.batch === 1 ? "Quick" : entry.batch === 2 ? "Standard" : entry.batch === 3 ? "Deep" : null
                       return (
