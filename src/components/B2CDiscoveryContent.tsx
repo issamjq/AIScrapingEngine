@@ -515,29 +515,35 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
             onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch() }}
           />
         </div>
-        {/* Batch selector — only in full (non-compact) mode */}
+        {/* Batch selector — premium 2026 segmented control */}
         {!compact && (
-          <div className="flex items-center gap-2 px-5 py-2 border-t bg-muted/10">
-            <span className="text-xs text-muted-foreground font-medium shrink-0">Search depth:</span>
-            <div className="flex gap-1.5">
-              {BATCH_OPTIONS.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setBatch(opt.value)}
-                  className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold border transition-all ${
-                    batch === opt.value
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                  }`}
-                >
-                  {opt.label}
-                  <span className={`opacity-60 font-normal ${batch === opt.value ? "text-primary-foreground" : ""}`}>
-                    · {opt.sites}
-                  </span>
-                </button>
-              ))}
+          <div className="border-t">
+            <div className="grid grid-cols-3 divide-x">
+              {BATCH_OPTIONS.map((opt) => {
+                const active = batch === opt.value
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => setBatch(opt.value)}
+                    className={`relative flex flex-col items-center justify-center gap-0.5 py-3 transition-all ${
+                      active
+                        ? "bg-foreground text-background"
+                        : "bg-transparent text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+                    }`}
+                  >
+                    <span className={`text-[13px] font-bold tracking-tight ${active ? "text-background" : ""}`}>
+                      {opt.label}
+                    </span>
+                    <span className={`text-[10px] ${active ? "text-background/60" : "text-muted-foreground/60"}`}>
+                      {opt.sites} · {opt.time} · {opt.credits} cr
+                    </span>
+                    {active && (
+                      <span className="absolute top-1.5 right-2 text-[9px] text-background/50">✓</span>
+                    )}
+                  </button>
+                )
+              })}
             </div>
-            <span className="ml-auto text-[11px] text-muted-foreground hidden sm:block">{BATCH_OPTIONS.find(o => o.value === batch)?.time}</span>
           </div>
         )}
 
@@ -642,18 +648,15 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
                   </button>
                 </div>
 
-                {/* Suggestion grid — 3 columns like image 2 */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-px bg-border">
+                {/* Vertical list — Claude.ai style */}
+                <div className="divide-y divide-border">
                   {shownSuggestions.map((s) => (
                     <button
                       key={s}
                       onClick={() => { setQuery(s); setActiveCategory(null); setShownSuggestions([]) }}
-                      className="text-left px-4 py-4 bg-card hover:bg-primary/5 transition-colors group flex flex-col justify-between min-h-[80px]"
+                      className="w-full text-left px-4 py-3 bg-card hover:bg-muted/50 transition-colors text-sm text-foreground"
                     >
-                      <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors leading-snug">{s}</p>
-                      <p className="text-[11px] text-muted-foreground mt-3">
-                        {CATEGORIES.find(c => c.id === activeCategory)?.label}
-                      </p>
+                      {s}
                     </button>
                   ))}
                 </div>

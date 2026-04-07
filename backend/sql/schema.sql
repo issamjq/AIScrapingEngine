@@ -388,6 +388,9 @@ CREATE TABLE IF NOT EXISTS b2c_search_history (
 
 CREATE INDEX IF NOT EXISTS idx_b2c_history_user_email ON b2c_search_history (user_email, searched_at DESC);
 
+ALTER TABLE b2c_search_history ADD COLUMN IF NOT EXISTS duration_seconds INTEGER;
+ALTER TABLE b2c_search_history ADD COLUMN IF NOT EXISTS batch            INTEGER;
+
 -- =============================================================
 -- B2C Weekly / Monthly subscription plans (run once in Neon)
 -- =============================================================

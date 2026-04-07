@@ -209,16 +209,18 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
     }
 
     logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint, batch, siteCap, credits })
+    const searchStart = Date.now()
     const { results, correctedQuery } = await b2cSearch(queryText, apiKey, countryHint, siteCap)
+    const durationSeconds = Math.round((Date.now() - searchStart) / 1000)
     const finalQuery = correctedQuery ?? queryText
-    logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery })
+    logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery, durationSeconds })
 
     // Save to search history (fire-and-forget — never block the response)
     if (results.length > 0) {
       dbQuery(
-        `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [email, finalQuery, countryHint, JSON.stringify(results), results.length]
+        `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count, duration_seconds, batch)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [email, finalQuery, countryHint, JSON.stringify(results), results.length, durationSeconds, batch]
       ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
     }
 

@@ -30,17 +30,32 @@ interface B2CResult {
 }
 
 interface HistoryEntry {
-  id:           number
-  query:        string
-  country_hint: string
-  results:      B2CResult[]
-  result_count: number
-  searched_at:  string
+  id:               number
+  query:            string
+  country_hint:     string
+  results:          B2CResult[]
+  result_count:     number
+  searched_at:      string
+  duration_seconds: number | null
+  batch:            number | null
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatPrice(price: number, currency: string) {
   return `${currency} ${price.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+}
+
+function formatDuration(seconds: number | null): string | null {
+  if (seconds === null || seconds === undefined) return null
+  if (seconds < 60) return `${seconds}s`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return s > 0 ? `${m}m ${s}s` : `${m}m`
+}
+
+function batchLabel(batch: number | null): string | null {
+  if (!batch) return null
+  return batch === 1 ? "Quick" : batch === 2 ? "Standard" : "Deep"
 }
 
 function formatSearchedAt(iso: string) {
@@ -146,6 +161,16 @@ function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }
                   <span className="text-[11px] text-muted-foreground">
                     {entry.result_count} price{entry.result_count !== 1 ? "s" : ""} found
                   </span>
+                  {formatDuration(entry.duration_seconds) && (
+                    <span className="text-[11px] text-muted-foreground">
+                      ⏱ {formatDuration(entry.duration_seconds)}
+                    </span>
+                  )}
+                  {batchLabel(entry.batch) && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded-full border border-border text-muted-foreground">
+                      {batchLabel(entry.batch)}
+                    </span>
+                  )}
                   {cheapest && (
                     <span className="text-[11px] font-semibold text-primary">
                       Best: {formatPrice(cheapest.price!, cheapest.currency)}
