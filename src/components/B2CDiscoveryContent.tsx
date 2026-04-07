@@ -420,7 +420,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         if (hj.success) {
           const ph = (hj.data || []).map((e: any) => ({ ...e, results: typeof e.results === "string" ? JSON.parse(e.results) : e.results }))
           setHistory(ph)
-          if (ph.length > 0) setOpenHistoryId(ph[0].id)
         }
       } catch { /* best-effort */ }
     } catch (err: any) {

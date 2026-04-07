@@ -376,6 +376,20 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
       }))
     }
 
+    // Post-scrape model number filter: drop results whose title contains a conflicting
+    // 2-digit model number (10–99) that isn't in the query.
+    // E.g. query "iPhone 16 Pro Max" → reject any title mentioning "iPhone 17" or "iPhone 12".
+    const queryModelNums = [...(searchQuery.match(/\b([1-9][0-9])\b/g) ?? [])].map(Number)
+    if (queryModelNums.length > 0) {
+      scraped = scraped.filter((r) => {
+        if (!r.title) return true
+        const titleNums = [...(r.title.match(/\b([1-9][0-9])\b/g) ?? [])].map(Number)
+        if (titleNums.length === 0) return true
+        // Keep only if at least one title model number matches a query model number
+        return titleNums.some((n) => queryModelNums.includes(n))
+      })
+    }
+
     return {
       results:        scraped.filter(r => r.price !== null).sort((a, b) => (a.price ?? 0) - (b.price ?? 0)),
       correctedQuery: wasCorrected ? searchQuery : null,
