@@ -108,7 +108,27 @@ function B2CPriceHistory({ onNavigate }: { onNavigate?: (page: string) => void }
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <PageSkeleton cards={3} rows={0} />
+  if (loading) return (
+    <div className="space-y-6 animate-pulse">
+      {/* New search button */}
+      <div className="flex justify-end">
+        <div className="h-8 w-28 rounded-lg bg-muted" />
+      </div>
+      {/* Date group label */}
+      <div className="h-3 w-16 rounded bg-muted" />
+      {/* History rows */}
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="rounded-2xl border bg-card px-4 py-3 flex items-center gap-3">
+          <div className="h-8 w-8 rounded-full bg-muted shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-48 rounded bg-muted" />
+            <div className="h-3 w-32 rounded bg-muted" />
+          </div>
+          <div className="h-3 w-16 rounded bg-muted shrink-0" />
+        </div>
+      ))}
+    </div>
+  )
 
   if (history.length === 0) {
     return (

@@ -2,22 +2,15 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
-  Compass, Sparkles, Loader2, ExternalLink, Lock,
+  Compass, Sparkles, Loader2, ExternalLink,
   TrendingDown, AlertCircle, Search, Globe, Eye, CheckCircle2,
 } from "lucide-react"
-import { PageSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
 const UNLIMITED_ROLES = ["dev", "owner"]
 
-const RESULT_LIMIT: Record<string, number> = {
-  free:       3,
-  trial:      8,
-  pro:        20,
-  enterprise: 20,
-}
 
 // ── Condition badge ───────────────────────────────────────────────
 const CONDITION_STYLES: Record<string, string> = {
@@ -309,6 +302,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [activeCategory, setActiveCategory]   = useState<string | null>(null)
   const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
   const [isHistoryView, setIsHistoryView]     = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -345,19 +339,24 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     return () => { cancelled = true }
   }, [user])
 
-  // When a history entry is selected from the sidebar, load it directly as results
+  // When a history entry is selected from the sidebar, briefly show skeleton then load results
   useEffect(() => {
     if (!selectedHistoryEntry) return
     const entry = selectedHistoryEntry
-    setResults(entry.results || [])
-    setLastQuery(entry.query || "")
-    setCorrectedQuery(null)
-    setSearchError(null)
-    setQuery(entry.query || "")
-    setVisibleLimit(20)
-    setIsHistoryView(true)
+    setIsLoadingHistory(true)
     setPhase("results")
-    onClearHistory?.()
+    const t = setTimeout(() => {
+      setResults(entry.results || [])
+      setLastQuery(entry.query || "")
+      setCorrectedQuery(null)
+      setSearchError(null)
+      setQuery(entry.query || "")
+      setVisibleLimit(20)
+      setIsHistoryView(true)
+      setIsLoadingHistory(false)
+      onClearHistory?.()
+    }, 400)
+    return () => clearTimeout(t)
   }, [selectedHistoryEntry])
 
   async function handleSearch() {
@@ -421,11 +420,59 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setTimeout(() => textareaRef.current?.focus(), 50)
   }
 
-  if (loading) return <PageSkeleton cards={1} rows={4} />
+  if (loading) return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-6 px-2 py-12 animate-pulse">
+      {/* Hero: mascot + title */}
+      <div className="w-full max-w-2xl">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="h-24 w-24 rounded-full bg-muted shrink-0" />
+          <div className="space-y-2">
+            <div className="h-3 w-28 rounded bg-muted" />
+            <div className="h-9 w-36 rounded bg-muted" />
+          </div>
+        </div>
+        <div className="h-4 w-96 rounded bg-muted" />
+      </div>
+
+      {/* Search box */}
+      <div className="w-full max-w-2xl bg-card rounded-2xl shadow-lg border overflow-hidden">
+        {/* Textarea area */}
+        <div className="flex items-start gap-3 px-6 pt-6 pb-4">
+          <div className="h-5 w-5 rounded bg-muted mt-1 shrink-0" />
+          <div className="flex-1 space-y-2">
+            <div className="h-4 w-full rounded bg-muted" />
+            <div className="h-4 w-3/4 rounded bg-muted" />
+            <div className="h-4 w-1/2 rounded bg-muted" />
+          </div>
+        </div>
+        {/* Depth selector */}
+        <div className="mx-6 mb-4 border border-border rounded-xl overflow-hidden">
+          <div className="grid grid-cols-3 divide-x divide-border">
+            {["Quick", "Standard", "Deep"].map((_, i) => (
+              <div key={i} className={`py-3 flex flex-col items-center gap-1 ${i === 2 ? "bg-muted" : ""}`}>
+                <div className="h-3 w-12 rounded bg-muted" />
+                <div className="h-2.5 w-20 rounded bg-muted/60" />
+              </div>
+            ))}
+          </div>
+        </div>
+        {/* Bottom bar */}
+        <div className="flex items-center justify-between gap-3 border-t border-border px-6 py-4">
+          <div className="h-4 w-36 rounded bg-muted" />
+          <div className="h-10 w-28 rounded-xl bg-muted" />
+        </div>
+      </div>
+
+      {/* Category chips */}
+      <div className="flex flex-wrap gap-2 justify-center w-full max-w-2xl">
+        {[96, 64, 80, 64, 112].map((w, i) => (
+          <div key={i} className="h-9 rounded-full bg-muted" style={{ width: w }} />
+        ))}
+      </div>
+    </div>
+  )
 
   const isUnlimited   = UNLIMITED_ROLES.includes(userProfile?.role ?? "")
-  const subscription  = userProfile?.subscription ?? "free"
-  const planLimit     = isUnlimited ? 20 : (RESULT_LIMIT[subscription] ?? 3)
 
   const canSearch     = isUnlimited || (balance !== null && balance >= batch)
   const visibleCards  = results.slice(0, visibleLimit)
@@ -696,7 +743,34 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       )}
 
       {/* ── RESULTS ── */}
-      {phase === "results" && (
+      {phase === "results" && isLoadingHistory && (
+        <div className="space-y-4 py-2 animate-pulse">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1.5">
+              <div className="h-4 w-56 rounded bg-muted" />
+              <div className="h-3 w-40 rounded bg-muted" />
+            </div>
+            <div className="h-8 w-24 rounded-lg bg-muted shrink-0" />
+          </div>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="rounded-2xl border bg-card p-4 flex items-start gap-4">
+              <div className="flex flex-col items-center gap-2 shrink-0">
+                <div className="h-4 w-6 rounded bg-muted" />
+                <div className="h-14 w-14 rounded-lg bg-muted" />
+              </div>
+              <div className="flex-1 space-y-2">
+                <div className="h-3 w-24 rounded bg-muted" />
+                <div className="h-4 w-full rounded bg-muted" />
+                <div className="h-4 w-3/4 rounded bg-muted" />
+                <div className="h-6 w-28 rounded bg-muted" />
+              </div>
+              <div className="h-8 w-20 rounded-xl bg-muted shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {phase === "results" && !isLoadingHistory && (
         <div className="space-y-4 py-2">
           {correctedQuery && (
             <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm">
