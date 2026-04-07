@@ -146,6 +146,7 @@ function AppInner() {
   const [userRole, setUserRole]                   = useState<string | null>(null)
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null)
   const [discoveryResetKey, setDiscoveryResetKey]       = useState(0)
+  const [userSubscription, setUserSubscription]         = useState<string | null>(null)
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
@@ -176,6 +177,7 @@ function AppInner() {
         .then((data) => {
           if (data.success) {
             setUserRole(data.data?.role ?? null)
+            setUserSubscription(data.data?.subscription ?? null)
             setAppState("ready")
           }
           else if (data.error?.code === "NEW_USER") setAppState("denied")
@@ -250,7 +252,7 @@ function AppInner() {
   }
 
   return (
-    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} onSelectHistory={selectHistory}>
+    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} userSubscription={userSubscription} onSelectHistory={selectHistory}>
       {renderContent()}
     </DashboardLayout>
   )

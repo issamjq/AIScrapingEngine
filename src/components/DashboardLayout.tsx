@@ -58,11 +58,12 @@ const rspSections = [
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
 interface DashboardLayoutProps {
-  children:        ReactNode
-  currentPage:     string
-  onNavigate:      (page: string) => void
-  userRole?:       string
-  onSelectHistory?: (entry: any) => void
+  children:          ReactNode
+  currentPage:       string
+  onNavigate:        (page: string) => void
+  userRole?:         string
+  userSubscription?: string | null
+  onSelectHistory?:  (entry: any) => void
 }
 
 function NavButton({
@@ -93,9 +94,12 @@ function NavButton({
   )
 }
 
-export function DashboardLayout({ children, currentPage, onNavigate, userRole, onSelectHistory }: DashboardLayoutProps) {
+export function DashboardLayout({ children, currentPage, onNavigate, userRole, userSubscription, onSelectHistory }: DashboardLayoutProps) {
   const { user }  = useAuth()
   const isB2C     = userRole === "b2c"
+  // B2C free plan hides Price Activity — pro/trial/weekly/monthly can see it
+  const B2C_PAID_PLANS = new Set(["pro", "trial", "weekly", "monthly", "enterprise", "paid"])
+  const hidePriceActivity = isB2C && !B2C_PAID_PLANS.has(userSubscription ?? "")
   const [collapsed, setCollapsed]           = useState<Record<string, boolean>>({})
   const [sidebarHistory, setSidebarHistory] = useState<any[]>([])
 
@@ -155,7 +159,10 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, o
             )}
 
             {/* ── RSP sections (collapsible) ── */}
-            {rspSections.filter(s => !(isB2C && s.id === "rsp-catalog")).map((section) => {
+            {rspSections.filter(s =>
+              !(isB2C && s.id === "rsp-catalog") &&
+              !(hidePriceActivity && s.id === "rsp-monitoring")
+            ).map((section) => {
               const isOpen = !collapsed[section.id]
               return (
                 <SidebarGroup key={section.id}>
