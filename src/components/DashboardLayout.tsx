@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react"
+import { ReactNode, useState, useEffect } from "react"
 import {
   BarChart3,
   Home,
@@ -7,6 +7,7 @@ import {
   Package,
   Building2,
   ChevronDown,
+  Search,
 } from "lucide-react"
 import {
   Sidebar,
@@ -24,6 +25,7 @@ import {
 import { TopNavigation } from "./TopNavigation"
 import { UserMenuButton } from "./UserMenuButton"
 import { Separator } from "./ui/separator"
+import { useAuth } from "@/context/AuthContext"
 
 declare const __APP_VERSION__: string
 
@@ -54,11 +56,14 @@ const rspSections = [
   },
 ]
 
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
 interface DashboardLayoutProps {
-  children: ReactNode
-  currentPage: string
-  onNavigate: (page: string) => void
-  userRole?: string
+  children:        ReactNode
+  currentPage:     string
+  onNavigate:      (page: string) => void
+  userRole?:       string
+  onSelectHistory?: (entry: any) => void
 }
 
 function NavButton({
@@ -89,9 +94,30 @@ function NavButton({
   )
 }
 
-export function DashboardLayout({ children, currentPage, onNavigate, userRole }: DashboardLayoutProps) {
-  const isB2C = userRole === "b2c"
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+export function DashboardLayout({ children, currentPage, onNavigate, userRole, onSelectHistory }: DashboardLayoutProps) {
+  const { user }  = useAuth()
+  const isB2C     = userRole === "b2c"
+  const [collapsed, setCollapsed]           = useState<Record<string, boolean>>({})
+  const [sidebarHistory, setSidebarHistory] = useState<any[]>([])
+
+  // Fetch last 3 searches for B2C sidebar
+  useEffect(() => {
+    if (!isB2C || !user) return
+    let active = true
+    ;(user as any).getIdToken().then((token: string) =>
+      fetch(`${API}/api/discovery/b2c-history`, { headers: { Authorization: `Bearer ${token}` } })
+        .then(r => r.json())
+        .then(j => {
+          if (active && j.success) {
+            setSidebarHistory((j.data || []).slice(0, 3).map((e: any) => ({
+              ...e,
+              results: typeof e.results === "string" ? JSON.parse(e.results) : e.results,
+            })))
+          }
+        })
+    ).catch(() => {})
+    return () => { active = false }
+  }, [isB2C, user, currentPage])  // re-fetch when navigating back (catches new searches)
 
   const toggle = (id: string) =>
     setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -145,6 +171,24 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole }:
                         <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
                       ))}
                     </SidebarMenu>
+
+                    {/* B2C: recent searches below Market Discovery */}
+                    {isB2C && section.id === "rsp-ai" && sidebarHistory.length > 0 && (
+                      <div className="mt-1 space-y-0.5 px-2">
+                        {sidebarHistory.map((entry) => (
+                          <button
+                            key={entry.id}
+                            onClick={() => { onSelectHistory?.(entry); onNavigate("discovering") }}
+                            className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left hover:bg-muted/60 transition-colors group"
+                          >
+                            <Search className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                            <span className="text-xs text-muted-foreground truncate group-hover:text-foreground transition-colors">
+                              {entry.query}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </SidebarGroupContent>
                 </SidebarGroup>
               )

@@ -892,7 +892,7 @@ function B2BDiscoveryContent() {
 }
 
 // ── Public export: routes by role ─────────────────────────────────
-export function DiscoveringContent({ role, onNavigate }: { role?: string; onNavigate?: (page: string) => void }) {
-  if (role === "b2c") return <B2CDiscoveryContent onNavigate={onNavigate} />
+export function DiscoveringContent({ role, onNavigate, selectedHistoryEntry, onClearHistory }: { role?: string; onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void }) {
+  if (role === "b2c") return <B2CDiscoveryContent onNavigate={onNavigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={onClearHistory} />
   return <B2BDiscoveryContent />
 }

@@ -143,7 +143,8 @@ function AppInner() {
   const [currentPage, setCurrentPage] = useState(getHashPage)
   const [appState, setAppState] = useState<AppState>("loading")
   const [retryCount, setRetryCount] = useState(0)
-  const [userRole, setUserRole] = useState<string | null>(null)
+  const [userRole, setUserRole]                   = useState<string | null>(null)
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null)
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
@@ -190,6 +191,11 @@ function AppInner() {
     setCurrentPage(page)
   }
 
+  function selectHistory(entry: any) {
+    setSelectedHistoryEntry(entry)
+    setCurrentPage("discovering")
+  }
+
   // Redirect B2C users: blocked pages → discovering, dashboard → discovering
   useEffect(() => {
     if (isB2C && (B2C_BLOCKED.has(currentPage) || currentPage === "dashboard")) {
@@ -222,7 +228,7 @@ function AppInner() {
       case "settings":        return <SettingsContent role={role} onNavigate={navigate} initialTab={getHashSubTab()} />
 
       // RSP / Scraping Engine pages
-      case "discovering":     return <DiscoveringContent role={role} onNavigate={navigate} />
+      case "discovering":     return <DiscoveringContent role={role} onNavigate={navigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={() => setSelectedHistoryEntry(null)} />
       case "price-board":     return <PriceBoardContent role={role} onNavigate={navigate} />
       case "tracked-urls":    return <TrackedUrlsContent role={role} />
       case "products":        return isB2C ? <DashboardContent role={role} /> : <ProductsContent role={role} />
@@ -235,7 +241,7 @@ function AppInner() {
   }
 
   return (
-    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"}>
+    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} onSelectHistory={selectHistory}>
       {renderContent()}
     </DashboardLayout>
   )

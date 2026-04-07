@@ -289,7 +289,7 @@ function SearchingState({ query }: { query: string }) {
 }
 
 // ── Main component ────────────────────────────────────────────────
-export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string) => void }) {
+export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearHistory }: { onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void }) {
   const { user }                              = useAuth()
 
   const [loading, setLoading]                 = useState(true)
@@ -354,6 +354,20 @@ export function B2CDiscoveryContent({ onNavigate }: { onNavigate?: (page: string
     load()
     return () => { cancelled = true }
   }, [user])
+
+  // When a history entry is selected from the sidebar, load it directly as results
+  useEffect(() => {
+    if (!selectedHistoryEntry) return
+    const entry = selectedHistoryEntry
+    setResults(entry.results || [])
+    setLastQuery(entry.query || "")
+    setCorrectedQuery(null)
+    setSearchError(null)
+    setQuery(entry.query || "")
+    setVisibleLimit(20)
+    setPhase("results")
+    onClearHistory?.()  // clear so navigating away + back doesn't re-trigger
+  }, [selectedHistoryEntry])
 
   async function handleSearch() {
     const q = query.trim()
