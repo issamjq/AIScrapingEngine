@@ -3,7 +3,7 @@ import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink,
-  TrendingDown, AlertCircle, Search, Globe, Eye, CheckCircle2,
+  AlertCircle, Search, Globe, Eye, CheckCircle2, Star, Lock, Plus, X,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 
@@ -57,19 +57,22 @@ function calcSparkScore(result: B2CResult, allResults: B2CResult[]): number {
 }
 
 function SparkScoreStars({ score }: { score: number }) {
-  const full  = Math.floor(score)
-  const half  = score - full >= 0.25 && score - full < 0.75
-  const empty = 5 - full - (half ? 1 : 0)
-  // Color based on score
-  const color = score >= 4 ? "text-emerald-500" : score >= 3 ? "text-amber-400" : "text-orange-400"
   return (
-    <div className="flex items-center gap-1">
-      <Sparkles className={`h-3 w-3 shrink-0 ${color}`} />
-      <span className={`flex items-center text-xs leading-none font-medium ${color}`}>
-        {"★".repeat(full)}
-        {half ? "½" : ""}
-        <span className="text-muted-foreground/25">{"★".repeat(empty)}</span>
-      </span>
+    <div className="flex items-center gap-1.5">
+      <div className="flex gap-0.5">
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Star
+            key={star}
+            className={`w-3 h-3 ${
+              star <= Math.floor(score)
+                ? "fill-yellow-400 text-yellow-400"
+                : star - 0.5 <= score
+                ? "fill-yellow-400/50 text-yellow-400"
+                : "fill-gray-200 text-gray-200 dark:fill-muted dark:text-muted"
+            }`}
+          />
+        ))}
+      </div>
       <span className="text-[11px] text-muted-foreground font-medium tabular-nums">
         {score.toFixed(1)} · Deal Score
       </span>
@@ -103,113 +106,125 @@ function PriceCard({
   isBest,
   rank,
   allResults,
+  isLocked,
+  onLockedClick,
 }: {
-  result:     B2CResult
-  isBest:     boolean
-  rank:       number
-  allResults: B2CResult[]
+  result:         B2CResult
+  isBest:         boolean
+  rank:           number
+  allResults:     B2CResult[]
+  isLocked?:      boolean
+  onLockedClick?: () => void
 }) {
-  const hasPrice    = result.price !== null
   const hasDiscount = result.originalPrice !== null && result.originalPrice > (result.price ?? 0)
   const discount    = hasDiscount
     ? Math.round(((result.originalPrice! - result.price!) / result.originalPrice!) * 100)
     : 0
+  const score = calcSparkScore(result, allResults)
 
   return (
-    <div className={`relative rounded-2xl border bg-card overflow-hidden transition-shadow hover:shadow-md ${
-      isBest ? "border-primary/40 shadow-sm" : ""
-    }`}>
+    <div
+      className={`relative flex-shrink-0 w-72 snap-start rounded-2xl border bg-white dark:bg-card shadow-sm transition-all duration-200 overflow-hidden
+        ${isBest ? "border-primary/40 ring-1 ring-primary/20" : "border-gray-200/80 dark:border-border"}
+        ${isLocked ? "cursor-pointer hover:shadow-lg hover:border-gray-300 hover:-translate-y-0.5 group" : "hover:shadow-md hover:-translate-y-0.5"}
+      `}
+      onClick={() => isLocked && onLockedClick?.()}
+    >
+      {/* Lock overlay */}
+      {isLocked && (
+        <>
+          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/50 to-white/75 dark:from-black/20 dark:via-black/40 dark:to-black/60 z-10 pointer-events-none rounded-2xl transition-all duration-300 group-hover:from-white/10 group-hover:via-white/35 group-hover:to-white/60" />
+          <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-900/90 dark:bg-gray-100/90 flex items-center justify-center shadow-md z-20 transition-all duration-200 group-hover:scale-110">
+            <Lock className="w-4 h-4 text-white dark:text-gray-900" />
+          </div>
+        </>
+      )}
+
       {/* Best price banner */}
       {isBest && (
         <div className="flex items-center gap-1.5 bg-primary px-4 py-1.5">
-          <TrendingDown className="h-3.5 w-3.5 text-primary-foreground" />
-          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">Best Price</span>
+          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">✓ Best Price</span>
         </div>
       )}
 
-      <div className="flex items-start gap-4 p-4">
+      <div className="p-5">
         {/* Rank + image */}
-        <div className="flex flex-col items-center gap-2 shrink-0">
-          <span className="text-xs font-bold text-muted-foreground/50 w-6 text-center">#{rank}</span>
+        <div className="flex items-start gap-3 mb-4">
+          <span className="text-xs font-medium text-muted-foreground/50 mt-1">#{rank}</span>
           {result.imageUrl ? (
             <img
               src={result.imageUrl}
               alt={result.title}
-              className="w-14 h-14 rounded-lg object-contain bg-muted/30 border"
+              className={`w-20 h-20 object-contain rounded-xl bg-muted/20 transition-all duration-300 ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
             />
           ) : (
-            <div className="w-14 h-14 rounded-lg bg-muted/40 border flex items-center justify-center">
-              <span className="text-lg font-bold text-muted-foreground/40 select-none">
+            <div className={`w-20 h-20 rounded-xl bg-muted/40 border flex items-center justify-center ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}>
+              <span className="text-2xl font-bold text-muted-foreground/30 select-none">
                 {result.retailer.charAt(0).toUpperCase()}
               </span>
             </div>
           )}
         </div>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0 space-y-1.5">
+        {/* Content (blurred when locked) */}
+        <div className={`space-y-2 transition-all duration-300 ${isLocked ? "blur-[5px] group-hover:blur-[3px]" : ""}`}>
+          {/* Badges */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold text-muted-foreground">{result.retailer}</span>
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{result.retailer}</span>
             <ConditionBadge condition={result.condition} />
             {result.availability === "Out of Stock" && (
-              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-destructive/10 text-destructive">
+              <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
                 Out of Stock
               </span>
             )}
           </div>
 
-          <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
+          {/* Title */}
+          <p className="text-sm font-semibold leading-snug line-clamp-2 text-foreground">{result.title}</p>
 
-          {/* Spark Deal Score */}
-          <SparkScoreStars score={calcSparkScore(result, allResults)} />
+          {/* Deal Score */}
+          <SparkScoreStars score={score} />
 
           {/* Description */}
           {result.description && (
-            <p className="text-[12px] text-muted-foreground leading-snug line-clamp-2">{result.description}</p>
+            <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">{result.description}</p>
           )}
+        </div>
 
-          {/* Price row */}
-          {hasPrice ? (
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className={`text-xl font-bold ${isBest ? "text-primary" : "text-foreground"}`}>
-                {formatPrice(result.price!, result.currency)}
+        {/* Price — slightly less blur so it's enticing */}
+        <div className={`mt-3 transition-all duration-300 ${isLocked ? "blur-[4px] group-hover:blur-[2px]" : ""}`}>
+          {result.price !== null ? (
+            <div className="flex items-baseline gap-2">
+              <span className="text-2xl font-semibold text-foreground">
+                {formatPrice(result.price, result.currency)}
               </span>
               {hasDiscount && (
                 <>
                   <span className="text-sm text-muted-foreground line-through">
                     {formatPrice(result.originalPrice!, result.currency)}
                   </span>
-                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                    -{discount}%
-                  </span>
+                  <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">-{discount}%</span>
                 </>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 mt-1 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-              <span>Price not available — visit listing</span>
+              <span>Price not available</span>
             </div>
           )}
         </div>
 
         {/* CTA */}
-        <a
-          href={result.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 mt-1"
-        >
-          <Button
-            size="sm"
-            variant={isBest ? "default" : "outline"}
-            className="gap-1.5 text-xs rounded-xl"
-          >
-            View deal
-            <ExternalLink className="h-3 w-3" />
-          </Button>
-        </a>
+        {!isLocked && (
+          <a href={result.url} target="_blank" rel="noopener noreferrer" className="block mt-4">
+            <button className="w-full px-4 py-2.5 bg-foreground text-background rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+              View deal
+              <ExternalLink className="w-4 h-4" />
+            </button>
+          </a>
+        )}
       </div>
     </div>
   )
@@ -386,6 +401,8 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [isHistoryView, setIsHistoryView]     = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [livePhase, setLivePhase]             = useState<LivePhase>(null)
+  const [unlockModalResult, setUnlockModalResult] = useState<B2CResult | null>(null)
+  const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set())
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -893,6 +910,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             </div>
           )}
 
+          {/* Header */}
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold">
@@ -919,41 +937,129 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             </div>
           )}
 
+          {/* Retailer groups — horizontal scroll cards */}
           {retailerGroups.map((group, groupIdx) => {
             let globalRank = 0
             for (let i = 0; i < groupIdx; i++) globalRank += retailerGroups[i].items.length
+            const isCollapsed = collapsedStores.has(group.retailer)
+
             return (
-              <div key={group.retailer} className="space-y-2">
-                <div className="flex items-center gap-2 px-1">
-                  <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{group.retailer}</span>
-                  <span className="text-xs text-muted-foreground">{group.items.length} listing{group.items.length !== 1 ? "s" : ""}</span>
-                  <div className="flex-1 h-px bg-border" />
-                  <span className="text-xs font-semibold text-primary">
-                    from {group.items[0].currency} {group.lowestPrice.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
-                  </span>
+              <section
+                key={group.retailer}
+                className="rounded-2xl border border-gray-200/70 dark:border-border bg-card shadow-sm overflow-hidden"
+              >
+                {/* Group header */}
+                <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-200/60 dark:border-border bg-muted/30">
+                  <div className="flex items-center gap-2.5">
+                    <span className="text-sm font-semibold tracking-tight">{group.retailer}</span>
+                    <span className="text-xs text-muted-foreground">{group.items.length} listing{group.items.length !== 1 ? "s" : ""}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-medium text-muted-foreground">
+                      from {group.items[0].currency} {group.lowestPrice.toLocaleString("en-AE", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                    </span>
+                    <button
+                      onClick={() => setCollapsedStores(prev => {
+                        const next = new Set(prev)
+                        next.has(group.retailer) ? next.delete(group.retailer) : next.add(group.retailer)
+                        return next
+                      })}
+                      className="w-7 h-7 rounded-lg border border-border bg-background flex items-center justify-center hover:bg-muted transition-colors"
+                    >
+                      {isCollapsed
+                        ? <Plus className="w-4 h-4" />
+                        : <X className="w-4 h-4" />
+                      }
+                    </button>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  {group.items.map((result, itemIdx) => (
-                    <PriceCard
-                      key={result.url}
-                      result={result}
-                      isBest={groupIdx === 0 && itemIdx === 0}
-                      rank={globalRank + itemIdx + 1}
-                      allResults={results}
-                    />
-                  ))}
-                </div>
-              </div>
+
+                {/* Horizontal scroll row */}
+                {!isCollapsed && (
+                  <div className="relative">
+                    {/* Right fade gradient */}
+                    <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-l from-card via-card/70 to-transparent pointer-events-none z-10" />
+                    <div className="overflow-x-auto scrollbar-hide">
+                      <div className="flex gap-4 p-5" style={{ paddingRight: "80px" }}>
+                        {group.items.map((result, itemIdx) => {
+                          const rank     = globalRank + itemIdx + 1
+                          const isLocked = false // CSS blur only — data not sent by backend
+                          return (
+                            <PriceCard
+                              key={result.url}
+                              result={result}
+                              isBest={groupIdx === 0 && itemIdx === 0}
+                              rank={rank}
+                              allResults={results}
+                              isLocked={isLocked}
+                              onLockedClick={() => setUnlockModalResult(result)}
+                            />
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </section>
             )
           })}
 
-          {/* Bottom search bar — hidden when viewing a history entry from sidebar */}
+          {/* Bottom search bar */}
           {!isHistoryView && (
             <div className="pt-4 pb-2 max-w-2xl mx-auto w-full">
               {renderSearchBox(true)}
             </div>
           )}
+        </div>
+      )}
 
+      {/* Unlock modal */}
+      {unlockModalResult && (
+        <div
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          onClick={() => setUnlockModalResult(null)}
+        >
+          <div
+            className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-8 relative"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setUnlockModalResult(null)}
+              className="absolute top-5 right-5 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="text-center mb-6">
+              <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
+                <Lock className="w-6 h-6 text-foreground" />
+              </div>
+              <h3 className="text-xl font-semibold mb-1">Unlock Offer</h3>
+              <p className="text-sm text-muted-foreground">Upgrade your plan to reveal all results</p>
+            </div>
+
+            <div className="bg-muted/40 rounded-xl p-4 mb-6 flex items-center gap-4">
+              {unlockModalResult.imageUrl && (
+                <img src={unlockModalResult.imageUrl} alt={unlockModalResult.title} className="w-14 h-14 object-contain rounded-lg" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold line-clamp-2">{unlockModalResult.title}</p>
+                {unlockModalResult.price !== null && (
+                  <p className="text-base font-semibold mt-0.5">{formatPrice(unlockModalResult.price, unlockModalResult.currency)}</p>
+                )}
+              </div>
+            </div>
+
+            <Button className="w-full" onClick={() => { setUnlockModalResult(null); onNavigate?.("plans") }}>
+              View plans
+            </Button>
+            <button
+              onClick={() => setUnlockModalResult(null)}
+              className="w-full mt-2 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
