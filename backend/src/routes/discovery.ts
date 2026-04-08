@@ -208,23 +208,44 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       } catch { /* geo lookup is best-effort — never block the search */ }
     }
 
-    logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint, batch, siteCap, credits })
-    const searchStart = Date.now()
-    const { results, correctedQuery } = await b2cSearch(queryText, apiKey, countryHint, siteCap)
-    const durationSeconds = Math.round((Date.now() - searchStart) / 1000)
-    const finalQuery = correctedQuery ?? queryText
-    logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery, durationSeconds })
+    // Switch to SSE — all pre-flight checks passed, now stream progress
+    res.setHeader("Content-Type", "text/event-stream")
+    res.setHeader("Cache-Control", "no-cache")
+    res.setHeader("Connection", "keep-alive")
+    res.setHeader("X-Accel-Buffering", "no")  // disable Nginx buffering on Render
+    res.flushHeaders()
 
-    // Save to search history (fire-and-forget — never block the response)
-    if (results.length > 0) {
-      dbQuery(
-        `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count, duration_seconds, batch)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [email, finalQuery, countryHint, JSON.stringify(results), results.length, durationSeconds, batch]
-      ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
+    const send = (data: object) => {
+      try { res.write(`data: ${JSON.stringify(data)}\n\n`) } catch { /* client disconnected */ }
     }
 
-    res.json({ success: true, data: { query: finalQuery, correctedQuery, results, limit, batch, credits } })
+    logger.info("[B2CSearch] Starting", { email, query: queryText, subscription, limit, countryHint, batch, siteCap, credits })
+    const searchStart = Date.now()
+
+    try {
+      const { results, correctedQuery } = await b2cSearch(
+        queryText, apiKey, countryHint, siteCap,
+        (event) => send({ type: "phase", ...event }),
+      )
+      const durationSeconds = Math.round((Date.now() - searchStart) / 1000)
+      const finalQuery = correctedQuery ?? queryText
+      logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery, durationSeconds })
+
+      // Save to search history (fire-and-forget)
+      if (results.length > 0) {
+        dbQuery(
+          `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count, duration_seconds, batch)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [email, finalQuery, countryHint, JSON.stringify(results), results.length, durationSeconds, batch]
+        ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
+      }
+
+      send({ type: "done", data: { query: finalQuery, correctedQuery, results, limit, batch, credits } })
+    } catch (err: any) {
+      send({ type: "error", error: { message: err.message || "Search failed", code: "SEARCH_ERROR" } })
+    }
+
+    res.end()
   } catch (err) { next(err) }
 })
 

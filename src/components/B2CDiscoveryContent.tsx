@@ -216,13 +216,26 @@ function PriceCard({
 }
 
 // ── Loading animation ─────────────────────────────────────────────
-// Phase timings (seconds from start) — match actual backend pipeline
-const PHASES = [
-  { key: "web-search", icon: Search,   label: "Web Search",    detail: "Searching marketplaces and classifieds globally…", startAt: 0,   doneAt: 20  },
-  { key: "scraping",   icon: Globe,    label: "Scraping Pages", detail: "Opening listing pages and extracting data…",       startAt: 20,  doneAt: 90  },
-  { key: "vision",     icon: Eye,      label: "Vision AI",      detail: "AI reading screenshots to extract prices…",        startAt: 90,  doneAt: 150 },
-  { key: "sorting",    icon: Sparkles, label: "Finalizing",     detail: "Ranking results by best price…",                   startAt: 150, doneAt: 999 },
+type LivePhase = { phase: string; status: string; done?: number; total?: number } | null
+
+const PHASE_DEFS = [
+  { key: "web-search", icon: Search,   label: "Web Search" },
+  { key: "scraping",   icon: Globe,    label: "Scraping Pages" },
+  { key: "vision",     icon: Eye,      label: "Vision AI" },
+  { key: "finalizing", icon: Sparkles, label: "Finalizing" },
 ] as const
+
+// Map a live SSE phase event → which visual phase index is active
+function liveToActiveIdx(lp: LivePhase): number {
+  if (!lp) return 0
+  if (lp.phase === "web-search") return 0
+  if (lp.phase === "scraping") {
+    const pct = (lp.done ?? 0) / Math.max(lp.total ?? 1, 1)
+    return pct >= 0.55 ? 2 : 1   // switch to "Vision AI" row when >55% sites scraped
+  }
+  if (lp.phase === "finalizing") return 3
+  return 0
+}
 
 // Format elapsed seconds → "42s" or "1 min 22s"
 function formatElapsed(s: number) {
@@ -232,31 +245,46 @@ function formatElapsed(s: number) {
   return rem > 0 ? `${m} min ${rem}s` : `${m} min`
 }
 
-function SearchingState({ query }: { query: string }) {
-  const [elapsed, setElapsed]               = useState(0)
-  // Track when each phase started (to show per-phase time)
-  const [phaseStart, setPhaseStart]         = useState<Record<number, number>>({ 0: 0 })
-  const prevActiveIdx                       = useState(-1)
+function SearchingState({ query, livePhase }: { query: string; livePhase: LivePhase }) {
+  const [elapsed, setElapsed] = useState(0)
+  // Wall-clock timestamps for when each phase became active
+  const phaseStartedAt = useRef<Record<number, number>>({})
 
   useEffect(() => {
     const start = Date.now()
-    const t = setInterval(() => {
-      const secs = Math.floor((Date.now() - start) / 1000)
-      setElapsed(secs)
-    }, 500)
+    const t = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500)
     return () => clearInterval(t)
   }, [])
 
-  const reversedIdx = [...PHASES].reverse().findIndex((p: typeof PHASES[number]) => elapsed >= p.startAt)
-  const activeIdx   = reversedIdx === -1 ? 0 : PHASES.length - 1 - reversedIdx
-  const activePhase = PHASES[activeIdx] ?? PHASES[0]
+  const activeIdx = liveToActiveIdx(livePhase)
 
-  // Record when each phase becomes active
+  // Record wall-clock start of each phase (once, on first activation)
   useEffect(() => {
-    if (activeIdx >= 0 && !(activeIdx in phaseStart)) {
-      setPhaseStart(prev => ({ ...prev, [activeIdx]: elapsed }))
+    if (!(activeIdx in phaseStartedAt.current)) {
+      phaseStartedAt.current[activeIdx] = Date.now()
     }
   }, [activeIdx])
+
+  // Detail text shown under the active phase row
+  function getDetail(idx: number): string {
+    if (idx === 0) return "Searching marketplaces and classifieds globally…"
+    if (idx === 1) {
+      if (livePhase?.phase === "scraping" && livePhase.total) {
+        return `Scraping site ${livePhase.done ?? 0} of ${livePhase.total}…`
+      }
+      return "Opening listing pages and extracting data…"
+    }
+    if (idx === 2) return "AI reading screenshots to extract prices…"
+    return "Ranking results by best price…"
+  }
+
+  // Per-phase elapsed (seconds since that phase started)
+  function phaseElapsed(idx: number): number {
+    const startedAt = phaseStartedAt.current[idx]
+    if (!startedAt) return 0
+    const endedAt = phaseStartedAt.current[idx + 1] ?? Date.now()
+    return Math.floor((endedAt - startedAt) / 1000)
+  }
 
   return (
     <div className="flex flex-col items-center justify-center py-16 gap-8 text-center">
@@ -275,17 +303,12 @@ function SearchingState({ query }: { query: string }) {
 
       {/* Pipeline steps */}
       <div className="w-full max-w-xs space-y-2">
-        {PHASES.map((phase, idx) => {
+        {PHASE_DEFS.map((phase, idx) => {
           const Icon      = phase.icon
-          const isDone    = elapsed >= phase.doneAt
+          const isDone    = idx < activeIdx
           const isActive  = idx === activeIdx
           const isPending = idx > activeIdx
-          // Time spent in this phase
-          const phaseElapsed = isActive
-            ? elapsed - (phaseStart[idx] ?? elapsed)
-            : isDone
-            ? (phaseStart[idx + 1] ?? elapsed) - (phaseStart[idx] ?? 0)
-            : 0
+          const secs      = phaseElapsed(idx)
 
           return (
             <div
@@ -314,17 +337,17 @@ function SearchingState({ query }: { query: string }) {
                 </p>
                 {isActive && (
                   <p className="text-[11px] text-muted-foreground truncate mt-0.5">
-                    {activePhase.detail}
+                    {getDetail(idx)}
                   </p>
                 )}
               </div>
 
-              {/* Timer — show for active and done phases */}
-              {(isActive || isDone) && phaseElapsed > 0 && (
+              {/* Per-phase timer */}
+              {(isActive || isDone) && secs > 0 && (
                 <span className={`text-[11px] font-mono shrink-0 tabular-nums ${
                   isDone ? "text-emerald-600 dark:text-emerald-400" : "text-primary"
                 }`}>
-                  {formatElapsed(phaseElapsed)}
+                  {formatElapsed(secs)}
                 </span>
               )}
             </div>
@@ -362,6 +385,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [shownSuggestions, setShownSuggestions] = useState<string[]>([])
   const [isHistoryView, setIsHistoryView]     = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  const [livePhase, setLivePhase]             = useState<LivePhase>(null)
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -423,6 +447,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     if (!q || phase === "searching") return
 
     setPhase("searching")
+    setLivePhase(null)
     setIsHistoryView(false)
     setSearchError(null)
     setResults([])
@@ -430,7 +455,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setLastQuery(q)
 
     const controller = new AbortController()
-    const timeoutId  = setTimeout(() => controller.abort(), 240_000)  // 4 min — backend can take 3min for 10 sites
+    const timeoutId  = setTimeout(() => controller.abort(), 240_000)
 
     try {
       const token = await getToken()
@@ -441,9 +466,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         signal:  controller.signal,
       })
       clearTimeout(timeoutId)
-      const json = await res.json()
 
-      if (!res.ok || !json.success) {
+      // Pre-flight errors (auth, credits) come back as regular JSON before SSE starts
+      if (!res.ok) {
+        const json = await res.json()
         if (json.error?.code === "USAGE_LIMIT_REACHED") {
           onNavigate?.("plans")
           setPhase("idle")
@@ -452,14 +478,41 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         throw new Error(json.error?.message || "Search failed")
       }
 
-      const data = json.data
-      setResults(data.results || [])
-      setVisibleLimit(data.limit ?? 3)
-      setCorrectedQuery(data.correctedQuery ?? null)
-      setLastQuery(data.query || q)
-      setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
-      setPhase("results")
-      onSearchComplete?.()  // tell sidebar to re-fetch history
+      // Stream SSE events
+      const reader  = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer    = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() ?? ""
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+            if (event.type === "phase") {
+              setLivePhase({ phase: event.phase, status: event.status, done: event.done, total: event.total })
+            } else if (event.type === "done") {
+              const data = event.data
+              setResults(data.results || [])
+              setVisibleLimit(data.limit ?? 3)
+              setCorrectedQuery(data.correctedQuery ?? null)
+              setLastQuery(data.query || q)
+              setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
+              setPhase("results")
+              onSearchComplete?.()
+            } else if (event.type === "error") {
+              throw new Error(event.error?.message || "Search failed")
+            }
+          } catch (parseErr: any) {
+            if (parseErr.message && !parseErr.message.includes("JSON")) throw parseErr
+          }
+        }
+      }
     } catch (err: any) {
       clearTimeout(timeoutId)
       if (err.name === "AbortError") {
@@ -797,7 +850,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       {/* ── SEARCHING: centered ── */}
       {phase === "searching" && (
         <div className="flex-1 flex items-center justify-center">
-          <SearchingState query={lastQuery} />
+          <SearchingState query={lastQuery} livePhase={livePhase} />
         </div>
       )}
 

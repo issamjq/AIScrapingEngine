@@ -288,17 +288,27 @@ const B2C_TITLE_SELECTORS = [
   "h1",
 ]
 
+// ── Progress event type ───────────────────────────────────────────
+export interface B2CProgressEvent {
+  phase:  "web-search" | "scraping" | "finalizing"
+  status: "start" | "progress" | "done"
+  done?:  number
+  total?: number
+}
+
 // ── Step 2b: Scrape each URL for price ────────────────────────────
 async function scrapeUrls(
-  items:   Array<{ retailer: string; url: string; title: string; condition: string }>,
-  apiKey:  string,
-  engine:  ScraperEngine,
-  query:   string,
-  siteCap: number = 10
+  items:      Array<{ retailer: string; url: string; title: string; condition: string }>,
+  apiKey:     string,
+  engine:     ScraperEngine,
+  query:      string,
+  siteCap:    number = 10,
+  onProgress?: (event: B2CProgressEvent) => void
 ): Promise<B2CResult[]> {
   // Timeout scales with depth: Quick=12s, Standard=15s, Deep=20s
   // Faster modes give up sooner on slow sites so they don't drag out the whole search
   const perSiteTimeout = siteCap <= 3 ? 12_000 : siteCap <= 6 ? 15_000 : 20_000
+  let doneCount = 0
 
   // 4-concurrent scraping — JSON-LD first (free for Shopify/WooCommerce), Vision AI fallback
   const tasks = items.map((item) => async (): Promise<B2CResult> => {
@@ -312,7 +322,7 @@ async function scrapeUrls(
         blockResources: ["font", "media"],
         searchQuery:    query,
       })
-      return {
+      const r: B2CResult = {
         retailer:      item.retailer,
         url:           item.url,
         title:         result.title || item.title,
@@ -327,8 +337,13 @@ async function scrapeUrls(
         description:   result.description ?? null,
         priceSource:   result.price !== null ? "scraped" : "not_found",
       }
+      doneCount++
+      onProgress?.({ phase: "scraping", status: "progress", done: doneCount, total: items.length })
+      return r
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape failed", { url: item.url, error: err.message })
+      doneCount++
+      onProgress?.({ phase: "scraping", status: "progress", done: doneCount, total: items.length })
       return {
         retailer:      item.retailer,
         url:           item.url,
@@ -351,7 +366,13 @@ async function scrapeUrls(
 }
 
 // ── Main export ───────────────────────────────────────────────────
-export async function b2cSearch(query: string, apiKey: string, countryHint = "", siteCap = 10): Promise<{ results: B2CResult[]; correctedQuery: string | null }> {
+export async function b2cSearch(
+  query:       string,
+  apiKey:      string,
+  countryHint  = "",
+  siteCap      = 10,
+  onProgress?: (event: B2CProgressEvent) => void,
+): Promise<{ results: B2CResult[]; correctedQuery: string | null }> {
   // Step 0: Normalize query — fix typos before searching
   const originalQuery  = query
   const correctedQuery = await normalizeQuery(query, apiKey)
@@ -359,7 +380,10 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
   const wasCorrected   = searchQuery.toLowerCase() !== originalQuery.toLowerCase()
 
   // Step 1: AI web search — finds search/category page URLs (capped by siteCap)
+  onProgress?.({ phase: "web-search", status: "start" })
   const webResults = await b2cWebSearch(searchQuery, apiKey, countryHint, siteCap)
+  onProgress?.({ phase: "web-search", status: "done" })
+
   const empty = { results: [], correctedQuery: wasCorrected ? searchQuery : null }
   if (webResults.length === 0) return empty
 
@@ -373,9 +397,10 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
     logger.info("[B2CSearch] After drill-down", { searchPages: webResults.length, listings: listings.length })
 
     // Step 2b: Scrape individual listings for price + details
+    onProgress?.({ phase: "scraping", status: "start", total: listings.length })
     let scraped: B2CResult[]
     try {
-      scraped = await scrapeUrls(listings, apiKey, engine, searchQuery, siteCap)
+      scraped = await scrapeUrls(listings, apiKey, engine, searchQuery, siteCap, onProgress)
     } catch (err: any) {
       logger.warn("[B2CSearch] Scrape step failed, returning web-only results", { error: err.message })
       scraped = listings.map((item) => ({
@@ -394,6 +419,9 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
         priceSource:   "not_found" as const,
       }))
     }
+
+    onProgress?.({ phase: "scraping", status: "done" })
+    onProgress?.({ phase: "finalizing", status: "start" })
 
     return {
       results:        scraped.filter(r => r.price !== null).sort((a, b) => (a.price ?? 0) - (b.price ?? 0)),
