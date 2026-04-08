@@ -27,6 +27,9 @@ export interface ScrapeResult {
   currency:            string
   availability:        string
   imageUrl:            string | null
+  rating:              number | null
+  reviewCount:         number | null
+  description:         string | null
   rawPriceText:        string | null
   rawAvailabilityText: string | null
   scrapeStatus:        string
@@ -172,6 +175,7 @@ export class ScraperEngine {
           return {
             success: false, title: null, price: null, originalPrice: null,
             currency, availability: "unknown", imageUrl: null,
+            rating: null, reviewCount: null, description: null,
             rawPriceText: null, rawAvailabilityText: null,
             scrapeStatus: "bot_blocked", errorMessage: `Redirected to: ${finalUrl}`,
           }
@@ -186,6 +190,7 @@ export class ScraperEngine {
 
       let rawTitleText: string | null, rawPriceText: string | null, rawAvailabilityText: string | null
       let price: number | null, originalPrice: number | null, detectedCurrency: string, availability: string
+      let rating: number | null = null, reviewCount: number | null = null, description: string | null = null
 
       if (aiApiKey && !preferSelectors) {
         logger.info("[Scraper] Using Claude Vision for extraction", { url })
@@ -202,6 +207,9 @@ export class ScraperEngine {
           originalPrice       = aiResult.originalPrice ?? null
           detectedCurrency    = aiResult.currency
           availability        = aiResult.availability
+          rating              = aiResult.rating      ?? null
+          reviewCount         = aiResult.reviewCount ?? null
+          description         = aiResult.description ?? null
         } else {
           rawTitleText        = await this._extractFirst(page, titleSelectors)
           rawPriceText        = await this._extractFirst(page, priceSelectors)
@@ -224,6 +232,9 @@ export class ScraperEngine {
           rawTitleText        = schema.title
           rawAvailabilityText = null
           availability        = schema.availability
+          rating              = schema.rating      ?? null
+          reviewCount         = schema.reviewCount ?? null
+          description         = schema.description ?? null
           logger.info("[Scraper] Extracted from JSON-LD schema", { url, price, currency: detectedCurrency })
         } else {
           // Step 2: CSS selectors (platform-specific, may miss if JS-rendered)
@@ -235,6 +246,26 @@ export class ScraperEngine {
           originalPrice       = null
           detectedCurrency    = parsed.currency
           availability        = parseAvailability(rawAvailabilityText)
+          // Try CSS selectors for rating and description
+          const ratingText    = await this._extractFirst(page, ['[itemprop="ratingValue"]', ".rating__value", ".stars__rating", "[data-rating]"])
+          if (ratingText) {
+            const rv = parseFloat(ratingText.replace(/[^0-9.]/g, ""))
+            if (!isNaN(rv) && rv > 0 && rv <= 5) rating = rv
+          }
+          const reviewText    = await this._extractFirst(page, ['[itemprop="reviewCount"]', '[itemprop="ratingCount"]', ".rating__count", ".review-count"])
+          if (reviewText) {
+            const rc = parseInt(reviewText.replace(/[^0-9]/g, ""), 10)
+            if (!isNaN(rc) && rc > 0) reviewCount = rc
+          }
+          const descText      = await this._extractFirst(page, ['[itemprop="description"]', ".product-short-description", ".woocommerce-product__short-description p"])
+          if (descText) description = descText.trim().slice(0, 120)
+          // meta description as last fallback
+          if (!description) {
+            description = await page.evaluate(() => {
+              const m = document.querySelector('meta[name="description"], meta[property="og:description"]')
+              return m ? (m as HTMLMetaElement).content?.trim().slice(0, 120) || null : null
+            }).catch(() => null)
+          }
         }
 
         // Step 3: Vision AI fallback — only if both JSON-LD and CSS found nothing
@@ -249,6 +280,9 @@ export class ScraperEngine {
             originalPrice       = aiResult.originalPrice ?? null
             detectedCurrency    = aiResult.currency
             availability        = aiResult.availability        || availability
+            rating              = aiResult.rating              ?? rating
+            reviewCount         = aiResult.reviewCount         ?? reviewCount
+            description         = aiResult.description         ?? description
           }
         }
       }
@@ -264,6 +298,9 @@ export class ScraperEngine {
         currency:            detectedCurrency,
         availability,
         imageUrl:            imageUrl || null,
+        rating,
+        reviewCount,
+        description,
         rawPriceText:        rawPriceText || null,
         rawAvailabilityText: rawAvailabilityText || null,
         scrapeStatus:        price !== null ? "success" : "no_price",
@@ -284,6 +321,9 @@ export class ScraperEngine {
         currency,
         availability:        "unknown",
         imageUrl:            null,
+        rating:              null,
+        reviewCount:         null,
+        description:         null,
         rawPriceText:        null,
         rawAvailabilityText: null,
         scrapeStatus:        err.name === "TimeoutError" ? "timeout" : "error",
@@ -426,10 +466,13 @@ export class ScraperEngine {
     currency:      string
     title:         string | null
     availability:  string
+    rating:        number | null
+    reviewCount:   number | null
+    description:   string | null
   }> {
     try {
       return await page.evaluate((fallbackCurrency: string) => {
-        const none = { price: null, originalPrice: null, currency: fallbackCurrency, title: null, availability: "unknown" }
+        const none = { price: null, originalPrice: null, currency: fallbackCurrency, title: null, availability: "unknown", rating: null, reviewCount: null, description: null }
         try {
           const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
           for (const script of scripts) {
@@ -480,14 +523,30 @@ export class ScraperEngine {
                                  : avail.includes("outofstock") ? "Out of Stock"
                                  : "unknown"
 
-              return { price, originalPrice, currency, title, availability }
+              // aggregateRating
+              let rating: number | null = null
+              let reviewCount: number | null = null
+              if (data.aggregateRating) {
+                const rv = parseFloat(String(data.aggregateRating.ratingValue || ""))
+                if (!isNaN(rv) && rv > 0) rating = Math.round(rv * 10) / 10
+                const rc = parseInt(String(data.aggregateRating.reviewCount || data.aggregateRating.ratingCount || ""), 10)
+                if (!isNaN(rc) && rc > 0) reviewCount = rc
+              }
+
+              // description
+              let description: string | null = null
+              if (typeof data.description === "string" && data.description.trim().length > 0) {
+                description = data.description.trim().replace(/\s+/g, " ").slice(0, 120)
+              }
+
+              return { price, originalPrice, currency, title, availability, rating, reviewCount, description }
             } catch { continue }
           }
           return none
         } catch { return none }
       }, defaultCurrency)
     } catch {
-      return { price: null, originalPrice: null, currency: defaultCurrency, title: null, availability: "unknown" }
+      return { price: null, originalPrice: null, currency: defaultCurrency, title: null, availability: "unknown", rating: null, reviewCount: null, description: null }
     }
   }
 

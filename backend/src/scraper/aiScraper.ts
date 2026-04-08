@@ -14,6 +14,9 @@ export async function extractWithVision(
   currency: string
   title: string | null
   availability: string
+  rating: number | null
+  reviewCount: number | null
+  description: string | null
   rawPriceText: string | null
   rawTitleText: string | null
   rawAvailabilityText: string | null
@@ -84,7 +87,10 @@ Extract the following fields from what you see on screen and return ONLY a JSON 
   "original_price": <number or null — the crossed-out/before-discount price, e.g. 65.00. null if no discount is shown>,
   "currency": "<3-letter currency code, e.g. AED, USD — default to ${currency} if unclear>",
   "title": "<full product name as shown on page, or null>",
-  "availability": "<one of: in_stock, out_of_stock, unknown>"
+  "availability": "<one of: in_stock, out_of_stock, unknown>",
+  "rating": <number or null — star rating shown (e.g. 4.5). null if no rating visible>,
+  "review_count": <number or null — number of reviews/ratings shown (e.g. 1234). null if not visible>,
+  "description": "<string or null — one-sentence product description from the page (max 120 chars). null if not visible>"
 }
 
 Rules:
@@ -93,6 +99,9 @@ Rules:
 - original_price: ONLY set if a strikethrough/was-price is visibly shown next to the current price; otherwise null
 - title: the main product heading, include size/variant (e.g. "Marvis Classic Strong Mint 75ml")
 - availability: "in_stock" if Add to Cart / Buy Now is active, "out_of_stock" if sold out, else "unknown"
+- rating: look for star icons, a number like "4.5/5", "4.5 out of 5", or "★ 4.5". Extract the numeric value (0–5 scale). null if absent.
+- review_count: look for text like "1,234 reviews", "(567)", "1.2K ratings". Return as a plain integer (e.g. 1234, 567, 1200). null if absent.
+- description: a short description of the product if one is visible on the page. Trim to 120 chars max. null if absent.
 - IMPORTANT: If the page shows a grid or list of multiple listings (classifieds, car ads, marketplace search results)${searchQuery ? ` and you know the target product is "${searchQuery}"` : ""}, find the listing card that BEST MATCHES the target product and extract its price and title. Do NOT pick a random card — look for the exact model/variant. If none match exactly, pick the closest match. Never return null just because multiple items are shown.
 - CRITICAL — accessories rule: If the search is for a complete product (e.g. "Apple AirPods Pro"), do NOT pick listings for accessories, parts, or add-ons (e.g. "case only", "charging case", "ear tips", "cable", "charger", "strap", "cover"). Only pick a listing for the FULL product itself. If the only listings visible are accessories/parts with no full product listing, return price: null.
 - Return ONLY the JSON object, no explanation, no markdown`
@@ -120,7 +129,7 @@ Rules:
 
     const body = JSON.stringify({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 256,
+      max_tokens: 400,
       messages: [{
         role:    "user",
         content: [
@@ -174,12 +183,18 @@ Rules:
     availability: parsed.availability,
   })
 
+  const ratingVal = parsed.rating != null ? parseFloat(parsed.rating) : null
+  const reviewVal = parsed.review_count != null ? parseInt(String(parsed.review_count).replace(/[^0-9]/g, ""), 10) : null
+
   return {
     price:               parsed.price          ?? null,
     originalPrice:       parsed.original_price ?? null,
     currency:            parsed.currency       || currency,
     title:               parsed.title          || null,
     availability:        mapAvailability(parsed.availability),
+    rating:              ratingVal != null && !isNaN(ratingVal) && ratingVal > 0 ? ratingVal : null,
+    reviewCount:         reviewVal != null && !isNaN(reviewVal) && reviewVal > 0 ? reviewVal : null,
+    description:         typeof parsed.description === "string" && parsed.description.trim().length > 0 ? parsed.description.trim().slice(0, 120) : null,
     rawPriceText:        parsed.price ? String(parsed.price) : null,
     rawTitleText:        parsed.title || null,
     rawAvailabilityText: parsed.availability || null,

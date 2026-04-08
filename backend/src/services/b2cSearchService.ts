@@ -12,6 +12,9 @@ export interface B2CResult {
   currency:      string
   availability:  string
   imageUrl:      string | null
+  rating:        number | null
+  reviewCount:   number | null
+  description:   string | null
   priceSource:   "scraped" | "not_found"
 }
 
@@ -319,6 +322,9 @@ async function scrapeUrls(
         currency:      result.currency || "AED",
         availability:  result.availability || "unknown",
         imageUrl:      result.imageUrl,
+        rating:        result.rating      ?? null,
+        reviewCount:   result.reviewCount ?? null,
+        description:   result.description ?? null,
         priceSource:   result.price !== null ? "scraped" : "not_found",
       }
     } catch (err: any) {
@@ -333,6 +339,9 @@ async function scrapeUrls(
         currency:      "AED",
         availability:  "unknown",
         imageUrl:      null,
+        rating:        null,
+        reviewCount:   null,
+        description:   null,
         priceSource:   "not_found",
       }
     }
@@ -379,6 +388,9 @@ export async function b2cSearch(query: string, apiKey: string, countryHint = "",
         currency:      "AED",
         availability:  "unknown",
         imageUrl:      null,
+        rating:        null,
+        reviewCount:   null,
+        description:   null,
         priceSource:   "not_found" as const,
       }))
     }

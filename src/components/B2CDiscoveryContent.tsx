@@ -31,6 +31,24 @@ function ConditionBadge({ condition }: { condition: string }) {
   )
 }
 
+function StarRating({ rating, reviewCount }: { rating: number; reviewCount: number | null }) {
+  const full  = Math.floor(rating)
+  const half  = rating - full >= 0.25 && rating - full < 0.75
+  const empty = 5 - full - (half ? 1 : 0)
+  return (
+    <div className="flex items-center gap-1">
+      <span className="flex items-center text-amber-400 text-xs leading-none">
+        {"★".repeat(full)}
+        {half ? "½" : ""}
+        <span className="text-muted-foreground/30">{"★".repeat(empty)}</span>
+      </span>
+      <span className="text-[11px] text-muted-foreground font-medium tabular-nums">
+        {rating.toFixed(1)}{reviewCount ? ` (${reviewCount.toLocaleString()})` : ""}
+      </span>
+    </div>
+  )
+}
+
 // ── Price card ────────────────────────────────────────────────────
 interface B2CResult {
   retailer:      string
@@ -42,6 +60,9 @@ interface B2CResult {
   currency:      string
   availability:  string
   imageUrl:      string | null
+  rating:        number | null
+  reviewCount:   number | null
+  description:   string | null
   priceSource:   "scraped" | "not_found"
 }
 
@@ -109,6 +130,16 @@ function PriceCard({
           </div>
 
           <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
+
+          {/* Rating */}
+          {result.rating != null && (
+            <StarRating rating={result.rating} reviewCount={result.reviewCount ?? null} />
+          )}
+
+          {/* Description */}
+          {result.description && (
+            <p className="text-[12px] text-muted-foreground leading-snug line-clamp-2">{result.description}</p>
+          )}
 
           {/* Price row */}
           {hasPrice ? (
