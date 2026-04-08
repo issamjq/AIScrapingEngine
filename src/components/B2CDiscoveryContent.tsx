@@ -31,19 +31,47 @@ function ConditionBadge({ condition }: { condition: string }) {
   )
 }
 
-function StarRating({ rating, reviewCount }: { rating: number; reviewCount: number | null }) {
-  const full  = Math.floor(rating)
-  const half  = rating - full >= 0.25 && rating - full < 0.75
+// ── Spark Deal Score calculation ──────────────────────────────────
+// Rates each result 1–5 based on: price competitiveness + condition + availability
+function calcSparkScore(result: B2CResult, allResults: B2CResult[]): number {
+  const priced = allResults.filter(r => r.price !== null).sort((a, b) => a.price! - b.price!)
+  const rank   = priced.findIndex(r => r.url === result.url)
+  const total  = priced.length
+
+  // Price: cheapest = 5 stars, most expensive = 2 stars
+  const priceScore = total <= 1 ? 5 : 5 - (rank / (total - 1)) * 3
+
+  // Condition penalty
+  const condPenalty: Record<string, number> = {
+    "New": 0, "Refurbished": 0.25,
+    "Used - Good": 0.3, "Used - Fair": 0.6, "Used - Poor": 1, "Unknown": 0.2,
+  }
+  const cond = condPenalty[result.condition] ?? 0.2
+
+  // Availability penalty
+  const avail = result.availability === "In Stock" ? 0 : result.availability === "Out of Stock" ? 0.7 : 0.2
+
+  const raw = priceScore - cond - avail
+  // Round to nearest 0.5, clamp to 1–5
+  return Math.max(1, Math.min(5, Math.round(raw * 2) / 2))
+}
+
+function SparkScoreStars({ score }: { score: number }) {
+  const full  = Math.floor(score)
+  const half  = score - full >= 0.25 && score - full < 0.75
   const empty = 5 - full - (half ? 1 : 0)
+  // Color based on score
+  const color = score >= 4 ? "text-emerald-500" : score >= 3 ? "text-amber-400" : "text-orange-400"
   return (
     <div className="flex items-center gap-1">
-      <span className="flex items-center text-amber-400 text-xs leading-none">
+      <Sparkles className={`h-3 w-3 shrink-0 ${color}`} />
+      <span className={`flex items-center text-xs leading-none font-medium ${color}`}>
         {"★".repeat(full)}
         {half ? "½" : ""}
-        <span className="text-muted-foreground/30">{"★".repeat(empty)}</span>
+        <span className="text-muted-foreground/25">{"★".repeat(empty)}</span>
       </span>
       <span className="text-[11px] text-muted-foreground font-medium tabular-nums">
-        {rating.toFixed(1)}{reviewCount ? ` (${reviewCount.toLocaleString()})` : ""}
+        {score.toFixed(1)} · Deal Score
       </span>
     </div>
   )
@@ -74,10 +102,12 @@ function PriceCard({
   result,
   isBest,
   rank,
+  allResults,
 }: {
-  result:  B2CResult
-  isBest:  boolean
-  rank:    number
+  result:     B2CResult
+  isBest:     boolean
+  rank:       number
+  allResults: B2CResult[]
 }) {
   const hasPrice    = result.price !== null
   const hasDiscount = result.originalPrice !== null && result.originalPrice > (result.price ?? 0)
@@ -131,10 +161,8 @@ function PriceCard({
 
           <p className="text-sm font-medium leading-snug line-clamp-2">{result.title}</p>
 
-          {/* Rating */}
-          {result.rating != null && (
-            <StarRating rating={result.rating} reviewCount={result.reviewCount ?? null} />
-          )}
+          {/* Spark Deal Score */}
+          <SparkScoreStars score={calcSparkScore(result, allResults)} />
 
           {/* Description */}
           {result.description && (
@@ -858,6 +886,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                       result={result}
                       isBest={groupIdx === 0 && itemIdx === 0}
                       rank={globalRank + itemIdx + 1}
+                      allResults={results}
                     />
                   ))}
                 </div>
