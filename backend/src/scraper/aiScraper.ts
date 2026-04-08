@@ -203,11 +203,39 @@ Rules:
 
 export async function extractImageUrl(page: Page): Promise<string | null> {
   return page.evaluate(() => {
-    const get = (el: Element | null) => el
+    const get = (el: Element | null): string | null => el
       ? (el.getAttribute("data-old-hires") || el.getAttribute("data-src") ||
          el.getAttribute("data-lazy-src")  || el.getAttribute("src") || null)
       : null
 
+    const isProduct = (url: string) =>
+      url.startsWith("http") &&
+      !url.includes("/logo") && !url.includes("logo.") &&
+      !url.includes("favicon") && !url.includes("/icon") &&
+      !url.endsWith(".svg") && !url.endsWith(".ico")
+
+    // ── 1. JSON-LD Product schema → image (most accurate — set by the store itself) ──
+    try {
+      const scripts = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+      for (const script of scripts) {
+        try {
+          let data: any = JSON.parse((script as HTMLScriptElement).textContent || "")
+          if (data["@graph"]) data = (data["@graph"] as any[]).find((n: any) => n["@type"] === "Product") || {}
+          if (data["@type"] === "Product" && data.image) {
+            const img = Array.isArray(data.image) ? data.image[0] : data.image
+            const url = typeof img === "string" ? img : (img?.url || img?.contentUrl || "")
+            if (isProduct(url)) return url
+          }
+        } catch { /* skip malformed */ }
+      }
+    } catch { /* ignore */ }
+
+    // ── 2. og:image — very reliable for Shopify, CS-Cart, Magento, WooCommerce ────
+    const og = document.querySelector('meta[property="og:image"], meta[name="og:image"]')
+    const ogUrl = og?.getAttribute("content") || ""
+    if (isProduct(ogUrl)) return ogUrl
+
+    // ── 3. Platform-specific selectors (Amazon, Noon, Talabat, Carrefour) ─────────
     const amz = document.querySelector("#landingImage, #imgTagWrapperId img")
     if (amz && get(amz) && !get(amz)!.includes("transparent-pixel")) return get(amz)
 
@@ -226,11 +254,37 @@ export async function extractImageUrl(page: Page): Promise<string | null> {
     const crf = document.querySelector('img[src*="mafrservices"], img[data-src*="mafrservices"]')
     if (crf && get(crf)) return get(crf)
 
-    const mag = document.querySelector(".fotorama__img, .MagicZoomPlus img, .woocommerce-product-gallery__image img")
-    if (mag && get(mag)) return get(mag)
-
-    const og = document.querySelector('meta[property="og:image"]')
-    if (og?.getAttribute("content")) return og.getAttribute("content")
+    // ── 4. Generic + platform fallbacks ──────────────────────────────────────────
+    const selectors = [
+      // WooCommerce / Fotorama / MagicZoom
+      ".fotorama__img",
+      ".MagicZoomPlus img",
+      ".woocommerce-product-gallery__image img",
+      // Shopify themes
+      ".product__media img",
+      ".product-single__photo img",
+      "[data-product-featured-image]",
+      // CS-Cart (CosmoStore, lb.cosmostore.org)
+      ".ty-pict img",
+      "#det-image img",
+      ".ty-product__image img",
+      ".cm-image-previewer img",
+      // schema.org itemprop
+      '[itemprop="image"]',
+      // Generic e-commerce
+      ".product-image img",
+      ".product-photo img",
+      ".main-image img",
+      ".primary-image img",
+      ".gallery-image img",
+      ".product-gallery__image img",
+    ]
+    for (const sel of selectors) {
+      const el = document.querySelector(sel)
+      if (!el) continue
+      const url = get(el)
+      if (url && isProduct(url)) return url
+    }
 
     return null
   }).catch(() => null)
