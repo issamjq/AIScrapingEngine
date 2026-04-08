@@ -124,7 +124,7 @@ function PriceCard({
 
   return (
     <div
-      className={`relative flex-shrink-0 w-72 snap-start rounded-2xl border bg-white dark:bg-card shadow-sm transition-all duration-200 overflow-hidden
+      className={`relative flex-shrink-0 w-72 snap-start rounded-2xl border bg-white dark:bg-card shadow-sm transition-all duration-200 overflow-hidden flex flex-col
         ${isBest ? "border-primary/40 ring-1 ring-primary/20" : "border-gray-200/80 dark:border-border"}
         ${isLocked ? "cursor-pointer hover:shadow-lg hover:border-gray-300 hover:-translate-y-0.5 group" : "hover:shadow-md hover:-translate-y-0.5"}
       `}
@@ -147,19 +147,20 @@ function PriceCard({
         </div>
       )}
 
-      <div className="p-5">
-        {/* Rank + image */}
+      {/* Card body — flex col so button always sticks to bottom */}
+      <div className="p-5 flex flex-col h-full">
+        {/* Rank + image — fixed height */}
         <div className="flex items-start gap-3 mb-4">
-          <span className="text-xs font-medium text-muted-foreground/50 mt-1">#{rank}</span>
+          <span className="text-xs font-medium text-muted-foreground/50 mt-1 w-5 shrink-0">#{rank}</span>
           {result.imageUrl ? (
             <img
               src={result.imageUrl}
               alt={result.title}
-              className={`w-20 h-20 object-contain rounded-xl bg-muted/20 transition-all duration-300 ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}
+              className={`w-20 h-20 object-contain rounded-xl bg-muted/20 shrink-0 transition-all duration-300 ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
             />
           ) : (
-            <div className={`w-20 h-20 rounded-xl bg-muted/40 border flex items-center justify-center ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}>
+            <div className={`w-20 h-20 rounded-xl bg-muted/40 border shrink-0 flex items-center justify-center ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}>
               <span className="text-2xl font-bold text-muted-foreground/30 select-none">
                 {result.retailer.charAt(0).toUpperCase()}
               </span>
@@ -167,10 +168,10 @@ function PriceCard({
           )}
         </div>
 
-        {/* Content (blurred when locked) */}
-        <div className={`space-y-2 transition-all duration-300 ${isLocked ? "blur-[5px] group-hover:blur-[3px]" : ""}`}>
+        {/* Middle content — grows to fill space, aligns all sections */}
+        <div className={`flex-1 flex flex-col gap-2 transition-all duration-300 ${isLocked ? "blur-[5px] group-hover:blur-[3px]" : ""}`}>
           {/* Badges */}
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 min-h-[20px]">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{result.retailer}</span>
             <ConditionBadge condition={result.condition} />
             {result.availability === "Out of Stock" && (
@@ -180,22 +181,24 @@ function PriceCard({
             )}
           </div>
 
-          {/* Title */}
-          <p className="text-sm font-semibold leading-snug line-clamp-2 text-foreground">{result.title}</p>
+          {/* Title — always 2 lines */}
+          <p className="text-sm font-semibold leading-snug line-clamp-2 min-h-[40px] text-foreground">{result.title}</p>
 
-          {/* Deal Score */}
-          <SparkScoreStars score={score} />
+          {/* Deal Score — fixed height */}
+          <div className="h-5">
+            <SparkScoreStars score={score} />
+          </div>
 
-          {/* Description */}
-          {result.description && (
-            <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">{result.description}</p>
-          )}
+          {/* Description — always 2 lines, empty space if no description */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 min-h-[32px]">
+            {result.description ?? ""}
+          </p>
         </div>
 
-        {/* Price — slightly less blur so it's enticing */}
-        <div className={`mt-3 transition-all duration-300 ${isLocked ? "blur-[4px] group-hover:blur-[2px]" : ""}`}>
+        {/* Price — fixed position above button */}
+        <div className={`mt-4 transition-all duration-300 ${isLocked ? "blur-[4px] group-hover:blur-[2px]" : ""}`}>
           {result.price !== null ? (
-            <div className="flex items-baseline gap-2">
+            <div className="flex items-baseline gap-2 mb-4">
               <span className="text-2xl font-semibold text-foreground">
                 {formatPrice(result.price, result.currency)}
               </span>
@@ -209,22 +212,22 @@ function PriceCard({
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-4">
               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
               <span>Price not available</span>
             </div>
           )}
-        </div>
 
-        {/* CTA */}
-        {!isLocked && (
-          <a href={result.url} target="_blank" rel="noopener noreferrer" className="block mt-4">
-            <button className="w-full px-4 py-2.5 bg-foreground text-background rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-              View deal
-              <ExternalLink className="w-4 h-4" />
-            </button>
-          </a>
-        )}
+          {/* CTA — always at bottom */}
+          {!isLocked && (
+            <a href={result.url} target="_blank" rel="noopener noreferrer" className="block">
+              <button className="w-full px-4 py-2.5 bg-foreground text-background rounded-xl text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
+                View deal
+                <ExternalLink className="w-4 h-4" />
+              </button>
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -980,7 +983,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                     {/* Right fade gradient */}
                     <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-l from-card via-card/70 to-transparent pointer-events-none z-10" />
                     <div className="overflow-x-auto scrollbar-hide">
-                      <div className="flex gap-4 p-5" style={{ paddingRight: "80px" }}>
+                      <div className="flex items-stretch gap-4 p-5" style={{ paddingRight: "80px" }}>
                         {group.items.map((result, itemIdx) => {
                           const rank     = globalRank + itemIdx + 1
                           const isLocked = false // CSS blur only — data not sent by backend
