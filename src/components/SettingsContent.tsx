@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { NOTIFY_PREF_KEY } from "./B2CDiscoveryContent"
 import { updateProfile } from "firebase/auth"
 import { useAuth } from "@/context/AuthContext"
 import { useTheme } from "@/context/ThemeContext"
@@ -256,12 +257,29 @@ function PrivacyTab({ role }: { role: string }) {
 
   const [analytics,       setAnalytics]       = useState(() => localStorage.getItem("pref_analytics")       !== "false")
   const [personalisation, setPersonalisation] = useState(() => localStorage.getItem("pref_personalisation") !== "false")
+  const [notifySearch,    setNotifySearch]    = useState(() => localStorage.getItem(NOTIFY_PREF_KEY) === "yes")
   const [exporting, setExporting] = useState<string | null>(null)
 
   function toggle(key: string, val: boolean, setter: (v: boolean) => void) {
     localStorage.setItem(key, String(val))
     setter(val)
   }
+
+  const handleNotifyToggle = useCallback(async (val: boolean) => {
+    if (val) {
+      const perm = await Notification.requestPermission()
+      if (perm === "granted") {
+        localStorage.setItem(NOTIFY_PREF_KEY, "yes")
+        setNotifySearch(true)
+      } else {
+        localStorage.setItem(NOTIFY_PREF_KEY, "no")
+        setNotifySearch(false)
+      }
+    } else {
+      localStorage.setItem(NOTIFY_PREF_KEY, "no")
+      setNotifySearch(false)
+    }
+  }, [])
 
   async function exportData(format: "json" | "csv" | "pdf") {
     if (!user) return
@@ -287,6 +305,9 @@ function PrivacyTab({ role }: { role: string }) {
         </Row>
         <Row label="Personalisation" desc="Allow the app to remember your preferences">
           <Switch checked={personalisation} onCheckedChange={v => toggle("pref_personalisation", v, setPersonalisation)} />
+        </Row>
+        <Row label="Search notifications" desc="Get a browser notification when your AI search results are ready">
+          <Switch checked={notifySearch} onCheckedChange={handleNotifyToggle} />
         </Row>
       </Section>
 

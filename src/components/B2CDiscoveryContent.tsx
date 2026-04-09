@@ -1,13 +1,17 @@
 import { useState, useEffect, useRef } from "react"
+import { toast } from "sonner"
 import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
   Compass, Sparkles, Loader2, ExternalLink,
-  AlertCircle, Search, Globe, Eye, CheckCircle2, Star, Lock, Plus, X,
+  AlertCircle, Search, Globe, Eye, CheckCircle2, Star, Lock, Plus, X, Bell,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
+const SEARCH_STATE_KEY = "spark_search_state"
+export const NOTIFY_PREF_KEY  = "pref_notify_search"  // exported so SettingsContent can use same key
 
 const UNLIMITED_ROLES = ["dev", "owner"]
 
@@ -256,7 +260,12 @@ function formatElapsed(s: number) {
   return rem > 0 ? `${m} min ${rem}s` : `${m} min`
 }
 
-function SearchingState({ query, livePhase }: { query: string; livePhase: LivePhase }) {
+function SearchingState({ query, livePhase, batch, recovering, notifyPref, onNotifyChoice }: {
+  query: string; livePhase: LivePhase; batch: number
+  recovering?: boolean
+  notifyPref: "yes" | "no" | null
+  onNotifyChoice: (c: "yes" | "no") => void
+}) {
   const [elapsed, setElapsed] = useState(0)
   // Wall-clock timestamps for when each phase became active
   const phaseStartedAt = useRef<Record<number, number>>({})
@@ -368,8 +377,38 @@ function SearchingState({ query, livePhase }: { query: string; livePhase: LivePh
 
       {/* Total elapsed */}
       <p className="text-xs text-muted-foreground/60 font-mono tabular-nums">
-        {formatElapsed(elapsed)} elapsed · up to 4 min for full results
+        {recovering
+          ? "Reconnecting to your search…"
+          : `${formatElapsed(elapsed)} elapsed · up to ${batch === 1 ? "30s" : batch === 2 ? "1 min" : "3 min"} for full results`}
       </p>
+
+      {/* Leave-page info + notification prompt */}
+      {!recovering && (
+        <div className="flex flex-col items-center gap-2 text-center max-w-xs">
+          <p className="text-xs text-muted-foreground/70">
+            You can safely leave or change tabs — your search runs in the background.
+          </p>
+          {notifyPref === null && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Notify me when done?</span>
+              <button
+                onClick={() => onNotifyChoice("yes")}
+                className="font-semibold text-primary hover:underline"
+              >Yes</button>
+              <span className="text-muted-foreground/50">·</span>
+              <button
+                onClick={() => onNotifyChoice("no")}
+                className="text-muted-foreground hover:text-foreground"
+              >No</button>
+            </div>
+          )}
+          {notifyPref === "yes" && (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              <Bell className="h-3 w-3" /> We'll notify you when results are ready
+            </p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -389,7 +428,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [results, setResults]                 = useState<B2CResult[]>([])
   const [visibleLimit, setVisibleLimit]       = useState(3)
   const [lastQuery, setLastQuery]             = useState("")
-  const [correctedQuery, setCorrectedQuery]   = useState<string | null>(null)
   const [searchError, setSearchError]         = useState<string | null>(null)
   const [batch, setBatch]                     = useState(3)  // 1=Quick, 2=Standard, 3=Deep
   const [activeCategory, setActiveCategory]   = useState<string | null>(null)
@@ -405,6 +443,13 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [suggestionIdx, setSuggestionIdx]     = useState(-1)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const suggestionsRef                        = useRef<HTMLDivElement>(null)
+  const [isRecovering, setIsRecovering]       = useState(false)
+  const [notifyPref, setNotifyPref]           = useState<"yes" | "no" | null>(() => {
+    const v = localStorage.getItem(NOTIFY_PREF_KEY)
+    return v === "yes" ? "yes" : v === "no" ? "no" : null
+  })
+  const pollingRef       = useRef<ReturnType<typeof setInterval> | null>(null)
+  const searchStartedAt  = useRef<number>(0)
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -570,6 +615,107 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
   }
 
+  // ── Notification helpers ────────────────────────────────────────
+  function fireBrowserNotification(query: string) {
+    if (localStorage.getItem(NOTIFY_PREF_KEY) !== "yes") return
+    if (Notification.permission !== "granted") return
+    new Notification("Spark AI — Results ready", {
+      body: `Your search for "${query}" is complete. Tap to view.`,
+      icon: "/favicon.ico",
+    })
+  }
+
+  async function handleNotifyChoice(choice: "yes" | "no") {
+    if (choice === "yes") {
+      const perm = await Notification.requestPermission()
+      const granted = perm === "granted"
+      localStorage.setItem(NOTIFY_PREF_KEY, granted ? "yes" : "no")
+      setNotifyPref(granted ? "yes" : "no")
+    } else {
+      localStorage.setItem(NOTIFY_PREF_KEY, "no")
+      setNotifyPref("no")
+    }
+  }
+
+  // ── Recovery polling: runs when page is refreshed during a search ─
+  function startRecoveryPolling(savedQuery: string, startedAt: number) {
+    let attempts = 0
+    pollingRef.current = setInterval(async () => {
+      attempts++
+      if (attempts > 30) {  // 30 × 5s = 150s max
+        clearInterval(pollingRef.current!)
+        setIsRecovering(false)
+        setPhase("idle")
+        sessionStorage.removeItem(SEARCH_STATE_KEY)
+        return
+      }
+      try {
+        const token = await getToken()
+        if (!token) return
+        const res  = await fetch(`${API}/api/discovery/b2c-history`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (!data.success) return
+        const match = (data.data as any[]).find(e => {
+          const searchedAt = new Date(e.searched_at).getTime()
+          return e.query.toLowerCase() === savedQuery.toLowerCase() &&
+                 searchedAt >= startedAt - 60_000  // allow 1 min skew
+        })
+        if (match) {
+          clearInterval(pollingRef.current!)
+          setIsRecovering(false)
+          const recovered = typeof match.results === "string"
+            ? JSON.parse(match.results)
+            : (match.results || [])
+          setResults(recovered)
+          setHistoryId(match.id)
+          setVisibleLimit(8)
+          setLastQuery(match.query)
+          setPhase("results")
+          sessionStorage.removeItem(SEARCH_STATE_KEY)
+          toast.success("Search complete!", { description: `Results ready for "${match.query}"` })
+          fireBrowserNotification(match.query)
+          onSearchComplete?.()
+        }
+      } catch { /* silent — keep polling */ }
+    }, 5000)
+  }
+
+  // ── On mount: restore completed search OR start recovery polling ─
+  useEffect(() => {
+    if (selectedHistoryEntry) return  // history view takes priority
+    const raw = sessionStorage.getItem(SEARCH_STATE_KEY)
+    if (!raw) return
+    try {
+      const saved = JSON.parse(raw)
+      const age   = Date.now() - (saved.startedAt || 0)
+      if (saved.status === "done" && age < 30 * 60_000) {
+        // Restore immediately — no API call needed
+        setResults(saved.results || [])
+        setHistoryId(saved.historyId ?? null)
+        setVisibleLimit(saved.limit ?? 3)
+        setLastQuery(saved.query || "")
+        setPhase("results")
+        sessionStorage.removeItem(SEARCH_STATE_KEY)
+      } else if (saved.status === "searching" && age < 5 * 60_000) {
+        // Search was running when page refreshed — poll history to recover
+        setLastQuery(saved.query || "")
+        setPhase("searching")
+        setIsRecovering(true)
+        startRecoveryPolling(saved.query, saved.startedAt)
+      } else {
+        sessionStorage.removeItem(SEARCH_STATE_KEY)
+      }
+    } catch {
+      sessionStorage.removeItem(SEARCH_STATE_KEY)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Cleanup polling on unmount
+  useEffect(() => () => { if (pollingRef.current) clearInterval(pollingRef.current) }, [])
+
   // Load wallet + profile on mount
   useEffect(() => {
     if (!user) return
@@ -602,7 +748,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     const t = setTimeout(() => {
       setResults(entry.results || [])
       setLastQuery(entry.query || "")
-      setCorrectedQuery(null)
       setSearchError(null)
       setQuery(entry.query || "")
       setVisibleLimit(20)
@@ -623,11 +768,16 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setSearchError(null)
     setResults([])
     setHistoryId(null)
-    setCorrectedQuery(null)
     setLastQuery(q)
     setRecentSearches(prev => [q, ...prev.filter(r => r.toLowerCase() !== q.toLowerCase())].slice(0, 10))
     setShowSuggestions(false)
     setSuggestionIdx(-1)
+
+    // Save search state so it survives page refresh or navigation away
+    searchStartedAt.current = Date.now()
+    sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+      query: q, batch, startedAt: searchStartedAt.current, status: "searching",
+    }))
 
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 240_000)
@@ -645,6 +795,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       // Pre-flight errors (auth, credits) come back as regular JSON before SSE starts
       if (!res.ok) {
         const json = await res.json()
+        sessionStorage.removeItem(SEARCH_STATE_KEY)
         if (json.error?.code === "USAGE_LIMIT_REACHED") {
           onNavigate?.("plans")
           setPhase("idle")
@@ -673,13 +824,21 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               setLivePhase({ phase: event.phase, status: event.status, done: event.done, total: event.total })
             } else if (event.type === "done") {
               const data = event.data
+              const finalQuery = data.query || q
               setResults(data.results || [])
               setHistoryId(data.historyId ?? null)
               setVisibleLimit(data.limit ?? 3)
-              setCorrectedQuery(data.correctedQuery ?? null)
-              setLastQuery(data.query || q)
+              setLastQuery(finalQuery)
               setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
               setPhase("results")
+              // Persist results so they survive navigation away & back
+              sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+                query: finalQuery, batch, startedAt: searchStartedAt.current,
+                status: "done", results: data.results || [],
+                historyId: data.historyId ?? null, limit: data.limit ?? 3,
+              }))
+              toast.success("Search complete!", { description: `Results ready for "${finalQuery}"` })
+              fireBrowserNotification(finalQuery)
               onSearchComplete?.()
             } else if (event.type === "error") {
               throw new Error(event.error?.message || "Search failed")
@@ -691,6 +850,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       }
     } catch (err: any) {
       clearTimeout(timeoutId)
+      sessionStorage.removeItem(SEARCH_STATE_KEY)
       if (err.name === "AbortError") {
         setSearchError("Search timed out — the AI pipeline is taking too long. Please try again.")
       } else {
@@ -701,6 +861,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   }
 
   function handleNewSearch() {
+    sessionStorage.removeItem(SEARCH_STATE_KEY)
     setPhase("idle")
     setResults([])
     setSearchError(null)
@@ -1077,7 +1238,14 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       {/* ── SEARCHING: centered ── */}
       {phase === "searching" && (
         <div className="flex-1 flex items-center justify-center">
-          <SearchingState query={lastQuery} livePhase={livePhase} />
+          <SearchingState
+            query={lastQuery}
+            livePhase={livePhase}
+            batch={batch}
+            recovering={isRecovering}
+            notifyPref={notifyPref}
+            onNotifyChoice={handleNotifyChoice}
+          />
         </div>
       )}
 
@@ -1111,15 +1279,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
       {phase === "results" && !isLoadingHistory && (
         <div className="space-y-4 py-2">
-          {correctedQuery && (
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm">
-              <span className="text-amber-600 dark:text-amber-400">✦</span>
-              <span className="text-amber-800 dark:text-amber-300">
-                Searched for <span className="font-semibold">"{correctedQuery}"</span> — we fixed your query automatically.
-              </span>
-            </div>
-          )}
-
           {/* Header */}
           <div className="flex items-center justify-between gap-3">
             <div>

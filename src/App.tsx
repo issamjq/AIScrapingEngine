@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import spinnerGif from "@/assets/spinner.gif"
 import { AuthProvider, useAuth } from "./context/AuthContext"
+import { Toaster } from "./components/ui/sonner"
 import { LoginPage } from "./components/LoginPage"
 import { DashboardLayout } from "./components/DashboardLayout"
 import { OnboardingContent } from "./components/OnboardingContent"
@@ -263,6 +264,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppInner />
+      <Toaster position="bottom-right" richColors />
     </AuthProvider>
   )
 }
