@@ -637,18 +637,54 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     }
   }
 
-  // ── Recovery polling: runs when page is refreshed during a search ─
+  // ── Recovery polling: two-track approach ─────────────────────────
+  // Track 1 (every 1s): check sessionStorage — the zombie handleSearch updates it to "done"
+  //   when the SSE stream completes. This covers the navigate-away case instantly.
+  // Track 2 (every 5s): poll history API — for the refresh case where the zombie is dead
+  //   and we need to wait for the backend to finish and save to history.
+  // Bug fixed: query matching is fuzzy (autocorrect changes "marlb" → "Marlboro" in history)
   function startRecoveryPolling(savedQuery: string, startedAt: number) {
-    let attempts = 0
+    let apiTick = 0
+    let tick    = 0
+
+    function applyResult(q: string, results: any[], historyId: number | null, limit: number) {
+      clearInterval(pollingRef.current!)
+      setIsRecovering(false)
+      setResults(results)
+      setHistoryId(historyId)
+      setVisibleLimit(limit)
+      setLastQuery(q)
+      setPhase("results")
+      sessionStorage.removeItem(SEARCH_STATE_KEY)
+      onSearchComplete?.()
+    }
+
     pollingRef.current = setInterval(async () => {
-      attempts++
-      if (attempts > 30) {  // 30 × 5s = 150s max
+      tick++
+
+      // ── Track 1: check if zombie handleSearch updated sessionStorage to "done" ──
+      const raw = sessionStorage.getItem(SEARCH_STATE_KEY)
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw)
+          if (saved.status === "done") {
+            applyResult(saved.query || savedQuery, saved.results || [], saved.historyId ?? null, saved.limit ?? 3)
+            return
+          }
+        } catch { /* ignore parse errors */ }
+      }
+
+      // ── Track 2: poll history API every 5 ticks (for refresh/dead-SSE case) ──
+      if (tick % 5 !== 0) return
+      apiTick++
+      if (apiTick > 30) {  // 30 × 5s = 150s max wait
         clearInterval(pollingRef.current!)
         setIsRecovering(false)
         setPhase("idle")
         sessionStorage.removeItem(SEARCH_STATE_KEY)
         return
       }
+
       try {
         const token = await getToken()
         if (!token) return
@@ -657,29 +693,27 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         })
         const data = await res.json()
         if (!data.success) return
+
+        // Fuzzy match: autocorrect may have changed query before saving to history
+        // e.g. user typed "marlb", history saved "Marlboro"
+        const ql = savedQuery.toLowerCase()
         const match = (data.data as any[]).find(e => {
           const searchedAt = new Date(e.searched_at).getTime()
-          return e.query.toLowerCase() === savedQuery.toLowerCase() &&
-                 searchedAt >= startedAt - 60_000  // allow 1 min skew
+          if (searchedAt < startedAt - 60_000) return false
+          const hl = e.query.toLowerCase()
+          return hl === ql || hl.includes(ql) || ql.includes(hl)
         })
+
         if (match) {
-          clearInterval(pollingRef.current!)
-          setIsRecovering(false)
           const recovered = typeof match.results === "string"
             ? JSON.parse(match.results)
             : (match.results || [])
-          setResults(recovered)
-          setHistoryId(match.id)
-          setVisibleLimit(8)
-          setLastQuery(match.query)
-          setPhase("results")
-          sessionStorage.removeItem(SEARCH_STATE_KEY)
+          applyResult(match.query, recovered, match.id, 8)
           toast.success("Search complete!", { description: `Results ready for "${match.query}"` })
           fireBrowserNotification(match.query)
-          onSearchComplete?.()
         }
       } catch { /* silent — keep polling */ }
-    }, 5000)
+    }, 1000)  // tick every 1s
   }
 
   // ── On mount: restore completed search OR start recovery polling ─
