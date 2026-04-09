@@ -33,10 +33,11 @@ function getInitials(name: string | null): string {
 }
 
 interface Props {
-  onNavigate: (page: string) => void
+  onNavigate:  (page: string) => void
+  refreshKey?: number  // increments after each search/deduction to re-fetch wallet
 }
 
-export function UserMenuButton({ onNavigate }: Props) {
+export function UserMenuButton({ onNavigate, refreshKey }: Props) {
   const { user, logout } = useAuth()
   const [subscription, setSubscription] = useState<string>("free")
   const [role, setRole]                 = useState<string>("b2c")
@@ -66,7 +67,7 @@ export function UserMenuButton({ onNavigate }: Props) {
     }
     fetchProfile()
     return () => { cancelled = true }
-  }, [user])
+  }, [user, refreshKey])  // refreshKey increments after every search so balance stays current
 
   const displayName = user?.displayName || user?.email || "User"
   const email       = user?.email || ""

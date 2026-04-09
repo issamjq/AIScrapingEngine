@@ -222,7 +222,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
           <SidebarFooter className="pb-2">
             <Separator className="mb-2" />
             <div className="px-2">
-              <UserMenuButton onNavigate={onNavigate} />
+              <UserMenuButton onNavigate={onNavigate} refreshKey={sidebarRefreshKey} />
             </div>
             <div className="px-4 pt-1 pb-1">
               <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground select-none">

@@ -1440,6 +1440,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             setResults(prev => prev.map(r => urlSet.has(r.url) ? { ...(unlocked.find(u => u.url === r.url) ?? r), isLocked: false } : r))
             setBalance(json.data.balance ?? null)
             setUnlockModalResult(null)
+            onSearchComplete?.()  // re-fetch UserMenuButton wallet balance after unlock deduction
           } catch { /* silent */ }
           finally { setUnlocking(null) }
         }
