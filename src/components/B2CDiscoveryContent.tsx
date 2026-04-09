@@ -135,12 +135,10 @@ function PriceCard({
         </div>
       )}
 
-      {/* Best price banner */}
-      {isBest && (
-        <div className="flex items-center gap-1.5 bg-primary px-4 py-1.5">
-          <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">✓ Best Price</span>
-        </div>
-      )}
+      {/* Best price banner — always reserves space so all cards align */}
+      <div className={`flex items-center gap-1.5 px-4 py-1.5 ${isBest ? "bg-primary" : "invisible"}`}>
+        <span className="text-xs font-bold text-primary-foreground tracking-wide uppercase">✓ Best Price</span>
+      </div>
 
       {/* Card body — blurred when locked */}
       <div className={`p-5 flex flex-col h-full select-none ${isLocked ? "blur-sm pointer-events-none" : ""}`}>
@@ -400,6 +398,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [livePhase, setLivePhase]             = useState<LivePhase>(null)
   const [unlockModalResult, setUnlockModalResult] = useState<B2CResult | null>(null)
   const [revealedUrls, setRevealedUrls]       = useState<Set<string>>(new Set())
+  const [unlocking, setUnlocking]             = useState<"single" | "all" | null>(null)
   const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set())
 
   const BATCH_OPTIONS = [
@@ -1014,7 +1013,8 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         const lockedInStore = storeItems.filter((r, i) => i > 0 && !revealedUrls.has(r.url))
         const isUnlimitedUser = UNLIMITED_ROLES.includes(userProfile?.role ?? "")
 
-        async function doUnlock(urls: string[], creditCost: number) {
+        async function doUnlock(urls: string[], creditCost: number, which: "single" | "all") {
+          setUnlocking(which)
           try {
             const token = await getToken()
             if (!isUnlimitedUser && creditCost > 0) {
@@ -1024,12 +1024,13 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 body: JSON.stringify({ amount: creditCost, description: `Unlocked ${creditCost} search result${creditCost > 1 ? "s" : ""}` }),
               })
               const json = await res.json()
-              if (!json.success) { onNavigate?.("plans"); setUnlockModalResult(null); return }
+              if (!json.success) { onNavigate?.("plans"); setUnlockModalResult(null); setUnlocking(null); return }
               setBalance(json.data.balance)
             }
             setRevealedUrls(prev => { const next = new Set(prev); urls.forEach(u => next.add(u)); return next })
             setUnlockModalResult(null)
           } catch { /* silent */ }
+          finally { setUnlocking(null) }
         }
 
         return (
@@ -1078,20 +1079,24 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               {/* Actions */}
               <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={() => doUnlock([unlockModalResult.url], 1)}
-                  disabled={!isUnlimitedUser && (balance ?? 0) < 1}
-                  className="w-full py-3.5 bg-foreground text-background rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-40"
+                  onClick={() => doUnlock([unlockModalResult.url], 1, "single")}
+                  disabled={!!unlocking || (!isUnlimitedUser && (balance ?? 0) < 1)}
+                  className="w-full py-3.5 bg-foreground text-background rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2"
                 >
-                  Unlock with 1 Credit
+                  {unlocking === "single" ? (
+                    <><span className="w-4 h-4 border-2 border-background/40 border-t-background rounded-full animate-spin" />Unlocking…</>
+                  ) : "Unlock with 1 Credit"}
                 </button>
 
                 {lockedInStore.length > 1 && (
                   <button
-                    onClick={() => doUnlock(lockedInStore.map(r => r.url), lockedInStore.length)}
-                    disabled={!isUnlimitedUser && (balance ?? 0) < lockedInStore.length}
-                    className="w-full py-3.5 border-2 border-foreground text-foreground rounded-xl font-semibold text-sm hover:bg-muted/50 transition-colors disabled:opacity-40"
+                    onClick={() => doUnlock(lockedInStore.map(r => r.url), lockedInStore.length, "all")}
+                    disabled={!!unlocking || (!isUnlimitedUser && (balance ?? 0) < lockedInStore.length)}
+                    className="w-full py-3.5 border-2 border-foreground text-foreground rounded-xl font-semibold text-sm hover:bg-muted/50 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                   >
-                    Unlock all {lockedInStore.length} offers ({lockedInStore.length} Credits)
+                    {unlocking === "all" ? (
+                      <><span className="w-4 h-4 border-2 border-foreground/40 border-t-foreground rounded-full animate-spin" />Unlocking…</>
+                    ) : `Unlock all ${lockedInStore.length} offers (${lockedInStore.length} Credits)`}
                   </button>
                 )}
 
