@@ -25,6 +25,7 @@ import { walletRouter }             from "./routes/wallet"
 import { currencyRatesRouter }      from "./routes/currencyRates"
 import { exportRouter }             from "./routes/export"
 import { searchRouter }             from "./routes/search"
+import { suggestionsRouter }        from "./routes/suggestions"
 import { requireAuth }              from "./middleware/auth"
 
 const app  = express()
@@ -77,6 +78,7 @@ app.use("/api/wallet",               requireAuth, walletRouter)
 app.use("/api/currency-rates",       requireAuth, currencyRatesRouter)
 app.use("/api/export",               requireAuth, exportRouter)
 app.use("/api/search",               requireAuth, searchRouter)
+app.use("/api/suggestions",          requireAuth, suggestionsRouter)
 
 // 404
 app.use((_req, res) => {

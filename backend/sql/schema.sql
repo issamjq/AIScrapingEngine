@@ -412,3 +412,19 @@ VALUES
     true, false, 6
   )
 ON CONFLICT (key) DO NOTHING;
+
+-- =============================================================
+-- TABLE: search_suggestions (crowdsourced autocomplete)
+-- normalized_key = words sorted alphabetically, lowercased
+-- so "iphone 17 pro max" and "iphone 17 max pro" → same row
+-- =============================================================
+CREATE TABLE IF NOT EXISTS search_suggestions (
+  normalized_key   VARCHAR(500) PRIMARY KEY,
+  query            VARCHAR(500) NOT NULL,
+  search_count     INTEGER      NOT NULL DEFAULT 1,
+  last_searched_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Fast prefix/contains search by count
+CREATE INDEX IF NOT EXISTS idx_suggestions_query ON search_suggestions USING gin(to_tsvector('simple', query));
+CREATE INDEX IF NOT EXISTS idx_suggestions_count ON search_suggestions(search_count DESC);

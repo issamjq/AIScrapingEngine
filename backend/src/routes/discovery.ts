@@ -9,6 +9,7 @@ import { deductCredits, getWallet } from "../services/walletService"
 import { AuthRequest } from "../middleware/auth"
 import { logger } from "../utils/logger"
 import { query as dbQuery } from "../db"
+import { upsertSuggestion } from "../services/suggestionsService"
 
 export const discoveryRouter = Router()
 
@@ -230,6 +231,9 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       const durationSeconds = Math.round((Date.now() - searchStart) / 1000)
       const finalQuery = correctedQuery ?? queryText
       logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery, durationSeconds })
+
+      // Save to suggestions table — crowdsourced autocomplete (fire-and-forget)
+      upsertSuggestion(finalQuery, results.length).catch(() => {})
 
       // Save to search history (fire-and-forget)
       if (results.length > 0) {

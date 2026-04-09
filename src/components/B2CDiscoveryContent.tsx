@@ -503,19 +503,51 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     "Barbie Dreamhouse 2024", "Hot Wheels Ultimate Garage",
   ]
 
-  // Compute suggestions whenever query changes
+  // API-fetched suggestions (from DB, populated by real user searches)
+  const [apiSuggestions, setApiSuggestions] = useState<string[]>([])
+
+  // Debounce: fetch from API 300ms after user stops typing
   const q = query.trim().toLowerCase()
+  useEffect(() => {
+    if (q.length < 1) { setApiSuggestions([]); return }
+    const timer = setTimeout(async () => {
+      try {
+        const token = await getToken()
+        const res = await fetch(`${API}/api/suggestions?q=${encodeURIComponent(q)}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+        if (res.ok) {
+          const json = await res.json()
+          setApiSuggestions(json.data ?? [])
+        }
+      } catch { /* silent — fallback to hardcoded list */ }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [q])
+
+  // Merge: recent searches → API (DB) suggestions → hardcoded fallback (if API returned < 3)
+  const recentMatches = recentSearches
+    .filter(r => r.toLowerCase().includes(q) && r.toLowerCase() !== q)
+    .slice(0, 3)
+    .map(r => ({ text: r, isRecent: true }))
+
+  const apiSet = new Set(apiSuggestions.map(s => s.toLowerCase()))
+  const recentSet = new Set(recentSearches.map(r => r.toLowerCase()))
+  const hardcodedFallback = apiSuggestions.length < 3
+    ? PRODUCT_SUGGESTIONS
+        .filter(s => s.toLowerCase().includes(q))
+        .filter(s => !apiSet.has(s.toLowerCase()) && !recentSet.has(s.toLowerCase()))
+        .slice(0, 6 - apiSuggestions.length)
+    : []
+
   const filteredSuggestions: Array<{ text: string; isRecent: boolean }> = q.length >= 1
     ? [
-        ...recentSearches
-          .filter(r => r.toLowerCase().includes(q) && r.toLowerCase() !== q)
-          .slice(0, 3)
-          .map(r => ({ text: r, isRecent: true })),
-        ...PRODUCT_SUGGESTIONS
-          .filter(s => s.toLowerCase().includes(q))
-          .filter(s => !recentSearches.some(r => r.toLowerCase() === s.toLowerCase()))
-          .slice(0, 6),
-      ].slice(0, 8).map((item) => typeof item === "string" ? { text: item, isRecent: false } : item)
+        ...recentMatches,
+        ...apiSuggestions
+          .filter(s => !recentSet.has(s.toLowerCase()))
+          .map(s => ({ text: s, isRecent: false })),
+        ...hardcodedFallback.map(s => ({ text: s, isRecent: false })),
+      ].slice(0, 8)
     : []
 
   // Close suggestions on outside click
