@@ -2,6 +2,9 @@ import { Router, Response, NextFunction } from "express"
 import { AuthRequest } from "../middleware/auth"
 import { getWallet, getTransactions, addCredits, deductCredits } from "../services/walletService"
 import { createError } from "../middleware/validate"
+import { query as dbQuery } from "../db"
+
+const ADMIN_ROLES = ["dev", "owner", "admin"]
 
 export const walletRouter = Router()
 
@@ -46,10 +49,18 @@ walletRouter.post("/deduct", async (req: AuthRequest, res: Response, next: NextF
 // POST /api/wallet/add — admin/dev only: manually add credits
 walletRouter.post("/add", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { amount, description } = req.body
-    if (!amount || amount <= 0) return next(createError("amount must be positive", 400, "VALIDATION"))
-    const email = req.email!
-    const newBalance = await addCredits(email, amount, "adjustment", description || "Manual credit addition")
+    const callerEmail = req.email!
+    // Role check — only admin/dev/owner may add credits
+    const { rows } = await dbQuery(
+      `SELECT role FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`, [callerEmail]
+    )
+    if (!rows[0] || !ADMIN_ROLES.includes(rows[0].role)) {
+      return res.status(403).json({ success: false, error: { message: "Forbidden", code: "FORBIDDEN" } })
+    }
+    const { amount, description, target_email } = req.body
+    const recipientEmail = target_email ?? callerEmail
+    if (!amount || amount <= 0 || amount > 10000) return next(createError("amount must be 1–10000", 400, "VALIDATION"))
+    const newBalance = await addCredits(recipientEmail, amount, "adjustment", (description || "Manual credit addition").slice(0, 200))
     res.json({ success: true, data: { balance: newBalance } })
   } catch (err) { next(err) }
 })

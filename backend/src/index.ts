@@ -85,15 +85,17 @@ app.use((_req, res) => {
   res.status(404).json({ success: false, error: { message: "Not found", code: "NOT_FOUND" } })
 })
 
-// Global error handler
+// Global error handler — never expose raw DB/internal errors to client
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   const status = err.status || err.statusCode || 500
   console.error(err.stack)
+  // Only pass through messages we explicitly set via createError (have a .code property)
+  const isAppError = !!err.code && status < 500
   res.status(status).json({
     success: false,
     error: {
-      message: err.message || "Internal server error",
-      code:    err.code    || "INTERNAL_ERROR",
+      message: isAppError ? err.message : "Internal server error",
+      code:    isAppError ? err.code    : "INTERNAL_ERROR",
     },
   })
 })

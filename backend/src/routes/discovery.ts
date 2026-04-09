@@ -145,8 +145,9 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
 
-    const queryText = (req.body.query || "").toString().trim()
+    const queryText = (req.body.query || "").toString().trim().slice(0, 300)
     if (!queryText) return next(createError("query is required", 400, "VALIDATION_ERROR"))
+    if (queryText.length > 300) return next(createError("query too long (max 300 chars)", 400, "VALIDATION_ERROR"))
 
     // Batch: 1=Quick(3 sites/1 credit), 2=Standard(6 sites/2 credits), 3=Deep(10 sites/3 credits)
     const batch   = Math.min(3, Math.max(1, parseInt(req.body.batch) || 3))
@@ -349,11 +350,12 @@ discoveryRouter.post("/b2c-unlock", async (req, res, next) => {
       }
     }
 
-    // Return only the matching real results
+    // Return only the matching real results + updated balance
     const unlocked = allResults.filter(r => urlSet.has(r.url))
+    const wallet   = await (await import("../services/walletService")).getWallet(email)
     logger.info("[B2CUnlock]", { email, historyId, requested: urls.length, found: unlocked.length })
 
-    res.json({ success: true, data: { results: unlocked } })
+    res.json({ success: true, data: { results: unlocked, balance: wallet?.balance ?? null } })
   } catch (err) { next(err) }
 })
 

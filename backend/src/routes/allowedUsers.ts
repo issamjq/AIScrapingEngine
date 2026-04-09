@@ -24,7 +24,9 @@ function getClientIp(req: AuthRequest): string {
 
 async function getCallerUser(email: string) {
   const { rows } = await query(
-    "SELECT * FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1",
+    `SELECT id, email, name, role, company_name, is_active, subscription,
+            trial_ends_at, billing_renews_at, created_at, updated_at
+     FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`,
     [email]
   )
   return rows[0] || null
@@ -119,7 +121,8 @@ allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next:
       }
     }
 
-    const { name, role, plan: planKey = "trial" } = req.body
+    const { role, plan: planKey = "trial" } = req.body
+    const name = req.body.name ? String(req.body.name).trim().slice(0, 100) : null
     if (!role || !["b2b", "b2c"].includes(role)) {
       return next(createError("role must be b2b or b2c", 400, "VALIDATION"))
     }
@@ -160,7 +163,8 @@ allowedUsersRouter.put("/me", async (req: AuthRequest, res: Response, next: Next
   try {
     const email = req.email
     if (!email) return next(createError("No email in token", 401, "UNAUTHENTICATED"))
-    const { name, company_name } = req.body
+    const name         = req.body.name         ? String(req.body.name).trim().slice(0, 100)         : null
+    const company_name = req.body.company_name ? String(req.body.company_name).trim().slice(0, 150) : null
     const { rows } = await query(
       `UPDATE allowed_users SET
          name         = COALESCE($2, name),
