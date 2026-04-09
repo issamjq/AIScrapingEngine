@@ -128,14 +128,11 @@ function PriceCard({
       `}
       onClick={() => isLocked && onLockedClick?.()}
     >
-      {/* Lock overlay — solid enough that nothing is readable */}
+      {/* Lock overlay — transparent click target + lock icon only */}
       {isLocked && (
-        <>
-          <div className="absolute inset-0 bg-white dark:bg-card z-10 pointer-events-none rounded-2xl" />
-          <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-900/90 dark:bg-gray-100/90 flex items-center justify-center shadow-md z-20">
-            <Lock className="w-4 h-4 text-white dark:text-gray-900" />
-          </div>
-        </>
+        <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-900/90 dark:bg-gray-100/90 flex items-center justify-center shadow-md z-20">
+          <Lock className="w-4 h-4 text-white dark:text-gray-900" />
+        </div>
       )}
 
       {/* Best price banner */}
@@ -145,8 +142,8 @@ function PriceCard({
         </div>
       )}
 
-      {/* Card body — flex col so button always sticks to bottom */}
-      <div className="p-5 flex flex-col h-full">
+      {/* Card body — blurred when locked */}
+      <div className={`p-5 flex flex-col h-full select-none ${isLocked ? "blur-xl pointer-events-none" : ""}`}>
         {/* Image — centered, no rank number */}
         <div className="flex justify-center mb-4">
           {result.imageUrl ? (
