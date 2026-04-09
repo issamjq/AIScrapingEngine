@@ -229,10 +229,10 @@ function PriceCard({
 type LivePhase = { phase: string; status: string; done?: number; total?: number } | null
 
 const PHASE_DEFS = [
-  { key: "web-search", icon: Search,   label: "Web Search" },
-  { key: "scraping",   icon: Globe,    label: "Scraping Pages" },
-  { key: "vision",     icon: Eye,      label: "Vision AI" },
-  { key: "finalizing", icon: Sparkles, label: "Finalizing" },
+  { key: "web-search", icon: Search,   label: "Market Intelligence" },
+  { key: "scraping",   icon: Globe,    label: "Deep Page Analysis" },
+  { key: "vision",     icon: Eye,      label: "Spark Vision" },
+  { key: "finalizing", icon: Sparkles, label: "Price Ranking" },
 ] as const
 
 // Map a live SSE phase event → which visual phase index is active
@@ -241,7 +241,7 @@ function liveToActiveIdx(lp: LivePhase): number {
   if (lp.phase === "web-search") return 0
   if (lp.phase === "scraping") {
     const pct = (lp.done ?? 0) / Math.max(lp.total ?? 1, 1)
-    return pct >= 0.55 ? 2 : 1   // switch to "Vision AI" row when >55% sites scraped
+    return pct >= 0.55 ? 2 : 1   // switch to "Spark Vision" row when >55% sites scraped
   }
   if (lp.phase === "finalizing") return 3
   return 0
@@ -277,15 +277,15 @@ function SearchingState({ query, livePhase }: { query: string; livePhase: LivePh
 
   // Detail text shown under the active phase row
   function getDetail(idx: number): string {
-    if (idx === 0) return "Searching marketplaces and classifieds globally…"
+    if (idx === 0) return "Scanning global marketplaces, retailers & classifieds…"
     if (idx === 1) {
       if (livePhase?.phase === "scraping" && livePhase.total) {
-        return `Scraping site ${livePhase.done ?? 0} of ${livePhase.total}…`
+        return `Analysing listing ${livePhase.done ?? 0} of ${livePhase.total}…`
       }
-      return "Opening listing pages and extracting data…"
+      return "Extracting live pricing and product data from each source…"
     }
-    if (idx === 2) return "AI reading screenshots to extract prices…"
-    return "Ranking results by best price…"
+    if (idx === 2) return "Spark Vision reading pages to capture prices with precision…"
+    return "Sorting results · Calculating best deals for you…"
   }
 
   // Per-phase elapsed (seconds since that phase started)
@@ -925,7 +925,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               </span>
             )}
             {isUnlimited && <span className="font-medium text-primary">Unlimited credits</span>}
-            {!compact && <span className="hidden sm:inline opacity-50">Web · Scrape · Vision AI</span>}
+            {!compact && <span className="hidden sm:inline opacity-50">Market Intelligence · Deep Analysis · Spark Vision</span>}
           </div>
           <button
             onClick={handleSearch}
