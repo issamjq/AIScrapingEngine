@@ -414,43 +414,93 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const PRODUCT_SUGGESTIONS = [
-    // Electronics
-    "iPhone 15 Pro Max", "Samsung Galaxy S24 Ultra", "MacBook Pro M3", "iPad Pro 13 inch",
-    "AirPods Pro 2nd generation", "Sony WH-1000XM5 headphones", "PlayStation 5", "Xbox Series X",
-    "Samsung 65 inch OLED TV", "LG 55 inch 4K TV", "Dyson V15 vacuum", "Dyson Airwrap",
-    "Apple Watch Series 9", "Samsung Galaxy Watch 6", "Kindle Paperwhite",
-    "Canon EOS R6 camera", "Sony Alpha A7 IV", "GoPro Hero 12",
-    "Dell XPS 15 laptop", "HP Spectre x360", "Lenovo ThinkPad X1",
-    "Nintendo Switch OLED", "Steam Deck",
+    // iPhone — all models & variants
+    "iPhone 16 Pro Max", "iPhone 16 Pro", "iPhone 16 Plus", "iPhone 16",
+    "iPhone 15 Pro Max", "iPhone 15 Pro", "iPhone 15 Plus", "iPhone 15",
+    "iPhone 14 Pro Max", "iPhone 14 Pro", "iPhone 14 Plus", "iPhone 14",
+    "iPhone 13 Pro Max", "iPhone 13 Pro", "iPhone 13 mini", "iPhone 13",
+    "iPhone 12 Pro Max", "iPhone 12 Pro", "iPhone 12 mini", "iPhone 12",
+    "iPhone SE 3rd generation",
+    // Samsung Galaxy
+    "Samsung Galaxy S25 Ultra", "Samsung Galaxy S25 Plus", "Samsung Galaxy S25",
+    "Samsung Galaxy S24 Ultra", "Samsung Galaxy S24 Plus", "Samsung Galaxy S24",
+    "Samsung Galaxy S23 Ultra", "Samsung Galaxy S23",
+    "Samsung Galaxy Z Fold 6", "Samsung Galaxy Z Flip 6",
+    "Samsung Galaxy A55", "Samsung Galaxy A35", "Samsung Galaxy A15",
+    "Samsung Galaxy Tab S9 Ultra", "Samsung Galaxy Tab S9",
+    // MacBook & iPad
+    "MacBook Pro 16 inch M4", "MacBook Pro 14 inch M4", "MacBook Air M3", "MacBook Air M2",
+    "iPad Pro 13 inch M4", "iPad Pro 11 inch M4", "iPad Air M2", "iPad mini 7", "iPad 10th generation",
+    // AirPods & Apple Watch
+    "AirPods Pro 2nd generation", "AirPods 4", "AirPods Max",
+    "Apple Watch Ultra 2", "Apple Watch Series 10", "Apple Watch Series 9", "Apple Watch SE",
+    // Other Apple
+    "Apple Vision Pro", "Apple Pencil Pro", "Magic Keyboard",
+    // Sony
+    "Sony WH-1000XM5 headphones", "Sony WH-1000XM4 headphones", "Sony WF-1000XM5 earbuds",
+    "Sony Alpha A7 V", "Sony Alpha A7 IV", "Sony Alpha ZV-E10",
+    "Sony PlayStation 5 Pro", "PlayStation 5 Slim", "PlayStation 5",
+    // Other Electronics
+    "Xbox Series X", "Xbox Series S",
+    "Samsung 65 inch OLED TV", "Samsung 55 inch QLED TV", "LG 65 inch OLED TV", "LG 55 inch 4K TV",
+    "Dyson V15 Detect vacuum", "Dyson V12 vacuum", "Dyson Airwrap", "Dyson Supersonic hair dryer",
+    "Canon EOS R6 Mark II", "Canon EOS R8", "Nikon Z8", "GoPro Hero 13",
+    "Dell XPS 15", "Dell XPS 13", "HP Spectre x360", "Lenovo ThinkPad X1 Carbon",
+    "Nintendo Switch 2", "Nintendo Switch OLED", "Steam Deck OLED",
+    "Kindle Paperwhite 12th generation", "Kindle Scribe",
+    "DJI Mini 4 Pro drone", "DJI Air 3 drone",
+    // Laptops
+    "ASUS ROG Zephyrus G14", "Razer Blade 15", "MSI Titan GT77",
     // Cigarettes & Tobacco
     "Marlboro Red cigarettes", "Marlboro Gold cigarettes", "Marlboro Silver cigarettes",
-    "Marlboro Crafted cigarettes", "Camel cigarettes", "Winston cigarettes",
-    "Parliament cigarettes", "Dunhill cigarettes", "Kent cigarettes",
+    "Marlboro Blue cigarettes", "Marlboro Crafted cigarettes", "Marlboro Double Burst",
+    "Camel cigarettes", "Winston cigarettes", "Parliament cigarettes",
+    "Dunhill cigarettes", "Kent cigarettes", "Lucky Strike cigarettes",
+    "IQOS Iluma", "IQOS Iluma Prime", "Heets cigarettes",
     // Cars & Auto
-    "Toyota Camry 2024", "Honda Civic 2024", "BMW 3 Series 2024", "Mercedes C-Class 2024",
-    "Nissan Patrol 2024", "Toyota Land Cruiser 2024", "Kia Sportage 2024",
-    "Hyundai Tucson 2024", "Ford Mustang 2024", "Porsche 911",
-    // Fashion & Apparel
-    "Nike Air Max 270", "Nike Air Force 1", "Adidas Ultraboost", "New Balance 990",
-    "Louis Vuitton bag", "Gucci belt", "Ray-Ban Aviator sunglasses",
-    "Rolex Submariner watch", "Omega Seamaster watch", "Apple Watch Ultra 2",
-    "Levi's 501 jeans", "Ralph Lauren polo shirt", "Zara jacket",
+    "Toyota Camry 2025", "Toyota Camry 2024", "Toyota Corolla 2024",
+    "Honda Civic 2024", "Honda Accord 2024",
+    "BMW 3 Series 2024", "BMW 5 Series 2024", "BMW X5 2024",
+    "Mercedes C-Class 2024", "Mercedes E-Class 2024", "Mercedes GLE 2024",
+    "Nissan Patrol 2024", "Toyota Land Cruiser 2024", "Toyota Prado 2024",
+    "Kia Sportage 2024", "Hyundai Tucson 2024", "Hyundai Santa Fe 2024",
+    "Ford Mustang 2024", "Porsche 911", "Range Rover Sport 2024",
+    "Lexus LX 2024", "Lexus RX 2024",
+    // Fashion & Sneakers
+    "Nike Air Max 270", "Nike Air Max 90", "Nike Air Force 1", "Nike Dunk Low",
+    "Nike Air Jordan 1", "Nike Air Jordan 4", "Nike Air Jordan 11",
+    "Adidas Ultraboost 24", "Adidas Yeezy 350", "Adidas Samba",
+    "New Balance 990v6", "New Balance 550", "New Balance 574",
+    "Louis Vuitton Neverfull bag", "Louis Vuitton Speedy bag",
+    "Gucci GG Marmont bag", "Gucci belt", "Prada Saffiano bag",
+    "Ray-Ban Aviator sunglasses", "Ray-Ban Wayfarer sunglasses", "Oakley sunglasses",
+    "Rolex Submariner", "Rolex Datejust", "Omega Seamaster", "Omega Speedmaster",
+    "Levi's 501 jeans", "Levi's 511 jeans", "Ralph Lauren polo shirt",
     // Home & Appliances
-    "Nespresso Vertuo machine", "Nespresso Original machine", "KitchenAid stand mixer",
-    "Philips Airfryer XXL", "Instant Pot Duo", "Roomba robot vacuum",
-    "IKEA KALLAX shelf", "Samsung French door refrigerator", "Bosch washing machine",
-    "Weber barbecue grill", "Vitamix blender", "De'Longhi coffee machine",
+    "Nespresso Vertuo Next", "Nespresso Vertuo Pop", "Nespresso Essenza Mini",
+    "De'Longhi La Specialista", "Breville Barista Express",
+    "KitchenAid Artisan stand mixer", "Philips Airfryer XXL", "Instant Pot Duo 7-in-1",
+    "iRobot Roomba j9 Plus", "Shark IQ robot vacuum",
+    "Samsung French door refrigerator", "LG side by side refrigerator",
+    "Bosch washing machine 9kg", "Miele washing machine",
+    "Weber Genesis grill", "Traeger pellet grill",
+    "Vitamix 5200 blender", "Ninja blender",
+    // Perfumes & Beauty
+    "Dior Sauvage perfume", "Creed Aventus perfume", "Chanel Bleu de Chanel",
+    "Tom Ford Oud Wood", "Yves Saint Laurent Y perfume", "Versace Eros perfume",
+    "Dyson Supersonic hair dryer", "Oral-B iO Series 9 toothbrush", "Philips Sonicare 9900",
+    "La Roche-Posay Anthelios sunscreen", "CeraVe moisturising cream",
+    "The Ordinary Vitamin C serum", "SK-II Facial Treatment Essence",
+    "MAC Studio Fix foundation", "Charlotte Tilbury Pillow Talk",
     // Food & Health
-    "Optimum Nutrition whey protein", "Myprotein Impact Whey", "Garden of Life protein",
-    "Centrum multivitamin", "Vitamin D3 supplement", "Omega 3 fish oil",
-    "Collagen peptides powder", "Creatine monohydrate",
-    // Beauty & Personal Care
-    "Dyson Supersonic hair dryer", "Oral-B electric toothbrush", "Philips Sonicare",
-    "La Roche-Posay sunscreen", "CeraVe moisturiser", "The Ordinary serum",
-    "MAC foundation", "Charlotte Tilbury lipstick",
+    "Optimum Nutrition Gold Standard Whey", "Myprotein Impact Whey Isolate",
+    "Centrum Advance multivitamin", "Vitamin D3 5000 IU", "Omega 3 fish oil 1000mg",
+    "Collagen peptides powder", "Creatine monohydrate 500g",
     // Baby & Kids
-    "Pampers diapers", "Huggies diapers", "Chicco baby stroller",
-    "LEGO Technic set", "Barbie dreamhouse", "Hot Wheels track set",
+    "Pampers Harmonie diapers", "Huggies Elite Soft diapers",
+    "Chicco Urban stroller", "UPPAbaby Vista stroller",
+    "LEGO Technic Bugatti", "LEGO Star Wars Millennium Falcon",
+    "Barbie Dreamhouse 2024", "Hot Wheels Ultimate Garage",
   ]
 
   // Compute suggestions whenever query changes
