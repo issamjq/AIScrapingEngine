@@ -638,7 +638,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   }
 
   // ── Recovery polling: two-track approach ─────────────────────────
-  // Track 1 (every 1s): check sessionStorage — the zombie handleSearch updates it to "done"
+  // Track 1 (every 1s): check localStorage — the zombie handleSearch updates it to "done"
   //   when the SSE stream completes. This covers the navigate-away case instantly.
   // Track 2 (every 5s): poll history API — for the refresh case where the zombie is dead
   //   and we need to wait for the backend to finish and save to history.
@@ -655,15 +655,15 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       setVisibleLimit(limit)
       setLastQuery(q)
       setPhase("results")
-      sessionStorage.removeItem(SEARCH_STATE_KEY)
+      localStorage.removeItem(SEARCH_STATE_KEY)
       onSearchComplete?.()
     }
 
     pollingRef.current = setInterval(async () => {
       tick++
 
-      // ── Track 1: check if zombie handleSearch updated sessionStorage to "done" ──
-      const raw = sessionStorage.getItem(SEARCH_STATE_KEY)
+      // ── Track 1: check if zombie handleSearch updated localStorage to "done" ──
+      const raw = localStorage.getItem(SEARCH_STATE_KEY)
       if (raw) {
         try {
           const saved = JSON.parse(raw)
@@ -681,7 +681,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         clearInterval(pollingRef.current!)
         setIsRecovering(false)
         setPhase("idle")
-        sessionStorage.removeItem(SEARCH_STATE_KEY)
+        localStorage.removeItem(SEARCH_STATE_KEY)
         return
       }
 
@@ -719,7 +719,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   // ── On mount: restore completed search OR start recovery polling ─
   useEffect(() => {
     if (selectedHistoryEntry) return  // history view takes priority
-    const raw = sessionStorage.getItem(SEARCH_STATE_KEY)
+    const raw = localStorage.getItem(SEARCH_STATE_KEY)
     if (!raw) return
     try {
       const saved = JSON.parse(raw)
@@ -731,7 +731,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         setVisibleLimit(saved.limit ?? 3)
         setLastQuery(saved.query || "")
         setPhase("results")
-        sessionStorage.removeItem(SEARCH_STATE_KEY)
+        localStorage.removeItem(SEARCH_STATE_KEY)
       } else if (saved.status === "searching" && age < 5 * 60_000) {
         // Search was running when page refreshed — poll history to recover
         setLastQuery(saved.query || "")
@@ -739,10 +739,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
         setIsRecovering(true)
         startRecoveryPolling(saved.query, saved.startedAt)
       } else {
-        sessionStorage.removeItem(SEARCH_STATE_KEY)
+        localStorage.removeItem(SEARCH_STATE_KEY)
       }
     } catch {
-      sessionStorage.removeItem(SEARCH_STATE_KEY)
+      localStorage.removeItem(SEARCH_STATE_KEY)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -809,7 +809,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
     // Save search state so it survives page refresh or navigation away
     searchStartedAt.current = Date.now()
-    sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+    localStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
       query: q, batch, startedAt: searchStartedAt.current, status: "searching",
     }))
 
@@ -829,7 +829,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       // Pre-flight errors (auth, credits) come back as regular JSON before SSE starts
       if (!res.ok) {
         const json = await res.json()
-        sessionStorage.removeItem(SEARCH_STATE_KEY)
+        localStorage.removeItem(SEARCH_STATE_KEY)
         if (json.error?.code === "USAGE_LIMIT_REACHED") {
           onNavigate?.("plans")
           setPhase("idle")
@@ -866,7 +866,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               setBalance((prev) => prev !== null ? Math.max(0, prev - (data.credits ?? batch)) : null)
               setPhase("results")
               // Persist results so they survive navigation away & back
-              sessionStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
+              localStorage.setItem(SEARCH_STATE_KEY, JSON.stringify({
                 query: finalQuery, batch, startedAt: searchStartedAt.current,
                 status: "done", results: data.results || [],
                 historyId: data.historyId ?? null, limit: data.limit ?? 3,
@@ -884,7 +884,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       }
     } catch (err: any) {
       clearTimeout(timeoutId)
-      sessionStorage.removeItem(SEARCH_STATE_KEY)
+      localStorage.removeItem(SEARCH_STATE_KEY)
       if (err.name === "AbortError") {
         setSearchError("Search timed out — the AI pipeline is taking too long. Please try again.")
       } else {
@@ -895,7 +895,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   }
 
   function handleNewSearch() {
-    sessionStorage.removeItem(SEARCH_STATE_KEY)
+    localStorage.removeItem(SEARCH_STATE_KEY)
     setPhase("idle")
     setResults([])
     setSearchError(null)
