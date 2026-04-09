@@ -235,16 +235,48 @@ discoveryRouter.post("/b2c-search", async (req, res, next) => {
       // Save to suggestions table — crowdsourced autocomplete (fire-and-forget)
       upsertSuggestion(finalQuery, results.length).catch(() => {})
 
-      // Save to search history (fire-and-forget)
+      // Save FULL results to history — await so we get the ID for secure unlock
+      let historyId: number | null = null
       if (results.length > 0) {
-        dbQuery(
-          `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count, duration_seconds, batch)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [email, finalQuery, countryHint, JSON.stringify(results), results.length, durationSeconds, batch]
-        ).catch((err: any) => logger.warn("[B2CSearch] Failed to save history", { error: err.message }))
+        try {
+          const { rows: hRows } = await dbQuery(
+            `INSERT INTO b2c_search_history (user_email, query, country_hint, results, result_count, duration_seconds, batch)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+            [email, finalQuery, countryHint, JSON.stringify(results), results.length, durationSeconds, batch]
+          )
+          historyId = hRows[0]?.id ?? null
+        } catch (err: any) {
+          logger.warn("[B2CSearch] Failed to save history", { error: err.message })
+        }
       }
 
-      send({ type: "done", data: { query: finalQuery, correctedQuery, results, limit, batch, credits } })
+      // Strip sensitive data from non-first results per retailer — never send locked data to client
+      const retailerSeen = new Set<string>()
+      const securedResults = results.map(r => {
+        if (!retailerSeen.has(r.retailer)) {
+          retailerSeen.add(r.retailer)
+          return r  // first per retailer — full data
+        }
+        // Locked stub — no price, title, image, description sent to browser
+        return {
+          retailer:      r.retailer,
+          url:           r.url,        // needed as unlock identifier; URL alone has no value without price/title
+          isLocked:      true,
+          title:         null,
+          condition:     null,
+          price:         null,
+          originalPrice: null,
+          currency:      null,
+          availability:  null,
+          imageUrl:      null,
+          rating:        null,
+          reviewCount:   null,
+          description:   null,
+          priceSource:   null,
+        }
+      })
+
+      send({ type: "done", data: { query: finalQuery, correctedQuery, results: securedResults, historyId, limit, batch, credits } })
     } catch (err: any) {
       send({ type: "error", error: { message: err.message || "Search failed", code: "SEARCH_ERROR" } })
     }
@@ -269,6 +301,59 @@ discoveryRouter.get("/b2c-history", async (req, res, next) => {
     )
 
     res.json({ success: true, data: rows })
+  } catch (err) { next(err) }
+})
+
+// POST /api/discovery/b2c-unlock
+// Validates credits, reads real data from history, returns unlocked results
+discoveryRouter.post("/b2c-unlock", async (req, res, next) => {
+  try {
+    const email = (req as AuthRequest).email
+    if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
+
+    const { historyId, urls } = req.body
+    if (!historyId || !Array.isArray(urls) || urls.length === 0)
+      return next(createError("historyId and urls[] required", 400, "VALIDATION_ERROR"))
+    if (urls.length > 20)
+      return next(createError("Cannot unlock more than 20 at once", 400, "VALIDATION_ERROR"))
+
+    // Verify history row belongs to this user
+    const { rows: hRows } = await dbQuery(
+      `SELECT results FROM b2c_search_history WHERE id = $1 AND user_email = $2 LIMIT 1`,
+      [historyId, email]
+    )
+    if (!hRows[0]) return next(createError("History entry not found", 404, "NOT_FOUND"))
+
+    const allResults: any[] = typeof hRows[0].results === "string"
+      ? JSON.parse(hRows[0].results)
+      : hRows[0].results
+
+    const urlSet = new Set(urls)
+
+    // Check credits and deduct (skip for unlimited roles)
+    const UNLIMITED_ROLES = ["dev", "owner"]
+    const { rows: userRows } = await dbQuery(
+      `SELECT role FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`, [email]
+    )
+    const role = userRows[0]?.role ?? ""
+    if (!UNLIMITED_ROLES.includes(role)) {
+      const creditResult = await (await import("../services/walletService")).deductCredits(
+        email, urls.length,
+        `Unlocked ${urls.length} search result${urls.length > 1 ? "s" : ""}`
+      )
+      if (!creditResult.success) {
+        return res.status(429).json({
+          success: false,
+          error: { message: "Insufficient credits", code: "USAGE_LIMIT_REACHED", balance: creditResult.balance }
+        })
+      }
+    }
+
+    // Return only the matching real results
+    const unlocked = allResults.filter(r => urlSet.has(r.url))
+    logger.info("[B2CUnlock]", { email, historyId, requested: urls.length, found: unlocked.length })
+
+    res.json({ success: true, data: { results: unlocked } })
   } catch (err) { next(err) }
 })
 

@@ -46,7 +46,7 @@ function calcSparkScore(result: B2CResult, allResults: B2CResult[]): number {
     "New": 0, "Refurbished": 0.25,
     "Used - Good": 0.3, "Used - Fair": 0.6, "Used - Poor": 1, "Unknown": 0.2,
   }
-  const cond = condPenalty[result.condition] ?? 0.2
+  const cond = condPenalty[result.condition ?? "Unknown"] ?? 0.2
 
   // Availability penalty
   const avail = result.availability === "In Stock" ? 0 : result.availability === "Out of Stock" ? 0.7 : 0.2
@@ -84,17 +84,18 @@ function SparkScoreStars({ score }: { score: number }) {
 interface B2CResult {
   retailer:      string
   url:           string
-  title:         string
-  condition:     string
+  title:         string | null
+  condition:     string | null
   price:         number | null
   originalPrice: number | null
-  currency:      string
-  availability:  string
+  currency:      string | null
+  availability:  string | null
   imageUrl:      string | null
   rating:        number | null
   reviewCount:   number | null
   description:   string | null
-  priceSource:   "scraped" | "not_found"
+  priceSource:   "scraped" | "not_found" | null
+  isLocked?:     boolean
 }
 
 function formatPrice(price: number, currency: string) {
@@ -147,7 +148,7 @@ function PriceCard({
           {result.imageUrl ? (
             <img
               src={result.imageUrl}
-              alt={result.title}
+              alt={result.title ?? ""}
               className="w-20 h-20 object-contain rounded-xl bg-muted/20"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
             />
@@ -165,7 +166,7 @@ function PriceCard({
           {/* Badges */}
           <div className="flex flex-wrap items-center gap-1.5 min-h-[20px]">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{result.retailer}</span>
-            <ConditionBadge condition={result.condition} />
+            <ConditionBadge condition={result.condition ?? "Unknown"} />
             {result.availability === "Out of Stock" && (
               <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-md bg-destructive/10 text-destructive border border-destructive/20">
                 Out of Stock
@@ -192,12 +193,12 @@ function PriceCard({
           {result.price !== null ? (
             <div className="flex items-baseline gap-2 mb-4">
               <span className="text-2xl font-semibold text-foreground">
-                {formatPrice(result.price, result.currency)}
+                {formatPrice(result.price, result.currency ?? "USD")}
               </span>
               {hasDiscount && (
                 <>
                   <span className="text-sm text-muted-foreground line-through">
-                    {formatPrice(result.originalPrice!, result.currency)}
+                    {formatPrice(result.originalPrice!, result.currency ?? "USD")}
                   </span>
                   <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">-{discount}%</span>
                 </>
@@ -397,7 +398,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [livePhase, setLivePhase]             = useState<LivePhase>(null)
   const [unlockModalResult, setUnlockModalResult] = useState<B2CResult | null>(null)
-  const [revealedUrls, setRevealedUrls]       = useState<Set<string>>(new Set())
+  const [historyId, setHistoryId]             = useState<number | null>(null)
   const [unlocking, setUnlocking]             = useState<"single" | "all" | null>(null)
   const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set())
   const [recentSearches, setRecentSearches]   = useState<string[]>([])
@@ -621,7 +622,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setIsHistoryView(false)
     setSearchError(null)
     setResults([])
-    setRevealedUrls(new Set())
+    setHistoryId(null)
     setCorrectedQuery(null)
     setLastQuery(q)
     setRecentSearches(prev => [q, ...prev.filter(r => r.toLowerCase() !== q.toLowerCase())].slice(0, 10))
@@ -673,6 +674,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             } else if (event.type === "done") {
               const data = event.data
               setResults(data.results || [])
+              setHistoryId(data.historyId ?? null)
               setVisibleLimit(data.limit ?? 3)
               setCorrectedQuery(data.correctedQuery ?? null)
               setLastQuery(data.query || q)
@@ -1188,7 +1190,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                     <div className="overflow-x-auto scrollbar-hide">
                       <div className="flex items-stretch gap-4 p-5" style={{ paddingRight: "80px" }}>
                         {group.items.map((result, itemIdx) => {
-                          const isLocked = itemIdx > 0 && !revealedUrls.has(result.url)
+                          const isLocked = result.isLocked === true
                           return (
                             <PriceCard
                               key={result.url}
@@ -1220,24 +1222,30 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       {/* Unlock modal */}
       {unlockModalResult && (() => {
         const storeItems   = retailerGroups.find(g => g.retailer === unlockModalResult.retailer)?.items ?? []
-        const lockedInStore = storeItems.filter((r, i) => i > 0 && !revealedUrls.has(r.url))
+        const lockedInStore = storeItems.filter(r => r.isLocked === true)
         const isUnlimitedUser = UNLIMITED_ROLES.includes(userProfile?.role ?? "")
 
-        async function doUnlock(urls: string[], creditCost: number, which: "single" | "all") {
+        async function doUnlock(urls: string[], which: "single" | "all") {
           setUnlocking(which)
           try {
             const token = await getToken()
-            if (!isUnlimitedUser && creditCost > 0) {
-              const res  = await fetch(`${API}/api/wallet/deduct`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                body: JSON.stringify({ amount: creditCost, description: `Unlocked ${creditCost} search result${creditCost > 1 ? "s" : ""}` }),
-              })
-              const json = await res.json()
-              if (!json.success) { onNavigate?.("plans"); setUnlockModalResult(null); setUnlocking(null); return }
-              setBalance(json.data.balance)
+            const res = await fetch(`${API}/api/discovery/b2c-unlock`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+              body: JSON.stringify({ historyId, urls }),
+            })
+            const json = await res.json()
+            if (!json.success) {
+              if (json.error?.code === "USAGE_LIMIT_REACHED") { onNavigate?.("plans") }
+              setUnlockModalResult(null)
+              setUnlocking(null)
+              return
             }
-            setRevealedUrls(prev => { const next = new Set(prev); urls.forEach(u => next.add(u)); return next })
+            // Splice real results into state, replacing stubs
+            const unlocked: B2CResult[] = json.data.results
+            const urlSet = new Set(urls)
+            setResults(prev => prev.map(r => urlSet.has(r.url) ? { ...(unlocked.find(u => u.url === r.url) ?? r), isLocked: false } : r))
+            setBalance(json.data.balance ?? null)
             setUnlockModalResult(null)
           } catch { /* silent */ }
           finally { setUnlocking(null) }
@@ -1289,7 +1297,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               {/* Actions */}
               <div className="flex flex-col gap-2.5">
                 <button
-                  onClick={() => doUnlock([unlockModalResult.url], 1, "single")}
+                  onClick={() => doUnlock([unlockModalResult.url], "single")}
                   disabled={!!unlocking || (!isUnlimitedUser && (balance ?? 0) < 1)}
                   className="w-full py-3.5 bg-foreground text-background rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-60 flex items-center justify-center gap-2"
                 >
@@ -1300,7 +1308,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
                 {lockedInStore.length > 1 && (
                   <button
-                    onClick={() => doUnlock(lockedInStore.map(r => r.url), lockedInStore.length, "all")}
+                    onClick={() => doUnlock(lockedInStore.map(r => r.url), "all")}
                     disabled={!!unlocking || (!isUnlimitedUser && (balance ?? 0) < lockedInStore.length)}
                     className="w-full py-3.5 border-2 border-foreground text-foreground rounded-xl font-semibold text-sm hover:bg-muted/50 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                   >

@@ -5,17 +5,18 @@ import { logger } from "../utils/logger"
 export interface B2CResult {
   retailer:      string
   url:           string
-  title:         string
-  condition:     string   // "New" | "Used - Good" | "Used - Fair" | "Used - Poor" | "Refurbished" | "Unknown"
+  title:         string | null
+  condition:     string | null
   price:         number | null
   originalPrice: number | null
-  currency:      string
-  availability:  string
+  currency:      string | null
+  availability:  string | null
   imageUrl:      string | null
   rating:        number | null
   reviewCount:   number | null
   description:   string | null
-  priceSource:   "scraped" | "not_found"
+  priceSource:   "scraped" | "not_found" | null
+  isLocked?:     boolean   // true = stub sent to client; real data lives in b2c_search_history
 }
 
 // ── Step 0: Query normalization (fix typos before searching) ──────
