@@ -143,7 +143,7 @@ function PriceCard({
       )}
 
       {/* Card body — blurred when locked */}
-      <div className={`p-5 flex flex-col h-full select-none ${isLocked ? "blur-xl pointer-events-none" : ""}`}>
+      <div className={`p-5 flex flex-col h-full select-none ${isLocked ? "blur-sm pointer-events-none" : ""}`}>
         {/* Image — centered, no rank number */}
         <div className="flex justify-center mb-4">
           {result.imageUrl ? (
