@@ -104,14 +104,12 @@ function formatPrice(price: number, currency: string) {
 function PriceCard({
   result,
   isBest,
-  rank,
   allResults,
   isLocked,
   onLockedClick,
 }: {
   result:         B2CResult
   isBest:         boolean
-  rank:           number
   allResults:     B2CResult[]
   isLocked?:      boolean
   onLockedClick?: () => void
@@ -126,15 +124,15 @@ function PriceCard({
     <div
       className={`relative flex-shrink-0 w-72 snap-start rounded-2xl border bg-white dark:bg-card shadow-sm transition-all duration-200 overflow-hidden flex flex-col
         ${isBest ? "border-primary/40 ring-1 ring-primary/20" : "border-gray-200/80 dark:border-border"}
-        ${isLocked ? "cursor-pointer hover:shadow-lg hover:border-gray-300 hover:-translate-y-0.5 group" : "hover:shadow-md hover:-translate-y-0.5"}
+        ${isLocked ? "cursor-pointer hover:shadow-md" : "hover:shadow-md hover:-translate-y-0.5"}
       `}
       onClick={() => isLocked && onLockedClick?.()}
     >
-      {/* Lock overlay */}
+      {/* Lock overlay — solid enough that nothing is readable */}
       {isLocked && (
         <>
-          <div className="absolute inset-0 bg-gradient-to-b from-white/20 via-white/50 to-white/75 dark:from-black/20 dark:via-black/40 dark:to-black/60 z-10 pointer-events-none rounded-2xl transition-all duration-300 group-hover:from-white/10 group-hover:via-white/35 group-hover:to-white/60" />
-          <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-900/90 dark:bg-gray-100/90 flex items-center justify-center shadow-md z-20 transition-all duration-200 group-hover:scale-110">
+          <div className="absolute inset-0 bg-white/85 dark:bg-card/90 z-10 pointer-events-none rounded-2xl" />
+          <div className="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-900/90 dark:bg-gray-100/90 flex items-center justify-center shadow-md z-20">
             <Lock className="w-4 h-4 text-white dark:text-gray-900" />
           </div>
         </>
@@ -149,18 +147,17 @@ function PriceCard({
 
       {/* Card body — flex col so button always sticks to bottom */}
       <div className="p-5 flex flex-col h-full">
-        {/* Rank + image — fixed height */}
-        <div className="flex items-start gap-3 mb-4">
-          <span className="text-xs font-medium text-muted-foreground/50 mt-1 w-5 shrink-0">#{rank}</span>
+        {/* Image — centered, no rank number */}
+        <div className="flex justify-center mb-4">
           {result.imageUrl ? (
             <img
               src={result.imageUrl}
               alt={result.title}
-              className={`w-20 h-20 object-contain rounded-xl bg-muted/20 shrink-0 transition-all duration-300 ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}
+              className="w-20 h-20 object-contain rounded-xl bg-muted/20"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }}
             />
           ) : (
-            <div className={`w-20 h-20 rounded-xl bg-muted/40 border shrink-0 flex items-center justify-center ${isLocked ? "blur-md group-hover:blur-sm" : ""}`}>
+            <div className="w-20 h-20 rounded-xl bg-muted/40 border flex items-center justify-center">
               <span className="text-2xl font-bold text-muted-foreground/30 select-none">
                 {result.retailer.charAt(0).toUpperCase()}
               </span>
@@ -168,8 +165,8 @@ function PriceCard({
           )}
         </div>
 
-        {/* Middle content — grows to fill space, aligns all sections */}
-        <div className={`flex-1 flex flex-col gap-2 transition-all duration-300 ${isLocked ? "blur-[5px] group-hover:blur-[3px]" : ""}`}>
+        {/* Middle content — grows to fill space */}
+        <div className="flex-1 flex flex-col gap-2">
           {/* Badges */}
           <div className="flex flex-wrap items-center gap-1.5 min-h-[20px]">
             <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">{result.retailer}</span>
@@ -189,14 +186,14 @@ function PriceCard({
             <SparkScoreStars score={score} />
           </div>
 
-          {/* Description — always 2 lines, empty space if no description */}
-          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2 min-h-[32px]">
+          {/* Description — 3 lines max, no clipping words mid-sentence */}
+          <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-3 min-h-[48px]">
             {result.description ?? ""}
           </p>
         </div>
 
         {/* Price — fixed position above button */}
-        <div className={`mt-4 transition-all duration-300 ${isLocked ? "blur-[4px] group-hover:blur-[2px]" : ""}`}>
+        <div className="mt-4">
           {result.price !== null ? (
             <div className="flex items-baseline gap-2 mb-4">
               <span className="text-2xl font-semibold text-foreground">
@@ -944,8 +941,6 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
           {/* Retailer groups — horizontal scroll cards */}
           {retailerGroups.map((group, groupIdx) => {
-            let globalRank = 0
-            for (let i = 0; i < groupIdx; i++) globalRank += retailerGroups[i].items.length
             const isCollapsed = collapsedStores.has(group.retailer)
 
             return (
@@ -987,14 +982,12 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                     <div className="overflow-x-auto scrollbar-hide">
                       <div className="flex items-stretch gap-4 p-5" style={{ paddingRight: "80px" }}>
                         {group.items.map((result, itemIdx) => {
-                          const rank     = globalRank + itemIdx + 1
                           const isLocked = itemIdx > 0 && !revealedUrls.has(result.url)
                           return (
                             <PriceCard
                               key={result.url}
                               result={result}
                               isBest={groupIdx === 0 && itemIdx === 0}
-                              rank={rank}
                               allResults={results}
                               isLocked={isLocked}
                               onLockedClick={() => setUnlockModalResult(result)}
@@ -1070,17 +1063,18 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 )}
               </div>
 
-              {/* Product preview */}
+              {/* Product preview — intentionally redacted (locked content) */}
               <div className="bg-muted/40 rounded-xl p-4 mb-6 flex items-center gap-4 border border-border/50">
-                {unlockModalResult.imageUrl
-                  ? <img src={unlockModalResult.imageUrl} alt={unlockModalResult.title} className="w-16 h-16 object-contain rounded-lg shrink-0" />
-                  : <div className="w-16 h-16 rounded-lg bg-muted shrink-0 flex items-center justify-center"><span className="text-xl font-bold text-muted-foreground/40">{unlockModalResult.retailer[0]}</span></div>
-                }
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold line-clamp-2">{unlockModalResult.title}</p>
-                  {unlockModalResult.price !== null && (
-                    <p className="text-lg font-semibold mt-0.5">{formatPrice(unlockModalResult.price, unlockModalResult.currency)}</p>
-                  )}
+                <div className="w-16 h-16 rounded-lg bg-muted shrink-0 flex items-center justify-center overflow-hidden">
+                  {unlockModalResult.imageUrl
+                    ? <img src={unlockModalResult.imageUrl} alt="" className="w-full h-full object-contain blur-md scale-110" />
+                    : <span className="text-xl font-bold text-muted-foreground/40">{unlockModalResult.retailer[0]}</span>
+                  }
+                </div>
+                <div className="flex-1 min-w-0 space-y-2">
+                  <div className="h-3 rounded-full bg-muted-foreground/20 w-full" />
+                  <div className="h-3 rounded-full bg-muted-foreground/20 w-3/4" />
+                  <div className="h-4 rounded-full bg-muted-foreground/15 w-1/2 mt-1" />
                 </div>
               </div>
 
