@@ -422,6 +422,14 @@ export async function b2cSearch(
     }
 
     onProgress?.({ phase: "scraping", status: "done" })
+
+    // Close browser BEFORE "Price Ranking" starts — browser cleanup can take 30-60s on Render
+    // with many open tabs. Cap at 5s so it doesn't bleed into the finalizing phase timer.
+    await Promise.race([
+      engine.close(),
+      new Promise<void>(resolve => setTimeout(resolve, 5000)),
+    ]).catch(() => {})
+
     onProgress?.({ phase: "finalizing", status: "start" })
 
     return {
@@ -429,6 +437,10 @@ export async function b2cSearch(
       correctedQuery: wasCorrected ? searchQuery : null,
     }
   } finally {
-    await engine.close().catch(() => {})
+    // No-op if already closed above; handles early-exit paths (e.g. scrape threw)
+    await Promise.race([
+      engine.close(),
+      new Promise<void>(resolve => setTimeout(resolve, 5000)),
+    ]).catch(() => {})
   }
 }
