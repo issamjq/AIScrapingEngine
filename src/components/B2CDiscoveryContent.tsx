@@ -405,6 +405,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const [livePhase, setLivePhase]             = useState<LivePhase>(null)
   const [unlockModalResult, setUnlockModalResult] = useState<B2CResult | null>(null)
+  const [revealedUrls, setRevealedUrls]       = useState<Set<string>>(new Set())
   const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set())
 
   const BATCH_OPTIONS = [
@@ -471,6 +472,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setIsHistoryView(false)
     setSearchError(null)
     setResults([])
+    setRevealedUrls(new Set())
     setCorrectedQuery(null)
     setLastQuery(q)
 
@@ -986,7 +988,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                       <div className="flex items-stretch gap-4 p-5" style={{ paddingRight: "80px" }}>
                         {group.items.map((result, itemIdx) => {
                           const rank     = globalRank + itemIdx + 1
-                          const isLocked = false // CSS blur only — data not sent by backend
+                          const isLocked = itemIdx > 0 && !revealedUrls.has(result.url)
                           return (
                             <PriceCard
                               key={result.url}
@@ -1017,54 +1019,103 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
       )}
 
       {/* Unlock modal */}
-      {unlockModalResult && (
-        <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
-          onClick={() => setUnlockModalResult(null)}
-        >
+      {unlockModalResult && (() => {
+        const storeItems   = retailerGroups.find(g => g.retailer === unlockModalResult.retailer)?.items ?? []
+        const lockedInStore = storeItems.filter((r, i) => i > 0 && !revealedUrls.has(r.url))
+        const isUnlimitedUser = UNLIMITED_ROLES.includes(userProfile?.role ?? "")
+
+        async function doUnlock(urls: string[], creditCost: number) {
+          try {
+            const token = await getToken()
+            if (!isUnlimitedUser && creditCost > 0) {
+              const res  = await fetch(`${API}/api/wallet/deduct`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ amount: creditCost, description: `Unlocked ${creditCost} search result${creditCost > 1 ? "s" : ""}` }),
+              })
+              const json = await res.json()
+              if (!json.success) { onNavigate?.("plans"); setUnlockModalResult(null); return }
+              setBalance(json.data.balance)
+            }
+            setRevealedUrls(prev => { const next = new Set(prev); urls.forEach(u => next.add(u)); return next })
+            setUnlockModalResult(null)
+          } catch { /* silent */ }
+        }
+
+        return (
           <div
-            className="bg-card rounded-2xl shadow-2xl max-w-md w-full p-8 relative"
-            onClick={e => e.stopPropagation()}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setUnlockModalResult(null)}
           >
-            <button
-              onClick={() => setUnlockModalResult(null)}
-              className="absolute top-5 right-5 text-muted-foreground hover:text-foreground transition-colors"
+            <div
+              className="bg-card rounded-2xl shadow-2xl max-w-sm w-full p-8 relative"
+              onClick={e => e.stopPropagation()}
             >
-              <X className="w-5 h-5" />
-            </button>
+              <button onClick={() => setUnlockModalResult(null)} className="absolute top-5 right-5 text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
 
-            <div className="text-center mb-6">
-              <div className="w-14 h-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
-                <Lock className="w-6 h-6 text-foreground" />
-              </div>
-              <h3 className="text-xl font-semibold mb-1">Unlock Offer</h3>
-              <p className="text-sm text-muted-foreground">Upgrade your plan to reveal all results</p>
-            </div>
-
-            <div className="bg-muted/40 rounded-xl p-4 mb-6 flex items-center gap-4">
-              {unlockModalResult.imageUrl && (
-                <img src={unlockModalResult.imageUrl} alt={unlockModalResult.title} className="w-14 h-14 object-contain rounded-lg" />
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold line-clamp-2">{unlockModalResult.title}</p>
-                {unlockModalResult.price !== null && (
-                  <p className="text-base font-semibold mt-0.5">{formatPrice(unlockModalResult.price, unlockModalResult.currency)}</p>
+              {/* Header */}
+              <div className="text-center mb-6">
+                <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-5">
+                  <Lock className="w-7 h-7 text-foreground" />
+                </div>
+                <h3 className="text-2xl font-semibold mb-1">Unlock Offer</h3>
+                <p className="text-sm text-muted-foreground">Use 1 credit to reveal this offer</p>
+                <p className="text-sm text-muted-foreground mt-1">This offer may have better pricing or availability</p>
+                {lockedInStore.length > 1 && (
+                  <p className="text-sm font-semibold mt-2">
+                    {lockedInStore.length - 1} more {lockedInStore.length - 1 === 1 ? "offer" : "offers"} available from {unlockModalResult.retailer}
+                  </p>
                 )}
               </div>
-            </div>
 
-            <Button className="w-full" onClick={() => { setUnlockModalResult(null); onNavigate?.("plans") }}>
-              View plans
-            </Button>
-            <button
-              onClick={() => setUnlockModalResult(null)}
-              className="w-full mt-2 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Cancel
-            </button>
+              {/* Product preview */}
+              <div className="bg-muted/40 rounded-xl p-4 mb-6 flex items-center gap-4 border border-border/50">
+                {unlockModalResult.imageUrl
+                  ? <img src={unlockModalResult.imageUrl} alt={unlockModalResult.title} className="w-16 h-16 object-contain rounded-lg shrink-0" />
+                  : <div className="w-16 h-16 rounded-lg bg-muted shrink-0 flex items-center justify-center"><span className="text-xl font-bold text-muted-foreground/40">{unlockModalResult.retailer[0]}</span></div>
+                }
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold line-clamp-2">{unlockModalResult.title}</p>
+                  {unlockModalResult.price !== null && (
+                    <p className="text-lg font-semibold mt-0.5">{formatPrice(unlockModalResult.price, unlockModalResult.currency)}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex flex-col gap-2.5">
+                <button
+                  onClick={() => doUnlock([unlockModalResult.url], 1)}
+                  disabled={!isUnlimitedUser && (balance ?? 0) < 1}
+                  className="w-full py-3.5 bg-foreground text-background rounded-xl font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  Unlock with 1 Credit
+                </button>
+
+                {lockedInStore.length > 1 && (
+                  <button
+                    onClick={() => doUnlock(lockedInStore.map(r => r.url), lockedInStore.length)}
+                    disabled={!isUnlimitedUser && (balance ?? 0) < lockedInStore.length}
+                    className="w-full py-3.5 border-2 border-foreground text-foreground rounded-xl font-semibold text-sm hover:bg-muted/50 transition-colors disabled:opacity-40"
+                  >
+                    Unlock all {lockedInStore.length} offers ({lockedInStore.length} Credits)
+                  </button>
+                )}
+
+                <button onClick={() => setUnlockModalResult(null)} className="w-full py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Cancel
+                </button>
+              </div>
+
+              <p className="text-center text-sm text-muted-foreground mt-5">
+                You have {balance ?? 0} {(balance ?? 0) === 1 ? "credit" : "credits"} available
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
     </div>
   )

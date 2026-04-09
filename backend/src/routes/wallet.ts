@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from "express"
 import { AuthRequest } from "../middleware/auth"
-import { getWallet, getTransactions, addCredits } from "../services/walletService"
+import { getWallet, getTransactions, addCredits, deductCredits } from "../services/walletService"
 import { createError } from "../middleware/validate"
 
 export const walletRouter = Router()
@@ -15,6 +15,31 @@ walletRouter.get("/", async (req: AuthRequest, res: Response, next: NextFunction
     ])
     if (!wallet) return next(createError("Wallet not found", 404, "NOT_FOUND"))
     res.json({ success: true, data: { wallet, transactions } })
+  } catch (err) { next(err) }
+})
+
+// POST /api/wallet/deduct — deduct credits for unlocking blurred results (1 per card)
+walletRouter.post("/deduct", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const email  = req.email!
+    const amount = parseInt(req.body.amount) || 1
+    const desc   = req.body.description || "Unlocked search result"
+    if (amount <= 0 || amount > 20) return next(createError("invalid amount", 400, "VALIDATION"))
+    const UNLIMITED_ROLES = ["dev", "owner"]
+    const wallet = await getWallet(email)
+    if (!wallet) return next(createError("Wallet not found", 404, "NOT_FOUND"))
+    // Check role — unlimited users skip deduction
+    const { rows } = await (await import("../db/index.js")).query(
+      `SELECT role FROM allowed_users WHERE email = $1 LIMIT 1`, [email]
+    )
+    if (rows[0] && UNLIMITED_ROLES.includes(rows[0].role)) {
+      return res.json({ success: true, data: { balance: wallet.balance } })
+    }
+    const result = await deductCredits(email, amount, desc)
+    if (!result.success) {
+      return res.status(429).json({ success: false, error: { message: "Insufficient credits", code: "USAGE_LIMIT_REACHED", balance: result.balance } })
+    }
+    res.json({ success: true, data: { balance: result.balance } })
   } catch (err) { next(err) }
 })
 
