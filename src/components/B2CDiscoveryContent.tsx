@@ -400,6 +400,10 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   const [revealedUrls, setRevealedUrls]       = useState<Set<string>>(new Set())
   const [unlocking, setUnlocking]             = useState<"single" | "all" | null>(null)
   const [collapsedStores, setCollapsedStores] = useState<Set<string>>(new Set())
+  const [recentSearches, setRecentSearches]   = useState<string[]>([])
+  const [suggestionIdx, setSuggestionIdx]     = useState(-1)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const suggestionsRef                        = useRef<HTMLDivElement>(null)
 
   const BATCH_OPTIONS = [
     { value: 1, label: "Quick",    sites: "3 sites",  time: "~30s",   credits: 1 },
@@ -408,6 +412,76 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   ]
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const PRODUCT_SUGGESTIONS = [
+    // Electronics
+    "iPhone 15 Pro Max", "Samsung Galaxy S24 Ultra", "MacBook Pro M3", "iPad Pro 13 inch",
+    "AirPods Pro 2nd generation", "Sony WH-1000XM5 headphones", "PlayStation 5", "Xbox Series X",
+    "Samsung 65 inch OLED TV", "LG 55 inch 4K TV", "Dyson V15 vacuum", "Dyson Airwrap",
+    "Apple Watch Series 9", "Samsung Galaxy Watch 6", "Kindle Paperwhite",
+    "Canon EOS R6 camera", "Sony Alpha A7 IV", "GoPro Hero 12",
+    "Dell XPS 15 laptop", "HP Spectre x360", "Lenovo ThinkPad X1",
+    "Nintendo Switch OLED", "Steam Deck",
+    // Cigarettes & Tobacco
+    "Marlboro Red cigarettes", "Marlboro Gold cigarettes", "Marlboro Silver cigarettes",
+    "Marlboro Crafted cigarettes", "Camel cigarettes", "Winston cigarettes",
+    "Parliament cigarettes", "Dunhill cigarettes", "Kent cigarettes",
+    // Cars & Auto
+    "Toyota Camry 2024", "Honda Civic 2024", "BMW 3 Series 2024", "Mercedes C-Class 2024",
+    "Nissan Patrol 2024", "Toyota Land Cruiser 2024", "Kia Sportage 2024",
+    "Hyundai Tucson 2024", "Ford Mustang 2024", "Porsche 911",
+    // Fashion & Apparel
+    "Nike Air Max 270", "Nike Air Force 1", "Adidas Ultraboost", "New Balance 990",
+    "Louis Vuitton bag", "Gucci belt", "Ray-Ban Aviator sunglasses",
+    "Rolex Submariner watch", "Omega Seamaster watch", "Apple Watch Ultra 2",
+    "Levi's 501 jeans", "Ralph Lauren polo shirt", "Zara jacket",
+    // Home & Appliances
+    "Nespresso Vertuo machine", "Nespresso Original machine", "KitchenAid stand mixer",
+    "Philips Airfryer XXL", "Instant Pot Duo", "Roomba robot vacuum",
+    "IKEA KALLAX shelf", "Samsung French door refrigerator", "Bosch washing machine",
+    "Weber barbecue grill", "Vitamix blender", "De'Longhi coffee machine",
+    // Food & Health
+    "Optimum Nutrition whey protein", "Myprotein Impact Whey", "Garden of Life protein",
+    "Centrum multivitamin", "Vitamin D3 supplement", "Omega 3 fish oil",
+    "Collagen peptides powder", "Creatine monohydrate",
+    // Beauty & Personal Care
+    "Dyson Supersonic hair dryer", "Oral-B electric toothbrush", "Philips Sonicare",
+    "La Roche-Posay sunscreen", "CeraVe moisturiser", "The Ordinary serum",
+    "MAC foundation", "Charlotte Tilbury lipstick",
+    // Baby & Kids
+    "Pampers diapers", "Huggies diapers", "Chicco baby stroller",
+    "LEGO Technic set", "Barbie dreamhouse", "Hot Wheels track set",
+  ]
+
+  // Compute suggestions whenever query changes
+  const q = query.trim().toLowerCase()
+  const filteredSuggestions: Array<{ text: string; isRecent: boolean }> = q.length >= 1
+    ? [
+        ...recentSearches
+          .filter(r => r.toLowerCase().includes(q) && r.toLowerCase() !== q)
+          .slice(0, 3)
+          .map(r => ({ text: r, isRecent: true })),
+        ...PRODUCT_SUGGESTIONS
+          .filter(s => s.toLowerCase().includes(q))
+          .filter(s => !recentSearches.some(r => r.toLowerCase() === s.toLowerCase()))
+          .slice(0, 6),
+      ].slice(0, 8).map((item) => typeof item === "string" ? { text: item, isRecent: false } : item)
+    : []
+
+  // Close suggestions on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (
+        suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node) &&
+        textareaRef.current && !textareaRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false)
+        setSuggestionIdx(-1)
+      }
+    }
+    document.addEventListener("mousedown", handleOutsideClick)
+    return () => document.removeEventListener("mousedown", handleOutsideClick)
+  }, [])
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
@@ -468,6 +542,9 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
     setRevealedUrls(new Set())
     setCorrectedQuery(null)
     setLastQuery(q)
+    setRecentSearches(prev => [q, ...prev.filter(r => r.toLowerCase() !== q.toLowerCase())].slice(0, 10))
+    setShowSuggestions(false)
+    setSuggestionIdx(-1)
 
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 240_000)
@@ -694,6 +771,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
   }
 
   const renderSearchBox = (compact: boolean = false) => (
+    <div className="relative">
       <div className={`bg-card rounded-2xl shadow-lg border border-border overflow-hidden ${compact ? "p-0" : ""}`}>
         {/* Input area */}
         <div className={compact ? "flex items-center gap-2 px-4 py-3" : "flex items-start gap-3 px-6 pt-6 pb-4"}>
@@ -705,8 +783,25 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             className={`resize-none border-0 shadow-none focus-visible:ring-0 bg-transparent p-0 placeholder:text-muted-foreground/40 ${compact ? "text-sm" : "text-base"}`}
             placeholder={compact ? "Search again…" : "Ask away, I'm all ears..."}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch() }}
+            onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); setSuggestionIdx(-1) }}
+            onFocus={() => { if (query.trim().length >= 1) setShowSuggestions(true) }}
+            onKeyDown={(e) => {
+              if (showSuggestions && filteredSuggestions.length > 0) {
+                if (e.key === "ArrowDown") { e.preventDefault(); setSuggestionIdx(i => Math.min(i + 1, filteredSuggestions.length - 1)) }
+                if (e.key === "ArrowUp")   { e.preventDefault(); setSuggestionIdx(i => Math.max(i - 1, -1)) }
+                if (e.key === "Escape")    { setShowSuggestions(false); setSuggestionIdx(-1) }
+                if (e.key === "Enter" && suggestionIdx >= 0) {
+                  e.preventDefault()
+                  const chosen = filteredSuggestions[suggestionIdx].text
+                  setQuery(chosen)
+                  setShowSuggestions(false)
+                  setSuggestionIdx(-1)
+                  setTimeout(() => handleSearch(), 0)
+                  return
+                }
+              }
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSearch()
+            }}
           />
         </div>
 
@@ -781,6 +876,39 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
           </div>
         )}
       </div>
+
+      {/* Suggestions dropdown */}
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <div
+          ref={suggestionsRef}
+          className="absolute left-0 right-0 top-full mt-1.5 bg-card border border-border rounded-2xl shadow-xl z-50 overflow-hidden"
+        >
+          {filteredSuggestions.map((s, idx) => (
+            <button
+              key={s.text}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors
+                ${idx === suggestionIdx ? "bg-muted" : "hover:bg-muted/60"}
+              `}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                setQuery(s.text)
+                setShowSuggestions(false)
+                setSuggestionIdx(-1)
+                setTimeout(() => handleSearch(), 0)
+              }}
+              onMouseEnter={() => setSuggestionIdx(idx)}
+            >
+              {s.isRecent
+                ? <Search className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
+                : <Sparkles className="w-3.5 h-3.5 text-muted-foreground/40 shrink-0" />
+              }
+              <span className="flex-1 truncate">{s.text}</span>
+              {s.isRecent && <span className="text-[10px] text-muted-foreground/50 shrink-0">Recent</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 
   return (
