@@ -7,6 +7,7 @@ import { trialEndsAt } from "../middleware/usageLimit"
 import { copyGlobalStoresToUser } from "../services/companyService"
 import { createWallet } from "../services/walletService"
 import { getPlanByKey } from "../services/plansService"
+import { signupLimiter } from "../middleware/rateLimit"
 
 export const allowedUsersRouter = Router()
 
@@ -81,7 +82,7 @@ allowedUsersRouter.get("/me", async (req: AuthRequest, res: Response, next: Next
 })
 
 // POST /api/allowed-users/signup — called from onboarding screen for new users
-allowedUsersRouter.post("/signup", async (req: AuthRequest, res: Response, next: NextFunction) => {
+allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const email = req.email
     const uid   = req.uid

@@ -3,6 +3,7 @@ import { AuthRequest } from "../middleware/auth"
 import { getWallet, getTransactions, addCredits, deductCredits } from "../services/walletService"
 import { createError } from "../middleware/validate"
 import { query as dbQuery } from "../db"
+import { walletAddLimiter } from "../middleware/rateLimit"
 
 const ADMIN_ROLES = ["dev", "owner", "admin"]
 
@@ -47,7 +48,7 @@ walletRouter.post("/deduct", async (req: AuthRequest, res: Response, next: NextF
 })
 
 // POST /api/wallet/add — admin/dev only: manually add credits
-walletRouter.post("/add", async (req: AuthRequest, res: Response, next: NextFunction) => {
+walletRouter.post("/add", walletAddLimiter as any, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const callerEmail = req.email!
     // Role check — only admin/dev/owner may add credits

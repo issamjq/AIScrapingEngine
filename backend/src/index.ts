@@ -27,6 +27,7 @@ import { exportRouter }             from "./routes/export"
 import { searchRouter }             from "./routes/search"
 import { suggestionsRouter }        from "./routes/suggestions"
 import { requireAuth }              from "./middleware/auth"
+import { globalLimiter }            from "./middleware/rateLimit"
 
 const app  = express()
 const PORT = process.env.PORT ?? 8080
@@ -51,6 +52,9 @@ app.use(cors({
 app.use(morgan("dev"))
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
+
+// Global rate limit — all API routes
+app.use("/api/", globalLimiter)
 
 // Health check
 app.get("/health", (_req, res) => {

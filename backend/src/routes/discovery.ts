@@ -10,6 +10,7 @@ import { AuthRequest } from "../middleware/auth"
 import { logger } from "../utils/logger"
 import { query as dbQuery } from "../db"
 import { upsertSuggestion } from "../services/suggestionsService"
+import { b2cSearchLimiter, unlockLimiter } from "../middleware/rateLimit"
 
 export const discoveryRouter = Router()
 
@@ -140,7 +141,7 @@ discoveryRouter.post("/ai-match", checkUsageLimit as any, async (req, res, next)
 
 // POST /api/discovery/b2c-search
 // B2C price discovery: web search + Playwright scrape + Vision AI fallback = 3 credits
-discoveryRouter.post("/b2c-search", async (req, res, next) => {
+discoveryRouter.post("/b2c-search", b2cSearchLimiter as any, async (req, res, next) => {
   try {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
@@ -307,7 +308,7 @@ discoveryRouter.get("/b2c-history", async (req, res, next) => {
 
 // POST /api/discovery/b2c-unlock
 // Validates credits, reads real data from history, returns unlocked results
-discoveryRouter.post("/b2c-unlock", async (req, res, next) => {
+discoveryRouter.post("/b2c-unlock", unlockLimiter as any, async (req, res, next) => {
   try {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false, error: { message: "Unauthenticated", code: "UNAUTHENTICATED" } })
