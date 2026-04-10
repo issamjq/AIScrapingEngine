@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import {
   Compass, Search, CheckCircle, ExternalLink,
   Loader2, Plus, AlertCircle, Lock, Sparkles, Bot,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, X, Globe, Database,
 } from "lucide-react"
 import { PageSkeleton } from "./PageSkeleton"
 import { PlansModal } from "./PlansModal"
@@ -238,15 +238,86 @@ function MarketplaceDropdown({
   )
 }
 
-// ── B2B inner component (all hooks live here) ─────────────────────
-function B2BDiscoveryContent() {
+// ── AI Thinking Log ───────────────────────────────────────────────
+interface LogStep {
+  id: string
+  text: string
+  status: "pending" | "running" | "done" | "error"
+  detail?: string
+  startedAt?: number
+  endedAt?: number
+}
+
+function formatMs(ms: number) {
+  if (ms < 1000) return `${ms}ms`
+  const s = Math.floor(ms / 1000)
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
+}
+
+function ThinkingLog({ steps, startedAt, onDismiss }: { steps: LogStep[]; startedAt: number; onDismiss: () => void }) {
+  const isDone = steps.length > 0 && steps.every(s => s.status === "done" || s.status === "error")
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (isDone) return
+    const t = setInterval(() => setTick(n => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [isDone])
+  const elapsed = !isDone && startedAt ? Date.now() - startedAt : null
+  const totalTook = isDone && steps.some(s => s.endedAt)
+    ? Math.max(...steps.filter(s => s.endedAt).map(s => s.endedAt!)) - startedAt : null
+
+  return (
+    <div className="rounded-2xl border bg-card p-5 font-mono text-sm shadow-sm">
+      <div className="flex items-center justify-between mb-4 text-xs">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-3.5 w-3.5" />
+          <span className="font-semibold">AI Discovery Agent</span>
+          {!isDone && <span className="text-amber-500">— running</span>}
+          {isDone  && <span className="text-green-500">— complete</span>}
+        </div>
+        <div className="flex items-center gap-3">
+          {!isDone && elapsed !== null && <span className="text-amber-500 tabular-nums">{formatMs(elapsed)}</span>}
+          {isDone && totalTook !== null && <span className="text-green-500 tabular-nums">finished in {formatMs(totalTook)}</span>}
+          {isDone && <button onClick={onDismiss} className="p-1 rounded hover:bg-muted transition-colors"><X className="h-3.5 w-3.5 text-muted-foreground" /></button>}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {steps.map(step => {
+          const took = step.startedAt && step.endedAt ? step.endedAt - step.startedAt : null
+          return (
+            <div key={step.id} className="flex items-start gap-2.5">
+              {step.status === "running" && <div className="w-3.5 h-3.5 rounded-full border-2 border-amber-200 border-t-amber-500 animate-spin mt-0.5 shrink-0" />}
+              {step.status === "done"    && <CheckCircle className="h-3.5 w-3.5 text-green-500 mt-0.5 shrink-0" />}
+              {step.status === "error"   && <AlertCircle className="h-3.5 w-3.5 text-destructive mt-0.5 shrink-0" />}
+              {step.status === "pending" && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted mt-0.5 shrink-0" />}
+              <div className="flex items-baseline gap-2 flex-wrap flex-1">
+                <span className={step.status === "done" ? "text-green-600 dark:text-green-400" : step.status === "error" ? "text-destructive" : "text-amber-600 dark:text-amber-400"}>{step.text}</span>
+                {step.detail && <span className="text-xs text-muted-foreground">{step.detail}</span>}
+              </div>
+              {took !== null && <span className="text-xs text-muted-foreground tabular-nums shrink-0 ml-2">{formatMs(took)}</span>}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── B2B inner component ───────────────────────────────────────────
+function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (page: string) => void; onSearchComplete?: () => void }) {
   const { user } = useAuth()
 
+  // ── Mode toggle: "ai" = same as B2C price search, "catalog" = 3-step wizard
+  const [mode, setMode] = useState<"ai" | "catalog">("ai")
+
+  // ── Shared state ──────────────────────────────────────────────────
   const [loading, setLoading]                     = useState(true)
   const [companies, setCompanies]                 = useState<any[]>([])
-  const [currentStep, setCurrentStep]             = useState<1 | 2 | 3>(1)
-
   const [query, setQuery]                         = useState("")
+  const [userProfile, setUserProfile]             = useState<{ subscription: string; role: string } | null>(null)
+
+  // ── Catalog mode state ────────────────────────────────────────────
+  const [currentStep, setCurrentStep]             = useState<1 | 2 | 3>(1)
   const [selectedRetailers, setSelectedRetailers] = useState<string[]>([])
   const [searching, setSearching]                 = useState(false)
   const [searchingLabel, setSearchingLabel]       = useState<string>("")
@@ -257,7 +328,16 @@ function B2BDiscoveryContent() {
   const [confirmed, setConfirmed]                 = useState<Set<string>>(new Set())
   const [confirmSuccess, setConfirmSuccess]       = useState<string | null>(null)
 
-  // AI Match dialog
+  // Catalog mode — AI Thinking Log
+  const [logSteps, setLogSteps]                   = useState<LogStep[]>([])
+  const [logStartedAt, setLogStartedAt]           = useState(0)
+  const [showLog, setShowLog]                     = useState(true)
+  const [catalogPhase, setCatalogPhase]           = useState<"search" | "processing" | "review" | "results">("search")
+  const [catalogResults, setCatalogResults]       = useState<Array<{ company: any; matches: any[] }>>([])
+  const [catalogSelected, setCatalogSelected]     = useState<Set<string>>(new Set())
+  const [catalogSaving, setCatalogSaving]         = useState(false)
+
+  // AI Match dialog (old flow — kept for compatibility)
   const [showMatch, setShowMatch]                 = useState(false)
   const [matching, setMatching]                   = useState(false)
   const [matchError, setMatchError]               = useState<string | null>(null)
@@ -274,8 +354,7 @@ function B2BDiscoveryContent() {
 
   // Plans modal
   const [showPlans, setShowPlans]     = useState(false)
-  const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "b2c" })
-  const [userProfile, setUserProfile] = useState<{ subscription: string; role: string; daily_searches_used: number; trial_ends_at?: string | null } | null>(null)
+  const [plansData, setPlansData]     = useState<{ used: number; limit: number; subscription: string; role: string; trial_ends_at?: string | null }>({ used: 0, limit: 10, subscription: "free", role: "b2b" })
 
   const visiblePerRetailer = userProfile?.subscription === "free" ? 3 : Infinity
   const groups = useMemo(() => groupByRetailer(allResults, visiblePerRetailer), [allResults, visiblePerRetailer])
@@ -283,6 +362,31 @@ function B2BDiscoveryContent() {
 
   async function getToken() {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
+  }
+
+  // Log helpers for catalog mode
+  function addLog(id: string, text: string, status: LogStep["status"], detail?: string) {
+    const now = Date.now()
+    setLogSteps(prev => {
+      if (prev.find(s => s.id === id)) {
+        return prev.map(s => s.id === id ? {
+          ...s, text, status, detail,
+          ...(status === "running" && !s.startedAt ? { startedAt: now } : {}),
+          ...(status === "done" || status === "error" ? { endedAt: now } : {}),
+        } : s)
+      }
+      return [...prev, { id, text, status, detail, startedAt: status === "running" ? now : undefined, endedAt: (status === "done" || status === "error") ? now : undefined }]
+    })
+  }
+  function updateLog(id: string, status: LogStep["status"], text?: string, detail?: string) {
+    const now = Date.now()
+    setLogSteps(prev => prev.map(s => s.id === id ? {
+      ...s, status,
+      ...(text !== undefined ? { text } : {}),
+      ...(detail !== undefined ? { detail } : {}),
+      ...(status === "running" && !s.startedAt ? { startedAt: now } : {}),
+      ...(status === "done" || status === "error" ? { endedAt: now } : {}),
+    } : s))
   }
 
   useEffect(() => {
@@ -378,6 +482,105 @@ function B2BDiscoveryContent() {
       next.has(url) ? next.delete(url) : next.add(url)
       return next
     })
+  }
+
+  // ── Catalog discovery handler (3-step wizard) ────────────────────
+  async function handleCatalogDiscover() {
+    if (!query.trim() || selectedRetailers.length === 0) return
+    setCatalogPhase("processing")
+    setCatalogResults([])
+    setCatalogSelected(new Set())
+    setLogSteps([])
+    setShowLog(true)
+    setLogStartedAt(Date.now())
+
+    const targetCompanies = companies.filter(c => selectedRetailers.includes(retailerValue(c)))
+    addLog("init", `Starting discovery for "${query}"`, "running")
+    targetCompanies.forEach(c => addLog(`scan-${c.id}`, `Scanning ${c.name}…`, "running"))
+
+    const allGroups: Array<{ company: any; matches: any[] }> = []
+
+    await Promise.all(targetCompanies.map(async company => {
+      const t1 = setTimeout(() => updateLog(`scan-${company.id}`, "running", `Scanning ${company.name}…`, "still working…"), 30000)
+      const t2 = setTimeout(() => updateLog(`scan-${company.id}`, "running", `Scanning ${company.name}…`, "taking longer than usual…"), 60000)
+      try {
+        const token = await getToken()
+        const res = await fetch(`${API}/api/discovery/search`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ company_id: company.id, query: query.trim() }),
+        })
+        const json = await res.json()
+        clearTimeout(t1); clearTimeout(t2)
+        if (json.success) {
+          const matches = json.data?.results || []
+          allGroups.push({ company, matches })
+          updateLog(`scan-${company.id}`, "done", `Scanned ${company.name}`, `→ ${matches.length} product${matches.length !== 1 ? "s" : ""} found`)
+        } else {
+          updateLog(`scan-${company.id}`, "error", `Scanned ${company.name}`, "→ failed")
+        }
+      } catch {
+        clearTimeout(t1); clearTimeout(t2)
+        updateLog(`scan-${company.id}`, "error", `Scanned ${company.name}`, "→ failed")
+      }
+    }))
+
+    const validGroups = allGroups.filter(g => g.matches.length > 0).sort((a, b) => b.matches.length - a.matches.length)
+    const totalFound = validGroups.reduce((s, g) => s + g.matches.length, 0)
+    updateLog("init", "done", "Search complete", `${totalFound} products across ${validGroups.length} marketplace${validGroups.length !== 1 ? "s" : ""}`)
+
+    if (validGroups.length === 0) {
+      addLog("done", "No products found. Try a different query.", "error")
+      setCatalogPhase("search")
+      return
+    }
+
+    // Auto-select new products that matched with no size mismatch
+    const autoSelected = new Set<string>()
+    validGroups.forEach(({ company, matches }) => {
+      matches.forEach((m: any, i: number) => {
+        if (!m.already_tracked && m.match) autoSelected.add(`${company.id}-${i}`)
+      })
+    })
+
+    addLog("review", `Ready — ${autoSelected.size} new product${autoSelected.size !== 1 ? "s" : ""} to add`, "done")
+    setCatalogSelected(autoSelected)
+    setCatalogResults(validGroups)
+    setCatalogPhase("review")
+  }
+
+  async function handleCatalogSave() {
+    const toSave: Array<{ companyId: number; product_id: number; url: string; image_url?: string | null; price?: number | null; original_price?: number | null; currency?: string; availability?: string }> = []
+    catalogResults.forEach(({ company, matches }) => {
+      matches.forEach((m: any, i: number) => {
+        const key = `${company.id}-${i}`
+        if (catalogSelected.has(key) && m.match && !m.already_tracked) {
+          toSave.push({ companyId: company.id, product_id: m.match.product.id, url: m.found.url, image_url: m.found.imageUrl, price: m.found.price, original_price: m.found.original_price, currency: m.found.currency, availability: m.found.availability })
+        }
+      })
+    })
+    if (toSave.length === 0) return
+    setCatalogSaving(true)
+    addLog("save", `Saving ${toSave.length} URL${toSave.length !== 1 ? "s" : ""}…`, "running")
+    try {
+      const token = await getToken()
+      const h = { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+      const grouped: Record<number, any[]> = {}
+      toSave.forEach(({ companyId, ...rest }) => { if (!grouped[companyId]) grouped[companyId] = []; grouped[companyId].push(rest) })
+      let added = 0
+      for (const [cId, mappings] of Object.entries(grouped)) {
+        const res = await fetch(`${API}/api/discovery/confirm`, { method: "POST", headers: h, body: JSON.stringify({ company_id: Number(cId), mappings }) })
+        const json = await res.json()
+        if (json.success) added += json.data?.added || 0
+      }
+      updateLog("save", "done", `Saved ${added} URL${added !== 1 ? "s" : ""}`, "")
+      addLog("alldone", `Done! ${added} product${added !== 1 ? "s" : ""} added to monitoring.`, "done")
+      setCatalogPhase("results")
+    } catch {
+      updateLog("save", "error", "Failed to save URLs", "")
+    } finally {
+      setCatalogSaving(false)
+    }
   }
 
   async function openMatchDialog() {
@@ -492,100 +695,112 @@ function B2BDiscoveryContent() {
           Market Discovery
         </h1>
         <p className="text-sm text-muted-foreground mt-0.5">
-          AI-powered product discovery — finds, matches, saves, and prices everything in one click
+          AI-powered product discovery — find prices globally or match to your catalog
         </p>
       </div>
 
-      {/* Step indicator */}
-      <StepBar current={currentStep} />
+      {/* ── Mode toggle ── */}
+      <div className="inline-flex rounded-xl border bg-muted/40 p-1 gap-1">
+        <button
+          onClick={() => setMode("ai")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${mode === "ai" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          <Globe className="h-4 w-4" />
+          AI Price Search
+        </button>
+        <button
+          onClick={() => setMode("catalog")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${mode === "catalog" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          <Database className="h-4 w-4" />
+          Catalog Discovery
+        </button>
+      </div>
 
-      {/* Success banner */}
-      {confirmSuccess && (
-        <div className="rounded-xl bg-green-500/10 text-green-700 dark:text-green-400 text-sm px-4 py-3 flex items-center gap-2">
-          <CheckCircle className="h-4 w-4 shrink-0" />
-          {confirmSuccess}
-          <button className="ml-auto text-xs underline" onClick={() => setConfirmSuccess(null)}>Dismiss</button>
-        </div>
+      {/* ── AI Price Search mode: reuse the B2C component embedded ── */}
+      {mode === "ai" && (
+        <B2CDiscoveryContent embedded onSearchComplete={onSearchComplete} onNavigate={onNavigate} />
       )}
 
-      {/* ── Step 1: Search form ── */}
-      {currentStep === 1 && (
-        <div className="rounded-2xl border bg-card p-6 space-y-5 shadow-sm">
-          <div>
-            <h2 className="text-lg font-semibold">Search for products</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Enter a product name — we'll find it, match it to your catalog, save it, and fetch prices. All automatically.
-            </p>
-          </div>
+      {/* ── Catalog Discovery mode ── */}
+      {mode === "catalog" && (
+        <div className="space-y-5">
+          {/* Step indicator */}
+          <StepBar current={catalogPhase === "search" || catalogPhase === "processing" ? 1 : catalogPhase === "review" ? 2 : 3} />
 
-          {/* Search input */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <input
-              className="w-full rounded-xl border border-input bg-background pl-10 pr-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              placeholder="e.g. Marvis Classic Whitening Toothpaste"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            />
-          </div>
-
-          {/* Marketplace dropdown */}
-          {companies.length === 0 ? (
-            <div className="rounded-xl border border-input px-4 py-3 text-sm text-muted-foreground">
-              Loading stores…
+          {/* Success banner */}
+          {confirmSuccess && (
+            <div className="rounded-xl bg-green-500/10 text-green-700 dark:text-green-400 text-sm px-4 py-3 flex items-center gap-2">
+              <CheckCircle className="h-4 w-4 shrink-0" />
+              {confirmSuccess}
+              <button className="ml-auto text-xs underline" onClick={() => setConfirmSuccess(null)}>Dismiss</button>
             </div>
-          ) : (
-            <MarketplaceDropdown
-              companies={companies}
-              selected={selectedRetailers}
-              onToggle={toggleRetailer}
-              onSelectAll={() => setSelectedRetailers(companies.map(retailerValue))}
-              onDeselectAll={() => setSelectedRetailers([])}
-            />
           )}
 
-          {/* Usage counter */}
-          {userProfile && !["dev","owner"].includes(userProfile.role) && (() => {
-            const isB2C   = userProfile.role === "b2c"
-            const LIMITS  = isB2C ? { trial: 30, free: 15, paid: 150 } : { trial: 20, free: 10, paid: 50 }
-            const limit   = LIMITS[userProfile.subscription as keyof typeof LIMITS] ?? LIMITS.free
-            const unit    = isB2C ? "credits" : "searches"
-            const period  = isB2C ? "this month" : "this week"
-            return (
-              <div className="text-xs text-muted-foreground">
-                {userProfile.daily_searches_used} / {limit} {unit} {period}
-                {" · "}
-                <button className="underline hover:text-foreground" onClick={() => { setPlansData({ used: userProfile.daily_searches_used, limit, subscription: userProfile.subscription, role: userProfile.role, trial_ends_at: userProfile.trial_ends_at }); setShowPlans(true) }}>
-                  {userProfile.subscription} plan
-                </button>
-              </div>
-            )
-          })()}
+          {/* ── Step 1: Search form ── */}
+          {(catalogPhase === "search" || catalogPhase === "processing") && (
+            <div className="rounded-2xl border bg-card p-6 space-y-5 shadow-sm">
+              {catalogPhase === "processing" ? (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium"><span className="text-amber-500 mr-2">●</span>"{query}"</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{companies.filter(c => selectedRetailers.includes(retailerValue(c))).map(c => c.name).join(", ")}</p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <h2 className="text-lg font-semibold">Search your catalog</h2>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Enter a product name — we'll find it on your stores, match to your catalog, and save prices automatically.
+                    </p>
+                  </div>
 
-          {searchError && (
-            <div className="rounded-lg bg-destructive/10 text-destructive text-sm px-4 py-3">{searchError}</div>
+                  {/* Search input */}
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <input
+                      className="w-full rounded-xl border border-input bg-background pl-10 pr-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                      placeholder="e.g. Marvis Classic Whitening Toothpaste"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleCatalogDiscover()}
+                    />
+                  </div>
+
+                  {/* Marketplace dropdown */}
+                  {companies.length === 0 ? (
+                    <div className="rounded-xl border border-input px-4 py-3 text-sm text-muted-foreground">Loading stores…</div>
+                  ) : (
+                    <MarketplaceDropdown
+                      companies={companies}
+                      selected={selectedRetailers}
+                      onToggle={toggleRetailer}
+                      onSelectAll={() => setSelectedRetailers(companies.map(retailerValue))}
+                      onDeselectAll={() => setSelectedRetailers([])}
+                    />
+                  )}
+
+                  <Button
+                    className="w-full rounded-xl py-3 gap-2 text-sm font-medium"
+                    onClick={handleCatalogDiscover}
+                    disabled={!query.trim() || selectedRetailers.length === 0}
+                  >
+                    <Database className="h-4 w-4" />
+                    Discover &amp; Match Catalog
+                  </Button>
+                </>
+              )}
+            </div>
           )}
 
-          {/* CTA button */}
-          <Button
-            className="w-full rounded-xl py-3 gap-2 text-sm font-medium"
-            onClick={handleSearch}
-            disabled={!query.trim() || searching || selectedRetailers.length === 0}
-          >
-            {searching
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> {searchingLabel ? `Searching ${searchingLabel}…` : "Starting search…"}</>
-              : <><Sparkles className="h-4 w-4" /> Discover &amp; Get Prices</>
-            }
-          </Button>
-          {searching && (
-            <p className="text-center text-xs text-muted-foreground">Up to 60 seconds — retries automatically if rate limited</p>
+          {/* ── AI Thinking Log ── */}
+          {logSteps.length > 0 && catalogPhase !== "search" && showLog && (
+            <ThinkingLog steps={logSteps} startedAt={logStartedAt} onDismiss={() => setShowLog(false)} />
           )}
-        </div>
-      )}
 
-      {/* ── Step 2: Review results ── */}
-      {currentStep === 2 && (
+          {/* ── Step 2: Review results ── */}
+          {(catalogPhase === "review" || catalogPhase === "results") && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -600,104 +815,97 @@ function B2BDiscoveryContent() {
             </Button>
           </div>
 
-          {searched && !searchError && groups.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <Compass className="h-10 w-10 text-muted-foreground/40" />
-              <p className="text-sm text-muted-foreground">No listings found. Try a more specific product name.</p>
-              <Button variant="outline" size="sm" onClick={() => setCurrentStep(1)}>Try again</Button>
-            </div>
-          )}
-
-          {groups.map((group) => (
-            <div key={group.retailer} className="rounded-2xl border bg-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">
+                  {catalogResults.reduce((s, g) => s + g.matches.length, 0)} products found for "{query}"
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">Review matches and select what to track.</p>
+              </div>
               <div className="flex items-center gap-2">
-                <Badge variant="outline" className="text-xs font-medium">{group.retailer}</Badge>
-                <span className="text-xs text-muted-foreground">
-                  {group.visible.length + group.blurred.length} listing{group.visible.length + group.blurred.length !== 1 ? "s" : ""}
-                </span>
+                {catalogPhase === "review" && (
+                  <Button size="sm" className="gap-1.5" onClick={handleCatalogSave} disabled={catalogSelected.size === 0 || catalogSaving}>
+                    {catalogSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {catalogSaving ? "Saving…" : `Track ${catalogSelected.size} Product${catalogSelected.size !== 1 ? "s" : ""}`}
+                  </Button>
+                )}
+                <Button variant="outline" size="sm" onClick={() => { setCatalogPhase("search"); setCatalogResults([]); setLogSteps([]) }}>
+                  New Search
+                </Button>
               </div>
+            </div>
 
-              <div className="space-y-2">
-                {group.visible.map((r) => (
-                  <div key={r.url} className="flex items-start gap-3 rounded-xl border p-3">
-                    <Checkbox
-                      checked={confirmed.has(r.url)}
-                      onCheckedChange={() => toggleConfirm(r.url)}
-                      className="mt-0.5 shrink-0"
-                    />
-                    <div className="flex-1 min-w-0 space-y-0.5">
-                      <span className="text-sm font-medium line-clamp-1">{r.title}</span>
-                      <a
-                        href={r.url} target="_blank" rel="noopener noreferrer"
-                        className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1 truncate"
-                      >
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{r.url}</span>
-                      </a>
+            {catalogResults.map(({ company, matches }) => {
+              const selectableKeys = matches.map((_, i) => `${company.id}-${i}`).filter((_, i) => !matches[i].already_tracked && matches[i].match)
+              const allChecked = selectableKeys.length > 0 && selectableKeys.every(k => catalogSelected.has(k))
+              return (
+                <div key={company.id} className="rounded-2xl border bg-card overflow-hidden">
+                  <div className="px-5 py-3 bg-muted/40 border-b flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">{company.name}</span>
+                      <span className="text-xs text-muted-foreground">{matches.length} result{matches.length !== 1 ? "s" : ""}</span>
                     </div>
-                    {confirmed.has(r.url) && <CheckCircle className="h-4 w-4 text-green-500 shrink-0 mt-0.5" />}
+                    {catalogPhase === "review" && selectableKeys.length > 0 && (
+                      <button onClick={() => {
+                        if (allChecked) setCatalogSelected(prev => { const n = new Set(prev); selectableKeys.forEach(k => n.delete(k)); return n })
+                        else setCatalogSelected(prev => new Set([...prev, ...selectableKeys]))
+                      }} className="text-xs text-muted-foreground hover:text-foreground">
+                        {allChecked ? "Deselect all" : "Select all"}
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-
-              {group.blurred.length > 0 && (
-                <div className="relative rounded-xl overflow-hidden">
-                  <div className="absolute inset-0 backdrop-blur-sm bg-background/60 z-10 flex items-center justify-center">
-                    <div className="text-center bg-card border shadow-lg rounded-xl px-6 py-5 max-w-xs mx-4">
-                      <div className="flex justify-center mb-2">
-                        <div className="rounded-full bg-primary/10 p-2">
-                          <Lock className="h-5 w-5 text-primary" />
+                  <div className="divide-y">
+                    {matches.map((m: any, i: number) => {
+                      const key = `${company.id}-${i}`
+                      const isTracked = m.already_tracked
+                      const resolvedImage = m.found?.imageUrl ?? null
+                      return (
+                        <div key={key} className={`p-4 flex items-center gap-3 sm:gap-4 transition-colors ${isTracked ? "opacity-55" : ""}`}>
+                          {resolvedImage ? (
+                            <img src={resolvedImage} alt={m.found?.name} className="w-12 h-12 rounded-xl object-cover shrink-0 bg-muted" onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+                          ) : <div className="w-12 h-12 shrink-0" />}
+                          <div className="shrink-0">
+                            {catalogPhase === "review" && !isTracked && m.match ? (
+                              <button onClick={() => setCatalogSelected(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })}
+                                className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${catalogSelected.has(key) ? "bg-foreground border-foreground" : "border-muted-foreground/30 hover:border-muted-foreground"}`}>
+                                {catalogSelected.has(key) && <CheckCircle className="w-3 h-3 text-background" />}
+                              </button>
+                            ) : isTracked ? <CheckCircle className="w-4 h-4 text-green-500" /> : <div className="w-4 h-4 rounded-full border-2 border-muted" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold mb-0.5 leading-snug line-clamp-1">{m.found?.name}</p>
+                            {m.match ? (
+                              <p className="text-xs text-muted-foreground mb-1">
+                                Matched: <span className="text-foreground">{m.match.product.internal_name}</span>
+                                <span className="ml-1.5 px-1.5 py-0.5 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 rounded text-[10px] font-medium">
+                                  {Math.round(m.match.confidence * 100)}%
+                                </span>
+                              </p>
+                            ) : <p className="text-xs text-amber-600 mb-1">No match in catalog</p>}
+                            {m.found?.url && (
+                              <a href={m.found.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-blue-500 hover:underline">
+                                View on {company.name} <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right">
+                            {isTracked ? <span className="text-xs text-green-600 font-medium">Already tracked</span> :
+                              m.found?.price != null ? (
+                                <div className="px-3 py-1.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm font-semibold text-green-700 dark:text-green-400">
+                                  {m.found.currency || "AED"} {m.found.price.toFixed(2)}
+                                </div>
+                              ) : null}
+                          </div>
                         </div>
-                      </div>
-                      <p className="text-sm font-semibold mb-1">
-                        {group.blurred.length} more listing{group.blurred.length !== 1 ? "s" : ""} hidden
-                      </p>
-                      <p className="text-xs text-muted-foreground mb-3">Upgrade to Pro to unlock all results</p>
-                      <Button size="sm" className="w-full gap-1.5" onClick={() => { setPlansData({ used: userProfile?.daily_searches_used || 0, limit: 999, subscription: userProfile?.subscription || "free", role: userProfile?.role || "b2c", trial_ends_at: userProfile?.trial_ends_at }); setShowPlans(true) }}>
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Upgrade to Pro
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2 opacity-30 pointer-events-none select-none">
-                    {group.blurred.map((r) => (
-                      <div key={r.url} className="flex items-start gap-3 rounded-xl border p-3">
-                        <div className="h-4 w-4 rounded border mt-0.5 shrink-0" />
-                        <div className="flex-1 min-w-0 space-y-0.5">
-                          <span className="text-sm font-medium line-clamp-1">{r.title}</span>
-                          <span className="text-xs text-muted-foreground truncate block">{r.url}</span>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
-
-          {confirmed.size > 0 && (
-            <div className="rounded-2xl border bg-card p-4 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">{confirmed.size} listing{confirmed.size !== 1 ? "s" : ""} selected</span>
-              <Button size="sm" className="gap-1.5" onClick={openMatchDialog}>
-                <Bot className="h-4 w-4" />
-                AI Match &amp; Add to Tracked
-              </Button>
-            </div>
-          )}
-
-          {/* Stats */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: "Listings Found",     value: String(totalFound)     },
-              { label: "Retailers Searched", value: String(groups.length)  },
-              { label: "Locked Results",     value: String(totalBlurred)   },
-            ].map(({ label, value }) => (
-              <div key={label} className="rounded-2xl border bg-card p-4 text-center">
-                <div className="text-2xl font-bold">{value}</div>
-                <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
-              </div>
-            ))}
+              )
+            })}
           </div>
+        )}
+
         </div>
       )}
 
@@ -712,8 +920,8 @@ function B2BDiscoveryContent() {
         trialEndsAt={plansData.trial_ends_at}
       />
 
-      {/* AI Match Dialog (Step 3) */}
-      <Dialog open={showMatch} onOpenChange={(open) => { if (!saving) { setShowMatch(open); if (!open) setCurrentStep(2) } }}>
+      {/* AI Match Dialog — kept for old flow compatibility, not shown in new catalog mode */}
+      <Dialog open={showMatch} onOpenChange={(open) => { if (!saving) { setShowMatch(open) } }}>
         <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -894,5 +1102,5 @@ function B2BDiscoveryContent() {
 // ── Public export: routes by role ─────────────────────────────────
 export function DiscoveringContent({ role, onNavigate, selectedHistoryEntry, onClearHistory, onSearchComplete }: { role?: string; onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void; onSearchComplete?: () => void }) {
   if (role === "b2c") return <B2CDiscoveryContent onNavigate={onNavigate} selectedHistoryEntry={selectedHistoryEntry} onClearHistory={onClearHistory} onSearchComplete={onSearchComplete} />
-  return <B2BDiscoveryContent />
+  return <B2BDiscoveryContent onNavigate={onNavigate} onSearchComplete={onSearchComplete} />
 }

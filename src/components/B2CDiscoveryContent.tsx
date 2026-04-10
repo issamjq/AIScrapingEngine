@@ -422,7 +422,7 @@ function SearchingState({ query, livePhase, batch, recovering, notifyPref, onNot
 }
 
 // ── Main component ────────────────────────────────────────────────
-export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearHistory, onSearchComplete }: { onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void; onSearchComplete?: () => void }) {
+export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearHistory, onSearchComplete, embedded }: { onNavigate?: (page: string) => void; selectedHistoryEntry?: any; onClearHistory?: () => void; onSearchComplete?: () => void; embedded?: boolean }) {
   const { user }                              = useAuth()
 
   const [loading, setLoading]                 = useState(true)
@@ -1205,28 +1205,30 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
 
       {/* ── IDLE: centered like Claude / ChatGPT ── */}
       {phase === "idle" && (
-        <div className="flex-1 flex flex-col items-center justify-center gap-6 px-2 py-12">
+        <div className={`flex-1 flex flex-col items-center justify-center gap-6 px-2 ${embedded ? "py-4" : "py-12"}`}>
 
-          {/* Hero — left-aligned like image 2 */}
-          <div className="w-full max-w-2xl">
-            <div className="flex items-center gap-4 mb-4">
-              <img src="/spark-logo.gif" alt="Spark AI" className="h-24 w-24 object-contain drop-shadow-md shrink-0" />
-              <div>
-                <p className="text-xs font-semibold text-primary tracking-widest uppercase mb-0.5">Price Discovery</p>
-                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight">Spark AI</h1>
+          {/* Hero — hidden when embedded inside B2B mode */}
+          {!embedded && (
+            <div className="w-full max-w-2xl">
+              <div className="flex items-center gap-4 mb-4">
+                <img src="/spark-logo.gif" alt="Spark AI" className="h-24 w-24 object-contain drop-shadow-md shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-primary tracking-widest uppercase mb-0.5">Price Discovery</p>
+                  <h1 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight">Spark AI</h1>
+                </div>
               </div>
+              <p className="text-muted-foreground text-base">
+                Search any product — AI finds the best prices across every marketplace worldwide
+              </p>
             </div>
-            <p className="text-muted-foreground text-base">
-              Search any product — AI finds the best prices across every marketplace worldwide
-            </p>
-          </div>
+          )}
 
           <div className="w-full max-w-2xl">
             {renderSearchBox()}
           </div>
 
-          {/* Category chips + dropdown suggestions */}
-          <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
+          {/* Category chips + dropdown suggestions — hidden when embedded */}
+          {!embedded && <div className="flex flex-col items-center gap-3 w-full max-w-2xl">
             {/* Category row */}
             <div className="flex flex-wrap gap-2 justify-center">
               {CATEGORIES.map((cat) => (
@@ -1275,6 +1277,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
               </div>
             )}
           </div>
+          }
 
         </div>
       )}
