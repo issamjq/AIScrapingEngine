@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react"
 import { toast } from "sonner"
+import notificationSound from "@/assets/notification.mpeg"
 import { Button } from "./ui/button"
 import { Textarea } from "./ui/textarea"
 import {
@@ -15,6 +16,13 @@ export const NOTIFY_PREF_KEY  = "pref_notify_search"  // exported so SettingsCon
 
 const UNLIMITED_ROLES = ["dev", "owner"]
 
+function playNotificationSound() {
+  try {
+    const audio = new Audio(notificationSound)
+    audio.volume = 0.6
+    audio.play().catch(() => {})
+  } catch { /* ignore if audio not supported */ }
+}
 
 // ── Condition badge ───────────────────────────────────────────────
 const CONDITION_STYLES: Record<string, string> = {
@@ -709,6 +717,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
             ? JSON.parse(match.results)
             : (match.results || [])
           applyResult(match.query, recovered, match.id, 8)
+          playNotificationSound()
           toast.success("Search complete!", { description: `Results ready for "${match.query}"` })
           fireBrowserNotification(match.query)
         }
@@ -871,6 +880,7 @@ export function B2CDiscoveryContent({ onNavigate, selectedHistoryEntry, onClearH
                 status: "done", results: data.results || [],
                 historyId: data.historyId ?? null, limit: data.limit ?? 3,
               }))
+              playNotificationSound()
               toast.success("Search complete!", { description: `Results ready for "${finalQuery}"` })
               fireBrowserNotification(finalQuery)
               onSearchComplete?.()
