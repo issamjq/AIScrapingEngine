@@ -187,7 +187,7 @@ function PriceCard({
           </div>
 
           {/* Title — always 2 lines */}
-          <p className="text-sm font-semibold leading-snug line-clamp-2 min-h-[40px] text-foreground">{result.title}</p>
+          <p className="text-sm font-semibold leading-snug line-clamp-3 text-foreground">{result.title}</p>
 
           {/* Deal Score — fixed height */}
           <div className="h-5">

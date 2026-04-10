@@ -487,6 +487,7 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
   // ── Catalog discovery handler (3-step wizard) ────────────────────
   async function handleCatalogDiscover() {
     if (!query.trim() || selectedRetailers.length === 0) return
+
     setCatalogPhase("processing")
     setCatalogResults([])
     setCatalogSelected(new Set())
@@ -789,6 +790,12 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
                     <Database className="h-4 w-4" />
                     Discover &amp; Match Catalog
                   </Button>
+                  <p className="text-center text-xs text-muted-foreground">
+                    {selectedRetailers.length === 0
+                      ? "Select at least 1 store to discover"
+                      : <><span className="font-medium text-foreground">{selectedRetailers.length} store{selectedRetailers.length !== 1 ? "s" : ""}</span> · <span className="font-medium text-foreground">{selectedRetailers.length} credit{selectedRetailers.length !== 1 ? "s" : ""}</span> will be deducted</>
+                    }
+                  </p>
                 </>
               )}
             </div>
