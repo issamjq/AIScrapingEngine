@@ -175,8 +175,11 @@ export function CompaniesContent(_: { role?: string }) {
             <Card key={c.id} className={`transition-shadow ${c.is_active ? "hover:shadow-md" : "opacity-60"}`}>
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
-                  <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center shrink-0">
-                    <Building2 className="h-5 w-5 text-muted-foreground" />
+                  <div className="h-9 w-9 rounded-md bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+                    {c.logo_url
+                      ? <img src={c.logo_url} alt={c.name} className="h-9 w-9 object-contain" onError={e => { (e.target as HTMLImageElement).style.display = "none" }} />
+                      : <Building2 className="h-5 w-5 text-muted-foreground" />
+                    }
                   </div>
                   <Badge variant={c.is_active ? "default" : "secondary"} className="text-[10px]">
                     {c.is_active ? "Active" : "Inactive"}
