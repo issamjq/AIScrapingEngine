@@ -132,7 +132,7 @@ const B2C_BLOCKED = new Set(["products", "companies"])
 
 function getHashPage(): string {
   const hash = window.location.hash.slice(1).split(":")[0]
-  return VALID_PAGES.has(hash) ? hash : "dashboard"
+  return VALID_PAGES.has(hash) ? hash : "discovering"
 }
 
 function getHashSubTab(): string {

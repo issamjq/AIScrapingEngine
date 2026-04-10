@@ -1,12 +1,10 @@
 import { ReactNode, useState, useEffect } from "react"
 import {
-  BarChart3,
   Home,
   Compass,
   TrendingUp,
   Package,
   Building2,
-  ChevronDown,
 } from "lucide-react"
 import {
   Sidebar,
@@ -14,7 +12,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -27,33 +24,6 @@ import { Separator } from "./ui/separator"
 import { useAuth } from "@/context/AuthContext"
 
 declare const __APP_VERSION__: string
-
-// ── Navigation sections ───────────────────────────────────────────
-const rspSections = [
-  {
-    label: "AI",
-
-    id: "rsp-ai",
-    items: [
-      { title: "Market Discovery", icon: Compass, id: "discovering" },
-    ],
-  },
-  {
-    label: "Monitoring",
-    id: "rsp-monitoring",
-    items: [
-      { title: "Price Activity",   icon: TrendingUp, id: "price-board" },
-    ],
-  },
-  {
-    label: "Catalog",
-    id: "rsp-catalog",
-    items: [
-      { title: "Products", icon: Package,   id: "products" },
-      { title: "Stores",   icon: Building2, id: "companies" },
-    ],
-  },
-]
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
@@ -101,7 +71,6 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
   // B2C free plan hides Price Activity — pro/trial/weekly/monthly can see it
   const B2C_PAID_PLANS = new Set(["pro", "trial", "weekly", "monthly", "enterprise", "paid"])
   const hidePriceActivity = isB2C && !B2C_PAID_PLANS.has(userSubscription ?? "")
-  const [collapsed, setCollapsed]           = useState<Record<string, boolean>>({})
   const [sidebarHistory, setSidebarHistory] = useState<any[]>([])
 
   // Fetch last 3 searches for B2C sidebar
@@ -123,9 +92,6 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
     return () => { active = false }
   }, [isB2C, user, currentPage, sidebarRefreshKey])  // sidebarRefreshKey increments after each new search
 
-  const toggle = (id: string) =>
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }))
-
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -140,49 +106,40 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
 
           <SidebarContent className="overflow-y-auto overflow-x-hidden">
 
-            {/* ── Dashboard home — hidden for B2C ── */}
+            {/* ── Market Discovery + Price Activity — one group, no gap between them ── */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <NavButton item={{ title: "Market Discovery", icon: Compass,   id: "discovering" }} currentPage={currentPage} onNavigate={onNavigate} />
+                  {!hidePriceActivity && (
+                    <NavButton item={{ title: "Price Activity",   icon: TrendingUp, id: "price-board"  }} currentPage={currentPage} onNavigate={onNavigate} />
+                  )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* ── Products + Stores — gap above (new SidebarGroup), B2B/dev only ── */}
             {!isB2C && (
-              <>
-                <SidebarGroup>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <NavButton
-                        item={{ title: "Dashboard", icon: Home, id: "dashboard" }}
-                        currentPage={currentPage}
-                        onNavigate={onNavigate}
-                      />
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-                <Separator className="mx-4 my-1 w-auto" />
-              </>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <NavButton item={{ title: "Products", icon: Package,   id: "products"   }} currentPage={currentPage} onNavigate={onNavigate} />
+                    <NavButton item={{ title: "Stores",   icon: Building2, id: "companies"  }} currentPage={currentPage} onNavigate={onNavigate} />
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
             )}
 
-            {/* ── RSP sections (collapsible) ── */}
-            {rspSections.filter(s =>
-              !(isB2C && s.id === "rsp-catalog") &&
-              !(hidePriceActivity && s.id === "rsp-monitoring")
-            ).map((section) => {
-              const isOpen = !collapsed[section.id]
-              return (
-                <SidebarGroup key={section.id} className={section.id === "rsp-monitoring" ? "pt-0" : ""}>
-                  {section.id !== "rsp-ai" && section.id !== "rsp-monitoring" && (
-                    <SidebarGroupLabel className="px-4 py-2">
-                      <span className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        {section.label}
-                      </span>
-                    </SidebarGroupLabel>
-                  )}
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {section.items.map((item) => (
-                        <NavButton key={item.id} item={item} currentPage={currentPage} onNavigate={onNavigate} />
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              )
-            })}
+            {/* ── Dashboard — gap above, B2B/dev only ── */}
+            {!isB2C && (
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <NavButton item={{ title: "Dashboard", icon: Home, id: "dashboard" }} currentPage={currentPage} onNavigate={onNavigate} />
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
 
             {/* B2C: search history at the bottom — hidden for now */}
             {false && isB2C && sidebarHistory.length > 0 && (
