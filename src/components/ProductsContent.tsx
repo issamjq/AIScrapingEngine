@@ -5,7 +5,7 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "./ui/sheet"
-import { Package, Plus, Search, Upload, Loader2, CheckCircle, AlertCircle } from "lucide-react"
+import { Package, Plus, Search, Upload, Download, Loader2, CheckCircle, AlertCircle } from "lucide-react"
 import { TableSkeleton } from "./PageSkeleton"
 import { useAuth } from "@/context/AuthContext"
 
@@ -166,6 +166,22 @@ export function ProductsContent(_: { role?: string }) {
     }
   }
 
+  function downloadTemplate() {
+    const rows = [
+      ["Item Name", "SKU", "Brand", "ID", "Initial RSP", "ImageUrl"],
+      ["Product 1", "SKU-001", "Brand 1", "1234567890001", "49.00", "https://example.com/image.jpg"],
+      ["Product 2", "SKU-002", "Brand 1", "1234567890002", "52.00", ""],
+    ]
+    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = "products_template.csv"
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -254,6 +270,10 @@ export function ProductsContent(_: { role?: string }) {
             className="hidden"
             onChange={handleFileChange}
           />
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={downloadTemplate}>
+            <Download className="h-4 w-4" />
+            <span className="hidden sm:inline">Template</span>
+          </Button>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileRef.current?.click()}>
             <Upload className="h-4 w-4" />
             <span className="hidden sm:inline">Import</span>
