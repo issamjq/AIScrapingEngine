@@ -238,6 +238,83 @@ function MarketplaceDropdown({
   )
 }
 
+// ── Product picker dropdown ───────────────────────────────────────
+function ProductDropdown({
+  products,
+  selectedId,
+  onSelect,
+}: {
+  products: { id: number; name: string; brand: string }[]
+  selectedId: number | null
+  onSelect: (p: { id: number; name: string; brand: string }) => void
+}) {
+  const [open, setOpen]     = useState(false)
+  const [search, setSearch] = useState("")
+  const ref                 = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onClick)
+    return () => document.removeEventListener("mousedown", onClick)
+  }, [])
+
+  const filtered = products.filter((p) =>
+    `${p.name} ${p.brand}`.toLowerCase().includes(search.toLowerCase())
+  )
+  const selected = products.find((p) => p.id === selectedId)
+  const label = selected ? selected.name : "Pick from your catalog…"
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between rounded-xl border border-input bg-background px-4 py-3 text-sm text-left transition-colors hover:bg-muted/30 focus:outline-none"
+      >
+        <span className={selected ? "text-foreground truncate pr-2" : "text-muted-foreground"}>
+          {label}
+        </span>
+        {open ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 z-50 rounded-xl border bg-background shadow-lg">
+          <div className="p-3 border-b">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                autoFocus
+                className="w-full rounded-lg border border-input bg-muted/30 pl-8 pr-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="Search your products…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="max-h-56 overflow-y-auto p-2 space-y-0.5">
+            {filtered.length === 0 ? (
+              <p className="text-xs text-muted-foreground px-3 py-2">No products found</p>
+            ) : filtered.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => { onSelect(p); setOpen(false); setSearch("") }}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors hover:bg-muted/40 ${p.id === selectedId ? "bg-primary/5 font-medium" : ""}`}
+              >
+                <span className="text-sm truncate">{p.name}</span>
+                {p.brand && <span className="text-xs text-muted-foreground shrink-0 ml-2">{p.brand}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── AI Thinking Log ───────────────────────────────────────────────
 interface LogStep {
   id: string
@@ -347,10 +424,11 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
   const [saveError, setSaveError]                 = useState<string | null>(null)
 
   // Catalog picker
-  const [catalog, setCatalog]         = useState<{id:number; name:string; brand:string}[]>([])
-  const [pickerUrl, setPickerUrl]     = useState<string | null>(null)
+  const [catalog, setCatalog]           = useState<{id:number; name:string; brand:string}[]>([])
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null)
+  const [pickerUrl, setPickerUrl]       = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState("")
-  const [overrides, setOverrides]     = useState<Map<string, {id:number; name:string; brand:string}>>(new Map())
+  const [overrides, setOverrides]       = useState<Map<string, {id:number; name:string; brand:string}>>(new Map())
 
   // Plans modal
   const [showPlans, setShowPlans]     = useState(false)
@@ -395,11 +473,12 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
     async function load() {
       try {
         const token = await (user as any).getIdToken()
-        const [companiesRes, meRes] = await Promise.all([
+        const [companiesRes, meRes, productsRes] = await Promise.all([
           fetch(`${API}/api/companies`,        { headers: { Authorization: `Bearer ${token}` } }),
           fetch(`${API}/api/allowed-users/me`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/products?limit=500`, { headers: { Authorization: `Bearer ${token}` } }),
         ])
-        const [companiesJson, meJson] = await Promise.all([companiesRes.json(), meRes.json()])
+        const [companiesJson, meJson, productsJson] = await Promise.all([companiesRes.json(), meRes.json(), productsRes.json()])
         if (!cancelled && companiesJson.success) {
           const active = (companiesJson.data || []).filter((c: any) => c.is_active)
           setCompanies(active)
@@ -407,6 +486,9 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
         }
         if (!cancelled && meJson.success && meJson.data) {
           setUserProfile(meJson.data)
+        }
+        if (!cancelled && productsJson.success) {
+          setCatalog((productsJson.data || []).map((p: any) => ({ id: p.id, name: p.internal_name, brand: p.brand || "" })))
         }
       } catch { /* silent */ }
       if (!cancelled) setLoading(false)
@@ -757,14 +839,26 @@ function B2BDiscoveryContent({ onNavigate, onSearchComplete }: { onNavigate?: (p
                     </p>
                   </div>
 
-                  {/* Search input */}
+                  {/* Product picker — select from catalog */}
+                  {catalog.length > 0 && (
+                    <ProductDropdown
+                      products={catalog}
+                      selectedId={selectedProductId}
+                      onSelect={(p) => {
+                        setSelectedProductId(p.id)
+                        setQuery(p.name)
+                      }}
+                    />
+                  )}
+
+                  {/* Search input — editable after picker or type manually */}
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <input
                       className="w-full rounded-xl border border-input bg-background pl-10 pr-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-                      placeholder="e.g. Marvis Classic Whitening Toothpaste"
+                      placeholder="Or type a product name manually…"
                       value={query}
-                      onChange={(e) => setQuery(e.target.value)}
+                      onChange={(e) => { setQuery(e.target.value); setSelectedProductId(null) }}
                       onKeyDown={(e) => e.key === "Enter" && handleCatalogDiscover()}
                     />
                   </div>
