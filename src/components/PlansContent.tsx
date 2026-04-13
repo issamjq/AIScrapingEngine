@@ -94,7 +94,7 @@ export function PlansContent({ role: roleProp }: { role?: string }) {
   )
 
   return (
-    <div className="space-y-8 max-w-5xl">
+    <div className="space-y-8">
 
       {/* Header */}
       <div className="text-center space-y-2">
@@ -204,7 +204,7 @@ export function PlansContent({ role: roleProp }: { role?: string }) {
       </div>
 
       {/* Plan cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
         {audiencePlans.map((plan) => {
           const price      = plan.prices[interval]
           const savingsPct = interval === "yearly" ? yearlySavingsPct(plan) : 0
