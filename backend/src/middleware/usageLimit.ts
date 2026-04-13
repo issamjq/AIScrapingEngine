@@ -1,14 +1,11 @@
 import { Response, NextFunction } from "express"
 import { query } from "../db"
 import { AuthRequest } from "./auth"
-import { deductCredit, getWallet } from "../services/walletService"
+import { checkAndDeductCredits, getWallet } from "../services/walletService"
 
 const UNLIMITED_ROLES = ["dev", "owner"]
 
-const TRIAL_DAYS: Record<string, number> = {
-  b2b: 14,
-  b2c: 7,
-}
+const TRIAL_DAYS: Record<string, number> = { b2b: 14, b2c: 7 }
 
 export async function checkUsageLimit(req: AuthRequest, res: Response, next: NextFunction) {
   try {
@@ -18,36 +15,39 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
     }
 
     const { rows } = await query(
-      `SELECT role, subscription, trial_ends_at FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`,
+      `SELECT role, subscription, plan_code, trial_ends_at FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`,
       [email]
     )
     const user = rows[0]
     if (!user) return next()
 
-    // dev / owner → always unlimited
     if (UNLIMITED_ROLES.includes(user.role)) return next()
 
-    // Auto-downgrade trial if expired
+    // Auto-downgrade expired trial
     let subscription: string = user.subscription || "free"
-    if (subscription === "trial" && user.trial_ends_at) {
-      if (new Date(user.trial_ends_at) < new Date()) {
-        subscription = "free"
-        query(`UPDATE allowed_users SET subscription = 'free' WHERE email = $1`, [email]).catch(() => {})
-      }
+    if (subscription === "trial" && user.trial_ends_at && new Date(user.trial_ends_at) < new Date()) {
+      subscription = "free"
+      query(`UPDATE allowed_users SET subscription = 'free' WHERE email = $1`, [email]).catch(() => {})
     }
 
-    // Deduct 1 credit from wallet
-    const result = await deductCredit(email)
+    // Deduct 1 credit — checks daily/weekly/balance limits
+    const result = await checkAndDeductCredits(email, 1, "AI search credit used")
     if (!result.success) {
       const wallet = await getWallet(email)
+      const limitMsg: Record<string, string> = {
+        daily:   "Daily credit limit reached. Limit resets at midnight UTC.",
+        weekly:  "Weekly credit limit reached. Limit resets next Monday.",
+        balance: `Insufficient credits. Your balance is ${wallet?.balance ?? 0}.`,
+      }
       return res.status(429).json({
         success: false,
         error: {
-          message: `Insufficient credits. Your balance is ${wallet?.balance ?? 0}. Please top up to continue.`,
-          code:    "USAGE_LIMIT_REACHED",
-          balance: wallet?.balance ?? 0,
+          message:   limitMsg[result.limitType ?? "balance"] ?? "Usage limit reached.",
+          code:      "USAGE_LIMIT_REACHED",
+          limitType: result.limitType,
+          balance:   wallet?.balance ?? 0,
           subscription,
-          role:    user.role,
+          role:      user.role,
         },
       })
     }
@@ -56,7 +56,6 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
   } catch (err) { next(err) }
 }
 
-/** Returns the trial end date for a newly created user of a given role */
 export function trialEndsAt(role: string): Date | null {
   const days = TRIAL_DAYS[role]
   if (!days) return null

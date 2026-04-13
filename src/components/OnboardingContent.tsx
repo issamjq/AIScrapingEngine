@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useAuth } from "@/context/AuthContext"
-import { Building2, User, BarChart3, ArrowRight, CheckCircle2, XCircle, Sparkles, Crown, Loader2 } from "lucide-react"
+import { Building2, User, ArrowRight, CheckCircle2, Sparkles, Crown, Loader2, AlertCircle } from "lucide-react"
 import { Button } from "./ui/button"
+import { getPlansForAudience, yearlySavingsPct, type BillingInterval, type PlanDefinition } from "@/lib/plans"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
@@ -18,10 +19,10 @@ function RolePicker({ onNext }: { onNext: (role: Role) => void }) {
 
   const options: { role: Role; icon: typeof Building2; title: string; desc: string; bullets: string[] }[] = [
     {
-      role: "b2b",
-      icon: Building2,
-      title: "For My Business",
-      desc: "I represent a company tracking competitor prices",
+      role:    "b2b",
+      icon:    Building2,
+      title:   "For My Business",
+      desc:    "I represent a company tracking competitor prices",
       bullets: [
         "Search web + your product catalog",
         "Track multiple product categories",
@@ -29,13 +30,13 @@ function RolePicker({ onNext }: { onNext: (role: Role) => void }) {
       ],
     },
     {
-      role: "b2c",
-      icon: User,
-      title: "For Personal Use",
-      desc: "I want to track prices on products I buy",
+      role:    "b2c",
+      icon:    User,
+      title:   "For Personal Use",
+      desc:    "I want to find the best prices on products I buy",
       bullets: [
         "Search any product across the web",
-        "Track price history over time",
+        "AI-powered price discovery",
         "7-day full trial",
       ],
     },
@@ -99,33 +100,6 @@ function RolePicker({ onNext }: { onNext: (role: Role) => void }) {
 
 // ─── Step 2: Plan picker ───────────────────────────────────────────────────
 
-interface PlanRow {
-  id: number
-  key: string
-  name: string
-  tagline: string
-  price_usd_b2b: number
-  price_usd_b2c: number
-  price_note_b2b: string | null
-  price_note_b2c: string | null
-  trial_days_b2b: number | null
-  trial_days_b2c: number | null
-  credits_b2b: number | null
-  credits_b2c: number | null
-  features_b2b: { text: string; included: boolean }[]
-  features_b2c: { text: string; included: boolean }[]
-  is_coming_soon: boolean
-  sort_order: number
-}
-
-
-const PLAN_ICONS: Record<string, React.ElementType> = {
-  trial:      BarChart3,
-  free:       ArrowRight,
-  pro:        Sparkles,
-  enterprise: Crown,
-}
-
 function PlanPicker({
   role,
   onBack,
@@ -136,58 +110,31 @@ function PlanPicker({
   onComplete: () => void
 }) {
   const { user } = useAuth()
-  const [plans, setPlans]       = useState<PlanRow[]>([])
-  const [loading, setLoading]   = useState(true)
-  const [saving, setSaving]     = useState(false)
-  const [error, setError]       = useState<string | null>(null)
-  const [currency, setCurrency] = useState<"USD" | "AED">("USD")
-  const [aedRate, setAedRate]   = useState<number>(3.65)
+  const [saving,   setSaving]   = useState(false)
+  const [error,    setError]    = useState<string | null>(null)
+  const [interval, setInterval] = useState<BillingInterval>("monthly")
 
-  useEffect(() => {
-    if (!user) return
-    let cancelled = false
-    async function fetchPlans() {
-      try {
-        const token = await (user as any).getIdToken()
-        const headers = { Authorization: `Bearer ${token}` }
-        const [plansRes, ratesRes] = await Promise.all([
-          fetch(`${API}/api/plans`,          { headers }),
-          fetch(`${API}/api/currency-rates`, { headers }),
-        ])
-        const [plansData, ratesData] = await Promise.all([plansRes.json(), ratesRes.json()])
-        if (!cancelled) {
-          if (plansData.success) setPlans(plansData.data)
-          if (ratesData.success) {
-            const usdAed = ratesData.data.find((r: any) => r.from_currency === "USD" && r.to_currency === "AED")
-            if (usdAed) setAedRate(Number(usdAed.rate))
-          }
-        }
-      } catch {
-        if (!cancelled) setError("Could not load plans. Please try again.")
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    fetchPlans()
-    return () => { cancelled = true }
-  }, [user])
+  const plans = getPlansForAudience(role)
+  const trialDays = role === "b2b" ? 14 : 7
 
-  function formatPrice(usdPrice: number): string {
-    if (usdPrice === 0) return currency === "USD" ? "$0" : "AED 0"
-    if (currency === "AED") return `AED ${Math.round(usdPrice * aedRate)}`
-    return `$${usdPrice}`
-  }
-
-  async function signup(planKey: string) {
+  async function signup(plan: PlanDefinition) {
     if (!user) return
     setSaving(true)
     setError(null)
     try {
       const token = await user.getIdToken()
+      // Map plan key to legacy plan value for backend compat
+      const legacyPlan = plan.isFree ? "free" : "trial"
       const res = await fetch(`${API}/api/allowed-users/signup`, {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role, plan: planKey, name: user.displayName || user.email }),
+        body:    JSON.stringify({
+          role,
+          plan:             legacyPlan,
+          plan_code:        plan.key,
+          billing_interval: interval,
+          name:             user.displayName || user.email,
+        }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -207,157 +154,164 @@ function PlanPicker({
     }
   }
 
-  const isB2C = role === "b2c"
-
   return (
     <>
-      <div className="text-center mb-8 max-w-lg">
+      <div className="text-center mb-6 max-w-2xl">
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Choose Your Plan</h1>
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-          Start with a trial or free plan. Upgrade anytime — no credit card required.
+          Start with a trial on any paid plan, or stay free forever.
         </p>
-        {/* Currency toggle */}
-        <div className="mt-3 inline-flex items-center rounded-full border bg-muted/50 p-1 gap-1">
-          <button
-            onClick={() => setCurrency("USD")}
-            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "USD" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            $ USD
-          </button>
-          <button
-            onClick={() => setCurrency("AED")}
-            className={`px-4 py-1 rounded-full text-sm font-medium transition-colors ${currency === "AED" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            AED
-          </button>
-        </div>
+
+        {/* Role pill */}
         <div className="mt-3 inline-flex items-center gap-2 rounded-full border bg-muted/50 px-4 py-1.5">
           {role === "b2b"
             ? <Building2 className="h-3.5 w-3.5 text-primary" />
             : <User className="h-3.5 w-3.5 text-primary" />
           }
           <span className="text-xs font-medium">
-            {role === "b2b" ? "For My Business" : "For Personal Use"}
-          </span>
-          <span className="text-[10px] text-muted-foreground border-l pl-2">
             {role === "b2b" ? "Business account" : "Personal account"}
           </span>
         </div>
+
+        {/* Billing interval toggle */}
+        <div className="mt-4 inline-flex items-center rounded-full border bg-muted/50 p-1 gap-1">
+          {(["weekly", "monthly", "yearly"] as BillingInterval[]).map((iv) => (
+            <button
+              key={iv}
+              onClick={() => setInterval(iv)}
+              className={`relative px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                interval === iv ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {iv.charAt(0).toUpperCase() + iv.slice(1)}
+              {iv === "yearly" && (
+                <span className="absolute -top-2.5 -right-1 text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-900/40 dark:text-emerald-400 rounded-full px-1 py-0.5 leading-none">
+                  SAVE
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="flex items-center gap-3 text-muted-foreground py-16">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Loading plans…</span>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 w-full max-w-7xl mb-6 mt-6">
-          {plans.map((plan) => {
-            const Icon     = PLAN_ICONS[plan.key] ?? Sparkles
-            const features  = isB2C ? plan.features_b2c : plan.features_b2b
-            const credits   = isB2C ? plan.credits_b2c : plan.credits_b2b
-            const priceUsd  = isB2C ? plan.price_usd_b2c : plan.price_usd_b2b
-            const trialDays  = isB2C ? plan.trial_days_b2c : plan.trial_days_b2b
-            const baseNote   = isB2C ? plan.price_note_b2c : plan.price_note_b2b
-            const priceNote  = trialDays ? `for ${trialDays} days` : (baseNote ?? "forever")
-            const isEnterprise = plan.key === "enterprise"
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-4xl mb-6">
+        {plans.map((plan) => {
+          const price      = plan.prices[interval]
+          const savingsPct = interval === "yearly" ? yearlySavingsPct(plan) : 0
+          const isRecommended = !!plan.recommended
+          const intervalLabel = interval === "weekly" ? "week" : interval === "monthly" ? "month" : "year"
 
-            return (
-              <div
-                key={plan.key}
-                className={`relative rounded-2xl border flex flex-col transition-all select-none ${
-                  plan.key === "pro"
-                    ? "border-primary shadow-lg shadow-primary/10"
-                    : isEnterprise
-                    ? "border-dashed border-muted-foreground/30"
-                    : "border-border"
-                }`}
-              >
-                {/* Most Popular badge */}
-                {plan.key === "pro" && (
-                  <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
-                      <Sparkles className="h-3 w-3" />
-                      Most Popular
+          // Paid plans: show trial CTA (Stripe not built yet → "Coming soon")
+          // Free plan: immediate signup
+          const isPaid = !plan.isFree
+
+          return (
+            <div
+              key={plan.key}
+              className={`relative rounded-2xl border flex flex-col transition-all ${
+                isRecommended ? "border-primary shadow-lg shadow-primary/10" : "border-border"
+              }`}
+            >
+              {isRecommended && (
+                <div className="absolute -top-3.5 left-0 right-0 flex justify-center z-10">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground shadow">
+                    <Sparkles className="h-3 w-3" />
+                    Most Popular
+                  </span>
+                </div>
+              )}
+
+              <div className="p-5 flex flex-col flex-1">
+                {/* Header */}
+                <div className="flex items-center gap-2 mb-1">
+                  <div className={`h-9 w-9 rounded-xl flex items-center justify-center ${
+                    isRecommended ? "bg-primary text-primary-foreground" : "bg-muted"
+                  }`}>
+                    {plan.isFree
+                      ? <Sparkles className="h-4 w-4" />
+                      : isRecommended
+                      ? <Sparkles className="h-4 w-4" />
+                      : <Crown className="h-4 w-4" />
+                    }
+                  </div>
+                  <span className="font-bold text-base">{plan.name}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mb-4">{plan.description}</p>
+
+                {/* Price */}
+                <div className="mb-4">
+                  <div className="flex items-end gap-1">
+                    <span className="text-3xl font-extrabold tracking-tight">
+                      {price === 0 ? "$0" : `$${price}`}
+                    </span>
+                    <span className="text-sm text-muted-foreground mb-1">
+                      /{price === 0 ? "forever" : intervalLabel}
                     </span>
                   </div>
-                )}
+                  <p className="text-xs text-primary font-medium mt-1">
+                    {plan.credits.monthly.toLocaleString()} credits / month
+                  </p>
+                  {savingsPct > 0 && !plan.isFree && (
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5">
+                      Save {savingsPct}% vs monthly
+                    </p>
+                  )}
+                  {isPaid && !plan.isFree && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {trialDays}-day free trial included
+                    </p>
+                  )}
+                </div>
 
-                {/* Enterprise blur overlay */}
-                {isEnterprise && (
-                  <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-sm rounded-2xl">
-                    <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
-                      <Crown className="h-3.5 w-3.5" />
-                      Coming Soon
-                    </span>
-                    <p className="text-xs text-muted-foreground px-6 text-center">Enterprise plan is under construction</p>
-                  </div>
-                )}
-
-                <div className="p-5 flex flex-col flex-1">
-                  {/* Header */}
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center ${plan.key === "pro" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <span className="font-bold text-lg">{plan.name}</span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-4">{plan.tagline}</p>
-
-                  {/* Price */}
-                  <div className="mb-4">
-                    <div className="flex items-end gap-1">
-                      <span className="text-4xl font-extrabold tracking-tight">
-                        {formatPrice(priceUsd)}
-                      </span>
-                      <span className="text-sm text-muted-foreground mb-1.5">/{priceNote}</span>
-                    </div>
-                    {credits != null && (
-                      <p className="text-xs text-primary font-medium mt-1">{credits} credits included</p>
-                    )}
-                  </div>
-
-                  {/* CTA */}
+                {/* CTA */}
+                {plan.isFree ? (
                   <Button
+                    variant="outline"
                     className="w-full mb-4 gap-1.5"
-                    variant={plan.key === "pro" ? "default" : "outline"}
-                    disabled={plan.is_coming_soon || saving}
-                    onClick={plan.is_coming_soon ? undefined : () => signup(plan.key)}
+                    disabled={saving}
+                    onClick={() => signup(plan)}
                   >
                     {saving ? (
-                      <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Setting up…</>
-                    ) : plan.is_coming_soon ? (
-                      "Coming Soon"
-                    ) : plan.key === "trial" ? (
-                      <><ArrowRight className="h-3.5 w-3.5" /> Start Free Trial</>
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" />Setting up…</>
                     ) : (
-                      <><ArrowRight className="h-3.5 w-3.5" /> Choose This Plan</>
+                      <><ArrowRight className="h-3.5 w-3.5" />Start for Free</>
                     )}
                   </Button>
+                ) : (
+                  <Button
+                    className={`w-full mb-4 gap-1.5 ${!isRecommended ? "bg-foreground text-background hover:bg-foreground/90" : ""}`}
+                    disabled={saving}
+                    onClick={() => signup(plan)}
+                  >
+                    {saving ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin" />Setting up…</>
+                    ) : (
+                      <><ArrowRight className="h-3.5 w-3.5" />Start {trialDays}-Day Trial</>
+                    )}
+                  </Button>
+                )}
 
-                  <div className="border-t mb-4" />
+                <div className="border-t mb-4" />
 
-                  {/* Features */}
-                  <ul className="space-y-2 flex-1">
-                    {features.map((f) => (
-                      <li key={f.text} className="flex items-start gap-2 min-w-0">
-                        {f.included
-                          ? <CheckCircle2 className="h-4 w-4 text-yellow-500 shrink-0 mt-0.5" />
-                          : <XCircle     className="h-4 w-4 text-muted-foreground/30 shrink-0 mt-0.5" />
-                        }
-                        <span className={`text-sm whitespace-nowrap ${f.included ? "" : "text-muted-foreground/40"}`}>{f.text}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {/* Features */}
+                <ul className="space-y-2 flex-1">
+                  {plan.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2 min-w-0">
+                      <CheckCircle2 className="h-3.5 w-3.5 text-yellow-500 shrink-0 mt-0.5" />
+                      <span className="text-xs">{f}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-            )
-          })}
-        </div>
-      )}
+            </div>
+          )
+        })}
+      </div>
 
       {error && (
-        <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive text-center max-w-xl w-full">
+        <div className="mb-4 rounded-md bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive flex items-start gap-2 max-w-2xl w-full">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
           {error}
         </div>
       )}

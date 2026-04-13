@@ -435,37 +435,71 @@ function BillingTab({ role: _role, onNavigate }: { role: string; onNavigate?: (p
 }
 
 // ── Usage ─────────────────────────────────────────────────────────
+interface UsagePeriod {
+  used:      number
+  limit:     number
+  remaining: number
+  resets_at: string
+}
+interface UsageSummary {
+  balance:      number
+  total_added:  number
+  total_used:   number
+  daily:        UsagePeriod
+  weekly:       UsagePeriod
+  cycle:        UsagePeriod
+}
+
+function UsageBar({ label, period }: { label: string; period: UsagePeriod }) {
+  const pct = period.limit > 0 ? Math.min(100, Math.round((period.used / period.limit) * 100)) : 0
+  const isHigh = pct >= 80
+  const resetsAt = new Date(period.resets_at).toLocaleString(undefined, {
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+  })
+  return (
+    <div className="py-4 border-b last:border-0">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-sm font-medium">{label}</span>
+        <span className={`text-sm font-semibold ${isHigh ? "text-destructive" : "text-foreground"}`}>
+          {period.used} / {period.limit}
+        </span>
+      </div>
+      <div className="h-2 rounded-full bg-muted overflow-hidden mb-1.5">
+        <div
+          className={`h-full rounded-full transition-all ${isHigh ? "bg-destructive" : "bg-yellow-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{period.remaining} remaining</span>
+        <span className="text-xs text-muted-foreground">Resets {resetsAt}</span>
+      </div>
+    </div>
+  )
+}
+
 function UsageTab({ role }: { role: string }) {
   const { user } = useAuth()
   const isUnlimited = ["dev", "owner"].includes(role)
 
-  const [balance,    setBalance]    = useState(0)
-  const [totalAdded, setTotalAdded] = useState(0)
-  const [totalUsed,  setTotalUsed]  = useState(0)
+  const [summary,      setSummary]      = useState<UsageSummary | null>(null)
   const [transactions, setTransactions] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading,      setLoading]      = useState(true)
 
   useEffect(() => {
     if (!user || isUnlimited) { setLoading(false); return }
-    user.getIdToken().then(token =>
-      fetch(`${API}/api/wallet`, { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.json())
-        .then(data => {
-          if (data.success) {
-            setBalance(data.data.wallet.balance)
-            setTotalAdded(data.data.wallet.total_added)
-            setTotalUsed(data.data.wallet.total_used)
-            setTransactions(data.data.transactions || [])
-          }
-        })
-        .finally(() => setLoading(false))
-    )
+    user.getIdToken().then(async token => {
+      const headers = { Authorization: `Bearer ${token}` }
+      const [usageRes, walletRes] = await Promise.all([
+        fetch(`${API}/api/wallet/usage`, { headers }),
+        fetch(`${API}/api/wallet`,       { headers }),
+      ])
+      const [usageJson, walletJson] = await Promise.all([usageRes.json(), walletRes.json()])
+      if (usageJson.success)  setSummary(usageJson.data)
+      if (walletJson.success) setTransactions(walletJson.data?.transactions || [])
+      setLoading(false)
+    })
   }, [user, isUnlimited])
-
-  const pct    = totalAdded > 0 ? Math.round((balance / totalAdded) * 100) : 0
-  const r      = 20
-  const circ   = 2 * Math.PI * r
-  const offset = circ * (1 - pct / 100)
 
   function formatDate(iso: string) {
     return new Date(iso).toLocaleString(undefined, {
@@ -476,7 +510,7 @@ function UsageTab({ role }: { role: string }) {
 
   return (
     <>
-      <Section title="Credits">
+      <Section title="Credit balance">
         {isUnlimited ? (
           <div className="py-5 flex items-center gap-4">
             <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
@@ -489,29 +523,28 @@ function UsageTab({ role }: { role: string }) {
           </div>
         ) : loading ? (
           <div className="py-6 text-center text-sm text-muted-foreground">Loading…</div>
-        ) : (
-          <div className="py-5 flex items-center gap-6">
-            <div className="relative shrink-0" style={{ width: 56, height: 56 }}>
-              <svg width="56" height="56" style={{ display: "block", transform: "rotate(-90deg)" }}>
-                <circle cx="28" cy="28" r={r} fill="none" stroke="#e5e7eb" strokeWidth="3" />
-                <circle cx="28" cy="28" r={r} fill="none" stroke="#EAB308" strokeWidth="3"
-                  strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={offset}
-                  style={{ transition: "stroke-dashoffset 0.5s ease" }} />
-              </svg>
-              <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
-                className="text-[11px] font-bold text-yellow-500 leading-none">{pct}%</span>
-            </div>
+        ) : summary ? (
+          <div className="py-4 flex items-center gap-6">
             <div className="flex-1">
-              <p className="text-sm font-semibold">{balance} credits remaining</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{totalUsed} used of {totalAdded} total</p>
-              <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
-                <div className="h-full rounded-full bg-yellow-500 transition-all" style={{ width: `${pct}%` }} />
-              </div>
+              <p className="text-sm font-semibold">{summary.balance} credits remaining</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {summary.total_used} used of {summary.total_added} total added
+              </p>
             </div>
             <Button variant="outline" size="sm" disabled>Top up</Button>
           </div>
+        ) : (
+          <div className="py-6 text-center text-sm text-muted-foreground">No wallet found.</div>
         )}
       </Section>
+
+      {!isUnlimited && summary && (
+        <Section title="Usage limits">
+          <UsageBar label="Daily"         period={summary.daily}  />
+          <UsageBar label="Weekly"        period={summary.weekly} />
+          <UsageBar label="Monthly cycle" period={summary.cycle}  />
+        </Section>
+      )}
 
       <Section title="Recent transactions">
         {loading ? (

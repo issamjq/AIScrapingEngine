@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from "express"
 import { AuthRequest } from "../middleware/auth"
-import { getWallet, getTransactions, addCredits, deductCredits } from "../services/walletService"
+import { getWallet, getTransactions, addCredits, deductCredits, getUsageSummary } from "../services/walletService"
 import { createError } from "../middleware/validate"
 import { query as dbQuery } from "../db"
 import { walletAddLimiter } from "../middleware/rateLimit"
@@ -9,7 +9,7 @@ const ADMIN_ROLES = ["dev", "owner", "admin"]
 
 export const walletRouter = Router()
 
-// GET /api/wallet — get current user's wallet balance + recent transactions
+// GET /api/wallet — balance + recent transactions
 walletRouter.get("/", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const email = req.email!
@@ -22,26 +22,39 @@ walletRouter.get("/", async (req: AuthRequest, res: Response, next: NextFunction
   } catch (err) { next(err) }
 })
 
-// POST /api/wallet/deduct — deduct credits for unlocking blurred results (1 per card)
+// GET /api/wallet/usage — daily / weekly / cycle usage summary
+walletRouter.get("/usage", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const email = req.email!
+    const summary = await getUsageSummary(email)
+    if (!summary) return next(createError("Wallet not found", 404, "NOT_FOUND"))
+    res.json({ success: true, data: summary })
+  } catch (err) { next(err) }
+})
+
+// POST /api/wallet/deduct — deduct N credits (used for unlock; dev/owner skip)
 walletRouter.post("/deduct", async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const email  = req.email!
     const amount = parseInt(req.body.amount) || 1
-    const desc   = req.body.description || "Unlocked search result"
+    const desc   = req.body.description || "Credit deduction"
     if (amount <= 0 || amount > 20) return next(createError("invalid amount", 400, "VALIDATION"))
+
     const UNLIMITED_ROLES = ["dev", "owner"]
-    const wallet = await getWallet(email)
-    if (!wallet) return next(createError("Wallet not found", 404, "NOT_FOUND"))
-    // Check role — unlimited users skip deduction
-    const { rows } = await (await import("../db/index.js")).query(
+    const { rows } = await dbQuery(
       `SELECT role FROM allowed_users WHERE email = $1 LIMIT 1`, [email]
     )
     if (rows[0] && UNLIMITED_ROLES.includes(rows[0].role)) {
-      return res.json({ success: true, data: { balance: wallet.balance } })
+      const wallet = await getWallet(email)
+      return res.json({ success: true, data: { balance: wallet?.balance ?? 0 } })
     }
+
     const result = await deductCredits(email, amount, desc)
     if (!result.success) {
-      return res.status(429).json({ success: false, error: { message: "Insufficient credits", code: "USAGE_LIMIT_REACHED", balance: result.balance } })
+      return res.status(429).json({
+        success: false,
+        error: { message: "Insufficient credits", code: "USAGE_LIMIT_REACHED", balance: result.balance },
+      })
     }
     res.json({ success: true, data: { balance: result.balance } })
   } catch (err) { next(err) }
@@ -51,7 +64,6 @@ walletRouter.post("/deduct", async (req: AuthRequest, res: Response, next: NextF
 walletRouter.post("/add", walletAddLimiter as any, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const callerEmail = req.email!
-    // Role check — only admin/dev/owner may add credits
     const { rows } = await dbQuery(
       `SELECT role FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`, [callerEmail]
     )

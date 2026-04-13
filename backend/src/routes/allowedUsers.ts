@@ -122,27 +122,48 @@ allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest
       }
     }
 
-    const { role, plan: planKey = "trial" } = req.body
+    const { role, plan: planKey = "trial", billing_interval: billingInterval = "monthly" } = req.body
+    const planCode = req.body.plan_code ? String(req.body.plan_code).trim() : null
     const name = req.body.name ? String(req.body.name).trim().slice(0, 100) : null
     if (!role || !["b2b", "b2c"].includes(role)) {
       return next(createError("role must be b2b or b2c", 400, "VALIDATION"))
     }
-    if (!["trial", "free", "pro"].includes(planKey)) {
-      return next(createError("plan must be trial, free, or pro", 400, "VALIDATION"))
+    const VALID_LEGACY = ["trial", "free", "pro"]
+    const VALID_NEW    = ["b2c_free", "b2c_starter", "b2c_pro", "b2b_free", "b2b_growth", "b2b_scale"]
+    if (!VALID_LEGACY.includes(planKey) && !VALID_NEW.includes(planKey)) {
+      return next(createError("invalid plan key", 400, "VALIDATION"))
+    }
+    if (!["weekly", "monthly", "yearly"].includes(billingInterval)) {
+      return next(createError("billing_interval must be weekly, monthly, or yearly", 400, "VALIDATION"))
     }
 
     // Map plan key → subscription value
-    const subscriptionMap: Record<string, string> = { trial: "trial", free: "free", pro: "paid" }
-    const subscription   = subscriptionMap[planKey]
+    const subscriptionMap: Record<string, string> = {
+      trial: "trial", free: "free", pro: "paid",
+      b2c_free: "free", b2c_starter: "paid", b2c_pro: "paid",
+      b2b_free: "free", b2b_growth: "paid", b2b_scale: "paid",
+    }
+    const subscription   = subscriptionMap[planKey] ?? "free"
     const effectiveTrial = subscription === "trial" ? trialEndsAt(role) : null
 
-    const billingRenewsAt = subscription === "paid" ? (() => { const d = new Date(); d.setMonth(d.getMonth() + 1); return d })() : null
+    const billingRenewsAt = subscription === "paid" ? (() => {
+      const d = new Date()
+      if (billingInterval === "weekly")  d.setDate(d.getDate() + 7)
+      else if (billingInterval === "yearly") d.setFullYear(d.getFullYear() + 1)
+      else d.setMonth(d.getMonth() + 1)
+      return d
+    })() : null
+
+    // Effective plan code to store (prefer new plan_code if provided, else derive from legacy key)
+    const effectivePlanCode = planCode || (VALID_NEW.includes(planKey) ? planKey : null)
 
     const { rows } = await query(
-      `INSERT INTO allowed_users (email, name, role, is_active, subscription, trial_ends_at, billing_renews_at, firebase_uid, signup_ip)
-       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8)
+      `INSERT INTO allowed_users
+         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [email.toLowerCase().trim(), name || null, role, subscription, effectiveTrial, billingRenewsAt, uid || null, clientIp]
+      [email.toLowerCase().trim(), name || null, role, subscription, effectivePlanCode, billingInterval,
+       effectiveTrial, billingRenewsAt, uid || null, clientIp]
     )
 
     // Seed the 8 default UAE stores for this new user

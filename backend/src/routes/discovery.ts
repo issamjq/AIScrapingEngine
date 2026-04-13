@@ -5,7 +5,7 @@ import { aiWebSearch } from "../scraper/aiWebSearch"
 import { callClaude } from "../utils/claudeClient"
 import { createError } from "../middleware/validate"
 import { checkUsageLimit } from "../middleware/usageLimit"
-import { deductCredits, getWallet } from "../services/walletService"
+import { checkAndDeductCredits, getWallet } from "../services/walletService"
 import { AuthRequest } from "../middleware/auth"
 import { logger } from "../utils/logger"
 import { query as dbQuery } from "../db"
@@ -173,17 +173,20 @@ discoveryRouter.post("/b2c-search", b2cSearchLimiter as any, async (req, res, ne
 
     // Deduct credits based on batch size (1/2/3) unless unlimited role
     if (user && !UNLIMITED_ROLES.includes(user.role)) {
-      const creditResult = await deductCredits(
-        email, credits,
-        `B2C AI price search — ${batch === 1 ? "Quick (3 sites)" : batch === 2 ? "Standard (6 sites)" : "Deep (10 sites)"}`
-      )
+      const batchLabel = batch === 1 ? "Quick (3 sites)" : batch === 2 ? "Standard (6 sites)" : "Deep (10 sites)"
+      const creditResult = await checkAndDeductCredits(email, credits, `B2C AI price search — ${batchLabel}`)
       if (!creditResult.success) {
-        const wallet = await getWallet(email)
+        const limitMsg: Record<string, string> = {
+          daily:   "Daily credit limit reached. Limit resets at midnight UTC.",
+          weekly:  "Weekly credit limit reached. Limit resets next Monday.",
+          balance: `Insufficient credits. You need ${credits} credits but only have ${creditResult.balance}.`,
+        }
         return res.status(429).json({
           success: false,
           error: {
-            message:      `Insufficient credits. You need 3 credits but only have ${creditResult.balance}.`,
+            message:      limitMsg[creditResult.limitType ?? "balance"] ?? "Usage limit reached.",
             code:         "USAGE_LIMIT_REACHED",
+            limitType:    creditResult.limitType,
             balance:      creditResult.balance,
             required:     credits,
             subscription,

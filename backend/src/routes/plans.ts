@@ -1,12 +1,9 @@
 import { Router } from "express"
-import { getAllPlans } from "../services/plansService"
+import { PLANS } from "../config/plans"
 
 export const plansRouter = Router()
 
-// GET /api/plans — public list of all active plans (auth still required)
-plansRouter.get("/", async (_req, res, next) => {
-  try {
-    const plans = await getAllPlans()
-    res.json({ success: true, data: plans })
-  } catch (err) { next(err) }
+// GET /api/plans — returns all plan definitions from config (not DB)
+plansRouter.get("/", (_req, res) => {
+  res.json({ success: true, data: PLANS })
 })

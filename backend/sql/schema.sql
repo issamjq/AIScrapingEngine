@@ -428,3 +428,25 @@ CREATE TABLE IF NOT EXISTS search_suggestions (
 -- Fast prefix/contains search by count
 CREATE INDEX IF NOT EXISTS idx_suggestions_query ON search_suggestions USING gin(to_tsvector('simple', query));
 CREATE INDEX IF NOT EXISTS idx_suggestions_count ON search_suggestions(search_count DESC);
+
+-- =============================================================
+-- MIGRATION: Subscription / wallet system v2 (daily/weekly/cycle limits)
+-- Run once in Neon — all ADD COLUMN IF NOT EXISTS are safe to re-run
+-- =============================================================
+
+-- allowed_users: plan selection and billing interval
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS plan_code        VARCHAR(30);
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS billing_interval VARCHAR(10) NOT NULL DEFAULT 'monthly';
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS billing_renews_at TIMESTAMPTZ;
+ALTER TABLE allowed_users ADD COLUMN IF NOT EXISTS company_name     VARCHAR(150);
+
+-- user_wallet: daily / weekly / cycle usage counters and cached limits
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS credits_used_today      INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS credits_used_this_week  INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS credits_used_this_cycle INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS last_daily_reset_at     TIMESTAMPTZ;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS last_weekly_reset_at    TIMESTAMPTZ;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS last_cycle_reset_at     TIMESTAMPTZ;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS daily_limit             INTEGER;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS weekly_limit            INTEGER;
+ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS monthly_limit           INTEGER;
