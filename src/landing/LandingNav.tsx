@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react"
 import { useTheme } from "@/context/ThemeContext"
-import { Search, BarChart3, Package, Sparkles, Sun, Moon, Menu, X, ChevronDown, ArrowUpRight } from "lucide-react"
+import { Search, BarChart3, Package, Sparkles, Sun, Moon, Menu, X, ChevronDown, ArrowUpRight, LogOut, Settings } from "lucide-react"
 
 interface Props {
   onAction:      (target?: string) => void
+  onSignOut?:    () => void
   isLoggedIn?:   boolean
   userName?:     string
   userPhotoURL?: string
@@ -15,19 +16,32 @@ const MARKET_INTEL_ITEMS = [
   { icon: Package,   label: "Catalog Discovery", desc: "Auto-match your catalog to stores",    target: "discovering" },
 ]
 
-export function LandingNav({ onAction, isLoggedIn, userName, userPhotoURL }: Props) {
+export function LandingNav({ onAction, onSignOut, isLoggedIn, userName, userPhotoURL }: Props) {
   const { theme, setTheme } = useTheme()
-  const [menuOpen,   setMenuOpen]   = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
-  const [scrolled,   setScrolled]   = useState(false)
-  const menuRef    = useRef<HTMLDivElement>(null)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [menuOpen,    setMenuOpen]    = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [mobileOpen,  setMobileOpen]  = useState(false)
+  const [scrolled,    setScrolled]    = useState(false)
+  const menuRef       = useRef<HTMLDivElement>(null)
+  const profileRef    = useRef<HTMLDivElement>(null)
+  const closeTimer    = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)
     window.addEventListener("scroll", onScroll)
     return () => window.removeEventListener("scroll", onScroll)
   }, [])
+
+  useEffect(() => {
+    if (!profileOpen) return
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [profileOpen])
 
   const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)
   const initials = userName ? userName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?"
@@ -141,16 +155,49 @@ export function LandingNav({ onAction, isLoggedIn, userName, userPhotoURL }: Pro
           {isLoggedIn ? (
             /* Signed-in state */
             <div className="flex items-center gap-2.5">
-              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/60">
-                {userPhotoURL ? (
-                  <img src={userPhotoURL} alt={userName} className="h-6 w-6 rounded-full object-cover" />
-                ) : (
-                  <div className="h-6 w-6 rounded-full bg-amber-500/20 flex items-center justify-center">
-                    <span className="text-[10px] font-bold text-amber-600">{initials}</span>
+              {/* Profile button + dropdown */}
+              <div ref={profileRef} className="relative">
+                <button
+                  onClick={() => setProfileOpen(o => !o)}
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-muted/60 hover:bg-muted transition-colors"
+                >
+                  {userPhotoURL ? (
+                    <img src={userPhotoURL} alt={userName} className="h-6 w-6 rounded-full object-cover" />
+                  ) : (
+                    <div className="h-6 w-6 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <span className="text-[10px] font-bold text-amber-600">{initials}</span>
+                    </div>
+                  )}
+                  <span className="text-sm font-medium">{userName?.split(" ")[0]}</span>
+                  <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${profileOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                {profileOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-52 bg-background border rounded-xl shadow-xl z-50 overflow-hidden py-1">
+                    {/* User info header */}
+                    <div className="px-3 py-2.5 border-b">
+                      <p className="text-xs font-semibold truncate">{userName}</p>
+                    </div>
+                    {/* Actions */}
+                    <button
+                      onClick={() => { setProfileOpen(false); onAction("discovering") }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-muted/60 transition-colors text-left"
+                    >
+                      <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                      Open App
+                    </button>
+                    <div className="border-t my-1" />
+                    <button
+                      onClick={() => { setProfileOpen(false); onSignOut?.() }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-950/30 text-red-500 transition-colors text-left"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      Sign out
+                    </button>
                   </div>
                 )}
-                <span className="text-sm font-medium">{userName?.split(" ")[0]}</span>
               </div>
+
               <button
                 onClick={() => onAction("discovering")}
                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-foreground text-background hover:bg-foreground/90 transition-colors"

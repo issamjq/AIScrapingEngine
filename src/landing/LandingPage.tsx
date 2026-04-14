@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function LandingPage({ onNavigateToApp }: Props) {
-  const { user, signInWithGoogle } = useAuth()
+  const { user, signInWithGoogle, logout } = useAuth()
   const isLoggedIn = !!user
 
   // Called by every CTA — if signed in, go directly; if not, trigger Google popup
@@ -33,6 +33,7 @@ export function LandingPage({ onNavigateToApp }: Props) {
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       <LandingNav
         onAction={handleAction}
+        onSignOut={logout}
         isLoggedIn={isLoggedIn}
         userName={user?.displayName ?? undefined}
         userPhotoURL={user?.photoURL ?? undefined}
