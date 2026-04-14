@@ -188,8 +188,15 @@ function AppInner() {
               sessionStorage.removeItem("spark_nav_target")
               if (VALID_PAGES.has(navTarget)) setCurrentPage(navTarget)
               setShowLanding(false)
+            } else {
+              // If there's already a valid app hash in the URL (e.g. page refresh
+              // while inside the app), go directly to the app — don't show landing.
+              const hashPage = window.location.hash.slice(1).split(":")[0]
+              if (hashPage && VALID_PAGES.has(hashPage)) {
+                setShowLanding(false)
+              }
+              // No hash or unknown hash = fresh visit → stay on landing page
             }
-            // No target = stay on landing page (showLanding remains true)
             setAppState("ready")
           }
           else if (data.error?.code === "NEW_USER") {
