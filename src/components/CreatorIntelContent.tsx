@@ -217,8 +217,15 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 
 // ─── Filter Panel ─────────────────────────────────────────────────────────────
 
-function FilterSection({ label, items, activeDate }: { label: string; items: string[]; activeDate?: string }) {
-  const [open, setOpen] = useState(label === "Dates" || label === "Category" || label === "Platform")
+function FilterSection({
+  label, items, activeItem, onSelect,
+}: {
+  label:      string
+  items:      string[]
+  activeItem?: string
+  onSelect?:  (item: string) => void
+}) {
+  const [open, setOpen] = useState(label === "Dates" || label === "Category" || label === "Platform" || label === "Revenue Filters" || label === "Sales Performance")
   return (
     <div className="border-b last:border-0">
       <button
@@ -230,23 +237,25 @@ function FilterSection({ label, items, activeDate }: { label: string; items: str
       </button>
       {open && (
         <div className="px-4 pb-3 space-y-1">
-          {items.map(item => (
-            <button
-              key={item}
-              className={`w-full text-left text-xs px-2 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
-                item === activeDate || item === items[1]
-                  ? "bg-primary/10 text-primary font-medium"
-                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-              }`}
-            >
-              <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
-                item === activeDate || item === items[1] ? "border-primary bg-primary" : "border-muted-foreground/40"
-              }`}>
-                {(item === activeDate || item === items[1]) && <div className="h-1.5 w-1.5 bg-white rounded-sm" />}
-              </div>
-              {item}
-            </button>
-          ))}
+          {items.map(item => {
+            const isActive = item === activeItem
+            return (
+              <button
+                key={item}
+                onClick={() => onSelect?.(item)}
+                className={`w-full text-left text-xs px-2 py-1.5 rounded-md transition-colors flex items-center gap-2 ${
+                  isActive ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                }`}
+              >
+                <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 ${
+                  isActive ? "border-primary bg-primary" : "border-muted-foreground/40"
+                }`}>
+                  {isActive && <div className="h-1.5 w-1.5 bg-white rounded-sm" />}
+                </div>
+                {item}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -460,6 +469,8 @@ export function CreatorIntelContent({ role }: Props) {
   const [refreshing,    setRefreshing]    = useState(false)
   const [lastScraped,   setLastScraped]   = useState<string | null>(null)
   const [dateRange,     setDateRange]     = useState<7 | 30 | 90>(30)
+  const [category,     setCategory]      = useState<string>("All")
+  const [sortBy,       setSortBy]        = useState<"gmv_7d" | "units_sold_7d" | "growth_pct">("gmv_7d")
 
   const isAdmin = role === "dev" || role === "owner"
 
@@ -467,15 +478,23 @@ export function CreatorIntelContent({ role }: Props) {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
   }, [user])
 
-  const loadData = useCallback(async (days: number = dateRange) => {
+  const loadData = useCallback(async (opts?: { days?: number; cat?: string; sort?: string }) => {
+    const days = opts?.days ?? dateRange
+    const cat  = opts?.cat  ?? category
+    const sort = opts?.sort ?? sortBy
     const token = await getToken()
     if (!token) { setLoading(false); return }
 
+    const tkParams = new URLSearchParams({ limit: "50", days: String(days), sortBy: sort })
+    if (cat && cat !== "All") tkParams.set("category", cat)
+
+    const amParams = new URLSearchParams({ limit: "50", days: String(days) })
+
     try {
       const [tkRes, amRes, freshRes] = await Promise.all([
-        fetch(`${API}/api/creator-intel/trending?limit=50&days=${days}`,       { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/creator-intel/amazon-trending?limit=50&days=${days}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/creator-intel/freshness`,                             { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/trending?${tkParams}`,       { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/amazon-trending?${amParams}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/freshness`,                   { headers: { Authorization: `Bearer ${token}` } }),
       ])
 
       if (tkRes.ok) {
@@ -492,13 +511,51 @@ export function CreatorIntelContent({ role }: Props) {
       }
     } catch (err) { console.error("[CreatorIntel] loadData error:", err) }
     setLoading(false)
-  }, [getToken, dateRange])
+  }, [getToken, dateRange, category, sortBy])
 
   useEffect(() => { loadData() }, [loadData])
 
   const handleDateRange = (days: 7 | 30 | 90) => {
     setDateRange(days)
-    loadData(days)
+    loadData({ days })
+  }
+
+  const handleCategory = (cat: string) => {
+    // Map display label → DB value
+    const CAT_MAP: Record<string, string> = {
+      "Womenswear & Underwear": "Womenswear",
+      "Beauty & Personal Care": "Beauty",
+      "Home & Kitchen":         "Home & Kitchen",
+      "Electronics":            "Electronics",
+      "Fitness & Sports":       "Sports & Outdoors",
+      "All":                    "All",
+    }
+    const mapped = CAT_MAP[cat] ?? cat
+    setCategory(mapped)
+    loadData({ cat: mapped })
+  }
+
+  const handleSort = (item: string) => {
+    const SORT_MAP: Record<string, "gmv_7d" | "units_sold_7d" | "growth_pct"> = {
+      "Revenue ($)":          "gmv_7d",
+      "Revenue (L30D)":       "gmv_7d",
+      "Item Sold":            "units_sold_7d",
+      "Item Sold (L30D)":     "units_sold_7d",
+      "Revenue Growth Rate":  "growth_pct",
+      "Monthly Sales Growth": "growth_pct",
+      "Monthly Revenue Growth": "growth_pct",
+    }
+    const mapped = SORT_MAP[item]
+    if (!mapped) return
+    setSortBy(mapped)
+    loadData({ sort: mapped })
+  }
+
+  const handleReset = () => {
+    setDateRange(30)
+    setCategory("All")
+    setSortBy("gmv_7d")
+    loadData({ days: 30, cat: "All", sort: "gmv_7d" })
   }
 
   const handleRefresh = async () => {
@@ -512,7 +569,7 @@ export function CreatorIntelContent({ role }: Props) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body:    JSON.stringify({ limit: 20 }),
       })
-      await loadData(dateRange)
+      await loadData()
     } catch { /* ignore */ }
     setRefreshing(false)
   }
@@ -615,16 +672,52 @@ export function CreatorIntelContent({ role }: Props) {
               <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="text-xs font-bold">Filters</span>
             </div>
-            <button className="text-[10px] text-primary hover:underline">Reset</button>
+            <button onClick={handleReset} className="text-[10px] text-primary hover:underline">Reset</button>
           </div>
-          {filters.map(f => (
-            <FilterSection key={f.label} label={f.label} items={f.items} />
-          ))}
-          <div className="p-4 border-t">
-            <button className="w-full py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
-              Apply Filters
-            </button>
-          </div>
+          {filters.map(f => {
+            // Determine active item per filter group
+            let activeItem: string | undefined
+            if (f.label === "Dates") {
+              activeItem = `Last ${dateRange} Days`
+            } else if (f.label === "Category") {
+              const REV_CAT: Record<string, string> = {
+                "Womenswear": "Womenswear & Underwear",
+                "Beauty":     "Beauty & Personal Care",
+                "Home & Kitchen": "Home & Kitchen",
+                "Electronics": "Electronics",
+                "Sports & Outdoors": "Fitness & Sports",
+              }
+              activeItem = category === "All" ? undefined : (REV_CAT[category] ?? category)
+            } else if (f.label === "Revenue Filters" || f.label === "Sales Performance") {
+              const REV_SORT: Record<string, string> = {
+                gmv_7d:        "Revenue ($)",
+                units_sold_7d: "Item Sold",
+                growth_pct:    "Revenue Growth Rate",
+              }
+              activeItem = REV_SORT[sortBy]
+            }
+
+            const handleSelect = (item: string) => {
+              if (f.label === "Dates") {
+                const d = item === "Last 7 Days" ? 7 : item === "Last 90 Days" ? 90 : 30
+                handleDateRange(d as 7 | 30 | 90)
+              } else if (f.label === "Category") {
+                handleCategory(item)
+              } else if (f.label === "Revenue Filters" || f.label === "Sales Performance") {
+                handleSort(item)
+              }
+            }
+
+            return (
+              <FilterSection
+                key={f.label}
+                label={f.label}
+                items={f.items}
+                activeItem={activeItem}
+                onSelect={handleSelect}
+              />
+            )
+          })}
         </div>
 
         {/* Right: search + table */}
@@ -658,6 +751,12 @@ export function CreatorIntelContent({ role }: Props) {
                   Last {d} Days
                 </button>
               ))}
+              {category !== "All" && (
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-primary/10 text-primary border border-primary/30 font-medium">
+                  {category}
+                  <button onClick={() => handleCategory("All")} className="ml-0.5 hover:text-primary/70">×</button>
+                </span>
+              )}
             </div>
 
             <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
