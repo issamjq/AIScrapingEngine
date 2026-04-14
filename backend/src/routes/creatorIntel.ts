@@ -31,8 +31,9 @@ creatorIntelRouter.get("/trending", async (req: AuthRequest, res: Response) => {
     const limit    = Math.min(Number(req.query.limit ?? 50), 100)
     const offset   = Number(req.query.offset ?? 0)
     const sortBy   = String(req.query.sortBy ?? "gmv_7d") as any
+    const days     = req.query.days ? Number(req.query.days) : undefined
 
-    const products = await getTikTokTrending({ category, limit, offset, sortBy })
+    const products = await getTikTokTrending({ category, limit, offset, sortBy, days })
     res.json({ success: true, data: products, count: products.length })
   } catch (err: any) {
     logger.error("[CreatorIntel] GET /trending", { error: err.message })

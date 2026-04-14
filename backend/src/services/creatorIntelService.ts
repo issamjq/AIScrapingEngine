@@ -47,15 +47,7 @@ export async function runTikTokScrape(opts: {
   }
   if (products.length === 0) return { inserted: 0, source }
 
-  // Clear stale data, then insert fresh batch.
-  const category = opts.category ?? "All"
-  if (category !== "All") {
-    await query(
-      `DELETE FROM tiktok_products WHERE category = $1 AND scraped_at < NOW() - INTERVAL '24 hours'`,
-      [category]
-    )
-  }
-
+  // Just insert — keep all historical rows so date filters work over time.
   let inserted = 0
   for (const p of products) {
     try {
@@ -84,27 +76,37 @@ export async function getTikTokTrending(opts: {
   limit?:    number
   offset?:   number
   sortBy?:   "gmv_7d" | "units_sold_7d" | "growth_pct"
+  days?:     number   // 7 | 30 | 90 — filter by scraped_at range
 } = {}): Promise<TikTokProduct[]> {
-  const { category, limit = 50, offset = 0, sortBy = "gmv_7d" } = opts
+  const { category, limit = 50, offset = 0, sortBy = "gmv_7d", days } = opts
 
   const allowedSort = new Set(["gmv_7d", "units_sold_7d", "growth_pct"])
   const sort = allowedSort.has(sortBy) ? sortBy : "gmv_7d"
 
-  const params: any[] = [limit, offset]
-  let where = ""
+  const conditions: string[] = []
+  const params: any[] = []
+
   if (category && category !== "All") {
     params.push(category)
-    where = `WHERE category = $${params.length}`
+    conditions.push(`category = $${params.length}`)
+  }
+  if (days && days > 0) {
+    params.push(days)
+    conditions.push(`scraped_at >= NOW() - ($${params.length} || ' days')::INTERVAL`)
   }
 
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+
+  // Deduplicate: for same product_name in the time window, keep the row with highest gmv_7d
   const res = await query(
-    `SELECT product_name, category, tiktok_price, gmv_7d, units_sold_7d,
+    `SELECT DISTINCT ON (product_name)
+            product_name, category, tiktok_price, gmv_7d, units_sold_7d,
             growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at
      FROM tiktok_products
      ${where}
-     ORDER BY ${sort} DESC NULLS LAST, scraped_at DESC
-     LIMIT $1 OFFSET $2`,
-    params
+     ORDER BY product_name, ${sort} DESC NULLS LAST, scraped_at DESC
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, limit, offset]
   )
   return res.rows
 }

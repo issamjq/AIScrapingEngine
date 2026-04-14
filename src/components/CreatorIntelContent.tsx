@@ -459,6 +459,7 @@ export function CreatorIntelContent({ role }: Props) {
   const [loading,       setLoading]       = useState(true)
   const [refreshing,    setRefreshing]    = useState(false)
   const [lastScraped,   setLastScraped]   = useState<string | null>(null)
+  const [dateRange,     setDateRange]     = useState<7 | 30 | 90>(30)
 
   const isAdmin = role === "dev" || role === "owner"
 
@@ -466,24 +467,24 @@ export function CreatorIntelContent({ role }: Props) {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
   }, [user])
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (days: number = dateRange) => {
     const token = await getToken()
     if (!token) { setLoading(false); return }
 
     try {
       const [tkRes, amRes, freshRes] = await Promise.all([
-        fetch(`${API}/api/creator-intel/trending?limit=50`,       { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/creator-intel/amazon-trending?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/creator-intel/freshness`,               { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/trending?limit=50&days=${days}`,       { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/amazon-trending?limit=50&days=${days}`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/freshness`,                             { headers: { Authorization: `Bearer ${token}` } }),
       ])
 
       if (tkRes.ok) {
         const json = await tkRes.json()
-        if (json.data?.length) setTiktokLive(adaptTikTok(json.data))
+        setTiktokLive(json.data?.length ? adaptTikTok(json.data) : null)
       }
       if (amRes.ok) {
         const json = await amRes.json()
-        if (json.data?.length) setAmazonLive(adaptAmazon(json.data))
+        setAmazonLive(json.data?.length ? adaptAmazon(json.data) : null)
       }
       if (freshRes.ok) {
         const json = await freshRes.json()
@@ -491,9 +492,14 @@ export function CreatorIntelContent({ role }: Props) {
       }
     } catch (err) { console.error("[CreatorIntel] loadData error:", err) }
     setLoading(false)
-  }, [getToken])
+  }, [getToken, dateRange])
 
   useEffect(() => { loadData() }, [loadData])
+
+  const handleDateRange = (days: 7 | 30 | 90) => {
+    setDateRange(days)
+    loadData(days)
+  }
 
   const handleRefresh = async () => {
     const token = await getToken()
@@ -506,7 +512,7 @@ export function CreatorIntelContent({ role }: Props) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body:    JSON.stringify({ limit: 20 }),
       })
-      await loadData()
+      await loadData(dateRange)
     } catch { /* ignore */ }
     setRefreshing(false)
   }
@@ -638,16 +644,20 @@ export function CreatorIntelContent({ role }: Props) {
 
             {/* Active filter chips */}
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-medium text-muted-foreground">Filtering:</span>
-              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-muted border font-medium">
-                Dates: Last 30 Days
-              </span>
-              {platform === "tiktok" && (
-                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full bg-muted border font-medium">
-                  Category: Womenswear & Underwear
-                  <button className="ml-0.5 text-muted-foreground hover:text-foreground">×</button>
-                </span>
-              )}
+              <span className="text-[10px] font-medium text-muted-foreground">Dates:</span>
+              {([7, 30, 90] as const).map(d => (
+                <button
+                  key={d}
+                  onClick={() => handleDateRange(d)}
+                  className={`inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full border font-medium transition-colors ${
+                    dateRange === d
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted text-muted-foreground hover:bg-muted/70"
+                  }`}
+                >
+                  Last {d} Days
+                </button>
+              ))}
             </div>
 
             <div className="ml-auto flex items-center gap-2 text-[10px] text-muted-foreground shrink-0">
