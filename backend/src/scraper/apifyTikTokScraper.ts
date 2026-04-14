@@ -122,13 +122,13 @@ async function extractProductsFromVideos(
     .filter(v => v.text && v.text.length > 10)
     .slice(0, 200)
     .map(v => ({
-      caption:  v.text.slice(0, 300),
-      views:    v.playCount    ?? 0,
-      likes:    v.diggCount    ?? 0,
-      shares:   v.shareCount   ?? 0,
-      creator:  v["authorMeta.name"] ?? null,
-      imageUrl: v["authorMeta.avatar"] ?? null,
-      url:      v.webVideoUrl  ?? null,
+      caption:      v.text.slice(0, 400),
+      views:        v.playCount    ?? 0,
+      likes:        v.diggCount    ?? 0,
+      shares:       v.shareCount   ?? 0,
+      creator:      v["authorMeta.name"] ?? null,
+      creatorImage: v["authorMeta.avatar"] ?? null,
+      url:          v.webVideoUrl  ?? null,
     }))
     .sort((a, b) => b.views - a.views)
 
@@ -136,27 +136,28 @@ async function extractProductsFromVideos(
 
   const prompt =
     `You are a TikTok product analytics API.\n\n` +
-    `Below is a list of TikTok videos scraped from trending shopping hashtags. ` +
-    `Each video has a caption, view count, and creator info.\n\n` +
-    `VIDEOS:\n${videosJson.slice(0, 8000)}\n\n` +
-    `Task: identify distinct products being promoted and aggregate their stats.\n` +
-    `For each unique product:\n` +
-    `- product_name: exact product name (string)\n` +
-    `- category: product category e.g. "Beauty", "Womenswear", "Home & Kitchen", "Health", "Electronics" (string|null)\n` +
-    `- tiktok_price: price in USD if mentioned in any caption (number|null)\n` +
-    `- gmv_7d: estimate 7-day GMV = sum of views × estimated conversion × average price. Use 0.5% conversion and price if known, else $25 average (number|null)\n` +
-    `- units_sold_7d: estimate units = total views × 0.005 (number|null)\n` +
-    `- growth_pct: if multiple videos mention same product, estimate trend (number|null)\n` +
-    `- video_count: number of videos in this list mentioning this product (number|null)\n` +
-    `- top_creator_handle: @handle of creator with most views for this product (string|null)\n` +
-    `- shop_name: TikTok Shop seller name if mentioned (string|null)\n` +
-    `- image_url: cover image URL from the highest-view video for this product (string|null)\n\n` +
+    `Below is a list of TikTok videos scraped from trending shopping searches. ` +
+    `Each video has a caption, view count, creator handle, creatorImage URL, and video url.\n\n` +
+    `VIDEOS:\n${videosJson.slice(0, 10000)}\n\n` +
+    `Task: identify distinct physical products being promoted and aggregate their stats.\n` +
+    `For each unique product output EXACTLY these fields:\n` +
+    `- product_name: specific product name — be precise, not generic (string)\n` +
+    `- category: one of "Beauty", "Womenswear", "Home & Kitchen", "Health", "Electronics", "Food & Beverage", "Fashion", "Sports & Outdoors", "Pets", "Baby & Kids" (string|null)\n` +
+    `- tiktok_price: price in USD — look for "$X", "only $X", "X dollars", "X.XX" patterns in captions (number|null)\n` +
+    `- gmv_7d: 7-day GMV estimate = total_views × 0.005 × (tiktok_price if found, else category average: Beauty=$28, Electronics=$45, Home=$22, Health=$30, Womenswear=$35, default=$25) (number)\n` +
+    `- units_sold_7d: total_views × 0.005, rounded to integer (number)\n` +
+    `- growth_pct: if video_count > 1, estimate growth % based on recency and view velocity; else null (number|null)\n` +
+    `- video_count: count of videos mentioning this product (number)\n` +
+    `- top_creator_handle: @handle of the creator with highest views for this product (string|null)\n` +
+    `- shop_name: TikTok Shop store name if mentioned in caption (look for "shop", "store", "from [name]" patterns) (string|null)\n` +
+    `- image_url: use the creatorImage from the highest-view video for this product (string|null)\n\n` +
     `RULES:\n` +
-    `- Return top ${limit} products sorted by total views descending\n` +
-    `- Merge duplicates (same product mentioned in multiple videos)\n` +
+    `- Return top ${limit} products sorted by gmv_7d descending\n` +
+    `- Merge duplicates aggressively (same product = same entry)\n` +
+    `- gmv_7d and units_sold_7d must ALWAYS be numbers, never null\n` +
+    `- image_url: ALWAYS copy the creatorImage URL from the best matching video — never leave null if creatorImage exists\n` +
     `- Output ONLY a JSON array — no text before or after, no markdown fences\n` +
-    `- All number fields must be actual numbers\n` +
-    `- Unknown fields → null\n\n` +
+    `- All number fields must be actual numbers\n\n` +
     `Output:`
 
   const data = await callClaude(apiKey, {
