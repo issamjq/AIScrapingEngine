@@ -40,21 +40,26 @@ const AVATAR_COLORS = [
   "bg-purple-400","bg-red-400","bg-teal-400","bg-rose-400",
 ]
 
-function formatGMV(v: number | null): string {
-  if (v === null) return "—"
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}m`
-  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`
-  return `$${v.toFixed(0)}`
+function formatGMV(v: number | string | null | undefined): string {
+  if (v === null || v === undefined) return "—"
+  const n = Number(v)
+  if (!isFinite(n) || n === 0) return "—"
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(2)}m`
+  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}k`
+  return `$${n.toFixed(0)}`
 }
 
-function formatCount(v: number | null): string {
-  if (v === null) return "—"
-  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}m`
-  if (v >= 1_000)     return `${(v / 1_000).toFixed(2)}k`
-  return String(v)
+function formatCount(v: number | string | null | undefined): string {
+  if (v === null || v === undefined) return "—"
+  const n = Number(v)
+  if (!isFinite(n) || n === 0) return "—"
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}m`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(2)}k`
+  return String(n)
 }
 
-function pseudoTrend(growth: number, len = 12): number[] {
+function pseudoTrend(growth: number | string | null | undefined, len = 12): number[] {
+  growth = Number(growth ?? 0) || 0
   // Generate a plausible sparkline shape from the growth %
   const arr: number[] = []
   let v = 50
@@ -72,8 +77,8 @@ function adaptTikTok(products: ApiTikTokProduct[]): typeof TIKTOK_PRODUCTS {
     price:     p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
     color:     AVATAR_COLORS[i % AVATAR_COLORS.length],
     revenue:   formatGMV(p.gmv_7d),
-    trend:     pseudoTrend(p.growth_pct ?? 0),
-    growth:    p.growth_pct ?? 0,
+    trend:     pseudoTrend(p.growth_pct),
+    growth:    Number(p.growth_pct ?? 0) || 0,
     itemsSold: formatCount(p.units_sold_7d),
     avgPrice:  p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
     commission:"—",
@@ -478,7 +483,7 @@ export function CreatorIntelContent({ role }: Props) {
         const json = await freshRes.json()
         setLastScraped(json.data?.tiktok_last_scraped ?? null)
       }
-    } catch { /* use fallback */ }
+    } catch (err) { console.error("[CreatorIntel] loadData error:", err) }
     setLoading(false)
   }, [getToken])
 
