@@ -27,25 +27,17 @@ interface ApifyRun {
 }
 
 interface ApifyVideo {
-  id:          string
-  text:        string   // caption — contains product info
-  createTime:  number
-  webVideoUrl: string
-  authorMeta?: {
-    name:   string
-    fans:   number
-    nickName?: string
-  }
-  covers?: {
-    default?: string
-  }
-  stats?: {
-    playCount:    number  // views — key popularity metric
-    diggCount:    number  // likes
-    shareCount:   number
-    commentCount: number
-  }
-  hashtags?: { name: string }[]
+  id?:            string
+  text:           string   // caption — contains product info
+  createTimeISO?: string
+  webVideoUrl:    string
+  // Flat dot-notation fields returned by clockworks/tiktok-scraper
+  "authorMeta.name"?:   string
+  "authorMeta.avatar"?: string
+  playCount?:    number   // views — key popularity metric
+  diggCount?:    number   // likes
+  shareCount?:   number
+  commentCount?: number
 }
 
 // ─── Step 1: start actor run ──────────────────────────────────────────────────
@@ -131,12 +123,12 @@ async function extractProductsFromVideos(
     .slice(0, 200)
     .map(v => ({
       caption:  v.text.slice(0, 300),
-      views:    v.stats?.playCount ?? 0,
-      likes:    v.stats?.diggCount ?? 0,
-      shares:   v.stats?.shareCount ?? 0,
-      creator:  v.authorMeta?.nickName ?? v.authorMeta?.name ?? null,
-      imageUrl: v.covers?.default ?? null,
-      url:      v.webVideoUrl ?? null,
+      views:    v.playCount    ?? 0,
+      likes:    v.diggCount    ?? 0,
+      shares:   v.shareCount   ?? 0,
+      creator:  v["authorMeta.name"] ?? null,
+      imageUrl: v["authorMeta.avatar"] ?? null,
+      url:      v.webVideoUrl  ?? null,
     }))
     .sort((a, b) => b.views - a.views)
 
