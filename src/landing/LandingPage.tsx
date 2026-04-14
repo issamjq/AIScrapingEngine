@@ -9,10 +9,21 @@ import { TikTokTeaser }     from "./TikTokTeaser"
 import { LandingCTA }       from "./LandingCTA"
 import { LandingFooter }    from "./LandingFooter"
 
-export function LandingPage() {
-  const { signInWithGoogle } = useAuth()
+interface Props {
+  onNavigateToApp?: (page: string) => void
+}
 
-  async function handleSignIn(target?: string) {
+export function LandingPage({ onNavigateToApp }: Props) {
+  const { user, signInWithGoogle } = useAuth()
+  const isLoggedIn = !!user
+
+  // Called by every CTA — if signed in, go directly; if not, trigger Google popup
+  async function handleAction(target?: string) {
+    const dest = target ?? "discovering"
+    if (isLoggedIn) {
+      onNavigateToApp?.(dest)
+      return
+    }
     if (target) sessionStorage.setItem("spark_nav_target", target)
     try { await signInWithGoogle() }
     catch { sessionStorage.removeItem("spark_nav_target") }
@@ -20,9 +31,14 @@ export function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
-      <LandingNav onSignIn={handleSignIn} />
+      <LandingNav
+        onAction={handleAction}
+        isLoggedIn={isLoggedIn}
+        userName={user?.displayName ?? undefined}
+        userPhotoURL={user?.photoURL ?? undefined}
+      />
 
-      <HeroSection onSignIn={handleSignIn} />
+      <HeroSection onAction={handleAction} isLoggedIn={isLoggedIn} />
 
       <StatsBar />
 
@@ -76,7 +92,7 @@ export function LandingPage() {
 
       <TikTokTeaser />
 
-      <LandingCTA onSignIn={handleSignIn} />
+      <LandingCTA onAction={handleAction} isLoggedIn={isLoggedIn} />
 
       <LandingFooter />
     </div>

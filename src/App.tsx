@@ -150,6 +150,7 @@ function AppInner() {
   const [discoveryResetKey, setDiscoveryResetKey]       = useState(0)
   const [userSubscription, setUserSubscription]         = useState<string | null>(null)
   const [sidebarRefreshKey, setSidebarRefreshKey]       = useState(0)
+  const [showLanding, setShowLanding]                   = useState(true)
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
@@ -169,7 +170,7 @@ function AppInner() {
 
   useEffect(() => {
     if (loading) return
-    if (!user) { setAppState("loading"); return }
+    if (!user) { setShowLanding(true); setAppState("loading"); return }
 
     setAppState("loading")
     user.getIdToken().then((token: string) =>
@@ -181,15 +182,20 @@ function AppInner() {
           if (data.success) {
             setUserRole(data.data?.role ?? null)
             setUserSubscription(data.data?.subscription ?? null)
-            // Check if user clicked a specific nav item on landing page
+            // If user clicked a specific product on landing page, navigate there and enter app
             const navTarget = sessionStorage.getItem("spark_nav_target")
             if (navTarget) {
               sessionStorage.removeItem("spark_nav_target")
               if (VALID_PAGES.has(navTarget)) setCurrentPage(navTarget)
+              setShowLanding(false)
             }
+            // No target = stay on landing page (showLanding remains true)
             setAppState("ready")
           }
-          else if (data.error?.code === "NEW_USER") setAppState("denied")
+          else if (data.error?.code === "NEW_USER") {
+            setShowLanding(false)
+            setAppState("denied")
+          }
           else setAppState("denied")
         })
         .catch(() => setAppState("error"))
@@ -223,8 +229,14 @@ function AppInner() {
     }
   }, [isB2C, currentPage])
 
-  if (loading || (user && appState === "loading")) return <AppLoader />
-  if (!user) return <LandingPage />
+  if (loading) return <AppLoader />
+
+  // Show landing page for unauthenticated users OR signed-in users who haven't picked a product yet
+  if (!user || (appState === "ready" && showLanding)) {
+    return <LandingPage onNavigateToApp={(page) => { setShowLanding(false); navigate(page) }} />
+  }
+
+  if (user && appState === "loading") return <AppLoader />
   if (appState === "onboarding") return <OnboardingContent onComplete={() => setRetryCount((n) => n + 1)} />
   if (appState === "denied") return <AccessDenied onChoosePlan={() => setAppState("onboarding")} />
   if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />

@@ -1,10 +1,11 @@
 import { ArrowRight, Sparkles } from "lucide-react"
 
 interface Props {
-  onSignIn: (target?: string) => void
+  onAction:    (target?: string) => void
+  isLoggedIn?: boolean
 }
 
-export function LandingCTA({ onSignIn }: Props) {
+export function LandingCTA({ onAction, isLoggedIn }: Props) {
   return (
     <section id="pricing" className="py-20 px-4">
       <div className="max-w-4xl mx-auto">
@@ -42,10 +43,10 @@ export function LandingCTA({ onSignIn }: Props) {
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
             <button
-              onClick={onSignIn}
+              onClick={() => onAction("discovering")}
               className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl bg-foreground text-background text-sm font-bold hover:bg-foreground/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
             >
-              Get Started Free
+              {isLoggedIn ? "Open App" : "Get Started Free"}
               <ArrowRight className="h-4 w-4" />
             </button>
             <a href="#how-it-works" className="flex items-center justify-center gap-2 px-8 py-4 rounded-xl border text-sm font-medium hover:bg-muted/60 transition-colors">

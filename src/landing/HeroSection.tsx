@@ -1,7 +1,8 @@
 import { Search, Sparkles, ArrowRight, Star } from "lucide-react"
 
 interface Props {
-  onSignIn: (target?: string) => void
+  onAction:    (target?: string) => void
+  isLoggedIn?: boolean
 }
 
 const DEMO_RESULTS = [
@@ -99,7 +100,7 @@ function AppMockup() {
   )
 }
 
-export function HeroSection({ onSignIn }: Props) {
+export function HeroSection({ onAction, isLoggedIn }: Props) {
   return (
     <section className="relative pt-28 pb-24 px-6 overflow-hidden min-h-[90vh] flex items-center">
       {/* Background gradient */}
@@ -134,10 +135,10 @@ export function HeroSection({ onSignIn }: Props) {
           {/* CTAs */}
           <div className="flex flex-wrap gap-3">
             <button
-              onClick={onSignIn}
+              onClick={() => onAction("discovering")}
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-foreground text-background text-sm font-semibold hover:bg-foreground/90 transition-all shadow-lg hover:shadow-xl hover:-translate-y-0.5"
             >
-              Get Started Free
+              {isLoggedIn ? "Open Market Intelligence" : "Get Started Free"}
               <ArrowRight className="h-4 w-4" />
             </button>
             <a
