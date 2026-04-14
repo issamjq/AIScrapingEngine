@@ -76,15 +76,16 @@ function formatPrice(v: number | string | null | undefined): string {
   return isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : "—"
 }
 
-function adaptTikTok(products: ApiTikTokProduct[]): typeof TIKTOK_PRODUCTS {
+function adaptTikTok(products: ApiTikTokProduct[]) {
   return products.map((p, i) => ({
     rank:      i + 1,
     name:      p.product_name,
     price:     formatPrice(p.tiktok_price),
     color:     AVATAR_COLORS[i % AVATAR_COLORS.length],
+    imageUrl:  p.image_url ?? null,
     revenue:   formatGMV(p.gmv_7d),
     trend:     pseudoTrend(p.growth_pct),
-    growth:    Number(p.growth_pct ?? 0) || 0,
+    growth:    p.growth_pct != null ? (Number(p.growth_pct) || 0) : null,
     itemsSold: formatCount(p.units_sold_7d),
     avgPrice:  formatPrice(p.tiktok_price),
     commission:"—",
@@ -288,7 +289,16 @@ function TikTokTable({ products }: { products: typeof TIKTOK_PRODUCTS }) {
               <td className="px-3 py-3 font-bold text-muted-foreground">{p.rank}</td>
               <td className="px-3 py-3">
                 <div className="flex items-center gap-3">
-                  <div className={`h-11 w-11 rounded-lg ${p.color} shrink-0 flex items-center justify-center text-white text-[10px] font-bold`}>IMG</div>
+                  {(p as any).imageUrl ? (
+                    <img
+                      src={(p as any).imageUrl}
+                      alt={p.name}
+                      className="h-11 w-11 rounded-lg object-cover shrink-0"
+                      onError={e => { (e.target as HTMLImageElement).style.display = "none" }}
+                    />
+                  ) : (
+                    <div className={`h-11 w-11 rounded-lg ${p.color} shrink-0 flex items-center justify-center text-white text-[10px] font-bold`}>IMG</div>
+                  )}
                   <div className="min-w-0">
                     <p className="font-medium text-foreground leading-snug line-clamp-2 max-w-[220px]">{p.name}</p>
                     <p className="text-muted-foreground mt-0.5">{p.price}</p>
@@ -299,13 +309,17 @@ function TikTokTable({ products }: { products: typeof TIKTOK_PRODUCTS }) {
                 <span className="font-bold text-primary">{p.revenue}</span>
               </td>
               <td className="px-3 py-3 flex justify-center items-center h-[60px]">
-                <Sparkline data={p.trend} positive={p.growth >= 0} />
+                <Sparkline data={p.trend} positive={(p.growth ?? 0) >= 0} />
               </td>
               <td className="px-3 py-3 text-right">
-                <span className={`font-semibold flex items-center justify-end gap-0.5 ${p.growth >= 0 ? "text-green-600" : "text-red-500"}`}>
-                  {p.growth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
-                  {Math.abs(p.growth)}%
-                </span>
+                {(p as any).growth == null ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <span className={`font-semibold flex items-center justify-end gap-0.5 ${(p as any).growth >= 0 ? "text-green-600" : "text-red-500"}`}>
+                    {(p as any).growth >= 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+                    {Math.abs((p as any).growth)}%
+                  </span>
+                )}
               </td>
               <td className="px-3 py-3 text-right text-muted-foreground">{p.itemsSold}</td>
               <td className="px-3 py-3 text-right text-muted-foreground">{p.avgPrice}</td>

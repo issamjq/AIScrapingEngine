@@ -117,18 +117,27 @@ async function extractProductsFromVideos(
   apiKey:   string,
   limit:    number
 ): Promise<TikTokProduct[]> {
+  // Build creator → image lookup (highest-view video per creator)
+  const creatorImageMap = new Map<string, string>()
+  for (const v of videos) {
+    const name  = v["authorMeta.name"]
+    const image = v["authorMeta.avatar"]
+    if (name && image && !creatorImageMap.has(name)) {
+      creatorImageMap.set(name, image)
+    }
+  }
+
   // Build a compact representation of videos for Claude
   const videoSummaries = videos
     .filter(v => v.text && v.text.length > 10)
     .slice(0, 200)
     .map(v => ({
-      caption:      v.text.slice(0, 400),
-      views:        v.playCount    ?? 0,
-      likes:        v.diggCount    ?? 0,
-      shares:       v.shareCount   ?? 0,
-      creator:      v["authorMeta.name"] ?? null,
-      creatorImage: v["authorMeta.avatar"] ?? null,
-      url:          v.webVideoUrl  ?? null,
+      caption: v.text.slice(0, 400),
+      views:   v.playCount  ?? 0,
+      likes:   v.diggCount  ?? 0,
+      shares:  v.shareCount ?? 0,
+      creator: v["authorMeta.name"] ?? null,
+      url:     v.webVideoUrl ?? null,
     }))
     .sort((a, b) => b.views - a.views)
 
@@ -137,25 +146,24 @@ async function extractProductsFromVideos(
   const prompt =
     `You are a TikTok product analytics API.\n\n` +
     `Below is a list of TikTok videos scraped from trending shopping searches. ` +
-    `Each video has a caption, view count, creator handle, creatorImage URL, and video url.\n\n` +
+    `Each video has a caption, view count, and creator handle.\n\n` +
     `VIDEOS:\n${videosJson.slice(0, 10000)}\n\n` +
     `Task: identify distinct physical products being promoted and aggregate their stats.\n` +
     `For each unique product output EXACTLY these fields:\n` +
     `- product_name: specific product name — be precise, not generic (string)\n` +
     `- category: one of "Beauty", "Womenswear", "Home & Kitchen", "Health", "Electronics", "Food & Beverage", "Fashion", "Sports & Outdoors", "Pets", "Baby & Kids" (string|null)\n` +
     `- tiktok_price: price in USD — look for "$X", "only $X", "X dollars", "X.XX" patterns in captions (number|null)\n` +
-    `- gmv_7d: 7-day GMV estimate = total_views × 0.005 × (tiktok_price if found, else category average: Beauty=$28, Electronics=$45, Home=$22, Health=$30, Womenswear=$35, default=$25) (number)\n` +
+    `- gmv_7d: 7-day GMV = total_views × 0.005 × (tiktok_price if found, else: Beauty=$28, Electronics=$45, Home=$22, Health=$30, Womenswear=$35, default=$25) (number)\n` +
     `- units_sold_7d: total_views × 0.005, rounded to integer (number)\n` +
-    `- growth_pct: if video_count > 1, estimate growth % based on recency and view velocity; else null (number|null)\n` +
+    `- growth_pct: if video_count > 1, estimate % growth based on view velocity; else null (number|null)\n` +
     `- video_count: count of videos mentioning this product (number)\n` +
-    `- top_creator_handle: @handle of the creator with highest views for this product (string|null)\n` +
-    `- shop_name: TikTok Shop store name if mentioned in caption (look for "shop", "store", "from [name]" patterns) (string|null)\n` +
-    `- image_url: use the creatorImage from the highest-view video for this product (string|null)\n\n` +
+    `- top_creator_handle: creator handle with highest views for this product (string|null)\n` +
+    `- shop_name: TikTok Shop name if mentioned in caption (string|null)\n` +
+    `- image_url: null — will be filled in by system (always null here)\n\n` +
     `RULES:\n` +
     `- Return top ${limit} products sorted by gmv_7d descending\n` +
-    `- Merge duplicates aggressively (same product = same entry)\n` +
+    `- Merge duplicates aggressively\n` +
     `- gmv_7d and units_sold_7d must ALWAYS be numbers, never null\n` +
-    `- image_url: ALWAYS copy the creatorImage URL from the best matching video — never leave null if creatorImage exists\n` +
     `- Output ONLY a JSON array — no text before or after, no markdown fences\n` +
     `- All number fields must be actual numbers\n\n` +
     `Output:`
@@ -178,7 +186,19 @@ async function extractProductsFromVideos(
 
   try {
     const arr: any[] = JSON.parse(jsonStr.slice(start, end + 1))
-    return arr.map(sanitize)
+    return arr.map(p => {
+      const s = sanitize(p)
+      // Enrich image_url from our creator→image map using top_creator_handle
+      if (!s.image_url && s.top_creator_handle) {
+        const handle = s.top_creator_handle.replace(/^@/, "")
+        s.image_url = creatorImageMap.get(handle) ?? creatorImageMap.get(`@${handle}`) ?? null
+      }
+      // Fallback: use any image from the map
+      if (!s.image_url && creatorImageMap.size > 0) {
+        s.image_url = creatorImageMap.values().next().value ?? null
+      }
+      return s
+    })
   } catch (err: any) {
     logger.error("[ApifyTikTok] JSON parse failed", { error: err.message })
     return []
