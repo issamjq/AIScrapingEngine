@@ -117,13 +117,16 @@ async function extractProductsFromVideos(
   apiKey:   string,
   limit:    number
 ): Promise<TikTokProduct[]> {
-  // Build creator → image lookup (highest-view video per creator)
+  // Build creator → image lookup + ordered list of all images
   const creatorImageMap = new Map<string, string>()
-  for (const v of videos) {
+  const allImages: string[] = []
+  const sorted = [...videos].sort((a, b) => (b.playCount ?? 0) - (a.playCount ?? 0))
+  for (const v of sorted) {
     const name  = v["authorMeta.name"]
     const image = v["authorMeta.avatar"]
-    if (name && image && !creatorImageMap.has(name)) {
-      creatorImageMap.set(name, image)
+    if (image) {
+      if (name && !creatorImageMap.has(name)) creatorImageMap.set(name, image)
+      if (!allImages.includes(image)) allImages.push(image)
     }
   }
 
@@ -186,16 +189,16 @@ async function extractProductsFromVideos(
 
   try {
     const arr: any[] = JSON.parse(jsonStr.slice(start, end + 1))
-    return arr.map(p => {
+    return arr.map((p, i) => {
       const s = sanitize(p)
-      // Enrich image_url from our creator→image map using top_creator_handle
+      // 1. Try exact handle match
       if (!s.image_url && s.top_creator_handle) {
         const handle = s.top_creator_handle.replace(/^@/, "")
         s.image_url = creatorImageMap.get(handle) ?? creatorImageMap.get(`@${handle}`) ?? null
       }
-      // Fallback: use any image from the map
-      if (!s.image_url && creatorImageMap.size > 0) {
-        s.image_url = creatorImageMap.values().next().value ?? null
+      // 2. Fallback: round-robin from top-viewed images list
+      if (!s.image_url && allImages.length > 0) {
+        s.image_url = allImages[i % allImages.length]
       }
       return s
     })
