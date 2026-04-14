@@ -51,17 +51,19 @@ interface ApifyVideo {
 // ─── Step 1: start actor run ──────────────────────────────────────────────────
 
 async function startActorRun(
-  apifyToken: string,
-  hashtags:   string[],
-  videosPerHashtag: number
+  apifyToken:    string,
+  searchQueries: string[],
+  videosPerQuery: number
 ): Promise<ApifyRun> {
   const url = `${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${apifyToken}`
 
+  // Use searchQueries (not hashtags) — search results include full playCount stats.
+  // Hashtag feeds omit view counts, making GMV estimation impossible.
   const body = {
-    hashtags,
-    resultsPerPage:         videosPerHashtag,
-    shouldDownloadVideos:   false,
-    shouldDownloadCovers:   false,
+    searchQueries,
+    resultsPerPage:          videosPerQuery,
+    shouldDownloadVideos:    false,
+    shouldDownloadCovers:    false,
     shouldDownloadSubtitles: false,
   }
 
@@ -193,24 +195,28 @@ async function extractProductsFromVideos(
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function scrapeApifyTikTok(opts: {
-  apifyToken:       string
-  claudeApiKey:     string
-  hashtags?:        string[]
-  videosPerHashtag?: number
-  limit?:           number
+  apifyToken:        string
+  claudeApiKey:      string
+  searchQueries?:    string[]
+  videosPerQuery?:   number
+  limit?:            number
 }): Promise<TikTokProduct[]> {
   const {
     apifyToken,
     claudeApiKey,
-    hashtags        = ["tiktokshop", "tiktokmademebuyit", "tiktokfinds"],
-    videosPerHashtag = 50,
-    limit            = 20,
+    searchQueries  = [
+      "best selling products TikTok shop 2026",
+      "trending TikTok products buy now",
+      "TikTok shop must haves viral products",
+    ],
+    videosPerQuery = 50,
+    limit          = 20,
   } = opts
 
-  logger.info("[ApifyTikTok] Starting scrape", { hashtags, videosPerHashtag })
+  logger.info("[ApifyTikTok] Starting scrape", { searchQueries, videosPerQuery })
 
   // Step 1: start run
-  const run = await startActorRun(apifyToken, hashtags, videosPerHashtag)
+  const run = await startActorRun(apifyToken, searchQueries, videosPerQuery)
   logger.info("[ApifyTikTok] Run started", { runId: run.id, status: run.status })
 
   // Step 2: wait for completion
@@ -218,7 +224,7 @@ export async function scrapeApifyTikTok(opts: {
   logger.info("[ApifyTikTok] Run succeeded", { datasetId: doneRun.defaultDatasetId })
 
   // Step 3: fetch videos
-  const totalVideos = hashtags.length * videosPerHashtag
+  const totalVideos = searchQueries.length * videosPerQuery
   const videos = await fetchDatasetItems(apifyToken, doneRun.defaultDatasetId, totalVideos)
   logger.info("[ApifyTikTok] Fetched videos", { count: videos.length })
 

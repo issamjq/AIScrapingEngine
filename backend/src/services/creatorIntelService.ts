@@ -19,11 +19,11 @@ import { logger }                   from "../utils/logger"
 // ─── TikTok ──────────────────────────────────────────────────────────────────
 
 export async function runTikTokScrape(opts: {
-  category?:   string
-  limit?:      number
-  apiKey:      string
-  apifyToken?: string
-  hashtags?:   string[]
+  category?:      string
+  limit?:         number
+  apiKey:         string
+  apifyToken?:    string
+  searchQueries?: string[]
 }): Promise<{ inserted: number; source: string }> {
   const apifyToken = opts.apifyToken ?? process.env.APIFY_API_KEY
 
@@ -34,10 +34,10 @@ export async function runTikTokScrape(opts: {
     logger.info("[CreatorIntel] Using Apify scraper")
     products = await scrapeApifyTikTok({
       apifyToken,
-      claudeApiKey:     opts.apiKey,
-      hashtags:         opts.hashtags,
-      videosPerHashtag: 50,
-      limit:            opts.limit ?? 20,
+      claudeApiKey:    opts.apiKey,
+      searchQueries:   opts.searchQueries,
+      videosPerQuery:  50,
+      limit:           opts.limit ?? 20,
     })
     source = "apify"
   } else {
