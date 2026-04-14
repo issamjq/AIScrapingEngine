@@ -12,7 +12,7 @@ export function B2BVisual() {
   ]
 
   return (
-    <div className="relative w-full max-w-lg mx-auto select-none">
+    <div className="relative w-full max-w-xl mx-auto select-none">
       <div className="absolute inset-0 bg-blue-400/15 dark:bg-blue-400/8 blur-3xl rounded-3xl -z-10 scale-110" />
       <div className="rounded-2xl border bg-card shadow-2xl overflow-hidden">
         {/* Header */}
@@ -73,7 +73,7 @@ export function B2CVisual() {
   ]
 
   return (
-    <div className="relative w-full max-w-lg mx-auto select-none">
+    <div className="relative w-full max-w-xl mx-auto select-none">
       <div className="absolute inset-0 bg-green-400/15 dark:bg-green-400/8 blur-3xl rounded-3xl -z-10 scale-110" />
       <div className="rounded-2xl border bg-card shadow-2xl overflow-hidden">
         <div className="px-5 py-4 border-b flex items-center gap-2">
@@ -118,7 +118,7 @@ export function PriceChartVisual() {
   const bars = [65, 72, 68, 80, 75, 60, 55, 70, 65, 58, 50, 62]
 
   return (
-    <div className="relative w-full max-w-lg mx-auto select-none">
+    <div className="relative w-full max-w-xl mx-auto select-none">
       <div className="absolute inset-0 bg-purple-400/15 dark:bg-purple-400/8 blur-3xl rounded-3xl -z-10 scale-110" />
       <div className="rounded-2xl border bg-card shadow-2xl overflow-hidden">
         <div className="px-5 py-4 border-b flex items-center gap-2">

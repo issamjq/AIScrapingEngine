@@ -12,7 +12,7 @@ const DEMO_RESULTS = [
 
 function AppMockup() {
   return (
-    <div className="relative w-full max-w-lg mx-auto select-none">
+    <div className="relative w-full max-w-xl mx-auto select-none">
       {/* Glow effect */}
       <div className="absolute inset-0 bg-amber-400/20 dark:bg-amber-400/10 blur-3xl rounded-3xl -z-10 scale-110" />
 
@@ -101,13 +101,13 @@ function AppMockup() {
 
 export function HeroSection({ onSignIn }: Props) {
   return (
-    <section className="relative pt-32 pb-20 px-4 overflow-hidden">
+    <section className="relative pt-28 pb-24 px-6 overflow-hidden min-h-[90vh] flex items-center">
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-br from-white via-amber-50/40 to-blue-50/30 dark:from-background dark:via-amber-950/10 dark:to-background -z-10" />
       <div className="absolute top-20 left-1/4 h-64 w-64 bg-amber-400/10 rounded-full blur-3xl -z-10" />
       <div className="absolute top-40 right-1/4 h-48 w-48 bg-blue-400/10 rounded-full blur-3xl -z-10" />
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+      <div className="w-full max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
 
         {/* Left — text */}
         <div className="space-y-6">
@@ -118,7 +118,7 @@ export function HeroSection({ onSignIn }: Props) {
           </div>
 
           {/* Headline */}
-          <h1 className="text-5xl sm:text-6xl font-black tracking-tight leading-[1.05]">
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tight leading-[1.05]">
             Know Every Price.{" "}
             <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">
               Beat Every
@@ -127,7 +127,7 @@ export function HeroSection({ onSignIn }: Props) {
           </h1>
 
           {/* Sub */}
-          <p className="text-lg text-muted-foreground leading-relaxed max-w-lg">
+          <p className="text-xl text-muted-foreground leading-relaxed max-w-lg">
             Spark AI discovers, tracks, and monitors prices across the web in real time — using Claude Vision AI. Built for UAE retailers and global buyers alike.
           </p>
 

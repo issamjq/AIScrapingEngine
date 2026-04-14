@@ -10,14 +10,14 @@ const STATS = [
 export function StatsBar() {
   return (
     <section className="border-y bg-muted/30">
-      <div className="max-w-7xl mx-auto px-4 py-10 grid grid-cols-2 sm:grid-cols-4 gap-8">
+      <div className="max-w-7xl mx-auto px-6 py-14 grid grid-cols-2 sm:grid-cols-4 gap-8">
         {STATS.map(({ icon: Icon, value, label }) => (
           <div key={label} className="flex flex-col items-center text-center gap-2">
             <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
               <Icon className="h-5 w-5 text-amber-500" />
             </div>
-            <p className="text-2xl font-black tracking-tight">{value}</p>
-            <p className="text-xs text-muted-foreground font-medium">{label}</p>
+            <p className="text-3xl font-black tracking-tight">{value}</p>
+            <p className="text-sm text-muted-foreground font-medium">{label}</p>
           </div>
         ))}
       </div>
