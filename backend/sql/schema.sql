@@ -450,3 +450,75 @@ ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS last_cycle_reset_at     TIMESTA
 ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS daily_limit             INTEGER;
 ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS weekly_limit            INTEGER;
 ALTER TABLE user_wallet ADD COLUMN IF NOT EXISTS monthly_limit           INTEGER;
+
+-- =============================================================
+-- Creator Intelligence tables (added v1.8.x)
+-- =============================================================
+
+CREATE TABLE IF NOT EXISTS tiktok_products (
+  id                  SERIAL PRIMARY KEY,
+  product_name        TEXT NOT NULL,
+  category            VARCHAR(100),
+  tiktok_price        DECIMAL(10,2),
+  gmv_7d              DECIMAL(15,2),
+  units_sold_7d       INTEGER,
+  growth_pct          DECIMAL(6,2),
+  video_count         INTEGER,
+  top_creator_handle  VARCHAR(100),
+  shop_name           VARCHAR(150),
+  image_url           TEXT,
+  scraped_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tiktok_products_category ON tiktok_products(category);
+CREATE INDEX IF NOT EXISTS idx_tiktok_products_gmv      ON tiktok_products(gmv_7d DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_tiktok_products_scraped  ON tiktok_products(scraped_at DESC);
+
+CREATE TABLE IF NOT EXISTS tiktok_creators (
+  id                SERIAL PRIMARY KEY,
+  handle            VARCHAR(100) UNIQUE NOT NULL,
+  display_name      VARCHAR(150),
+  followers         INTEGER,
+  niche             VARCHAR(100),
+  gmv_30d           DECIMAL(15,2),
+  avg_views         INTEGER,
+  engagement_rate   DECIMAL(5,2),
+  profile_image_url TEXT,
+  updated_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tiktok_creators_gmv ON tiktok_creators(gmv_30d DESC NULLS LAST);
+
+CREATE TABLE IF NOT EXISTS amazon_trending (
+  id            SERIAL PRIMARY KEY,
+  asin          VARCHAR(20) UNIQUE,
+  product_name  TEXT,
+  category      VARCHAR(100),
+  rank          INTEGER,
+  price         DECIMAL(10,2),
+  rating        DECIMAL(3,2),
+  review_count  INTEGER,
+  marketplace   VARCHAR(10) DEFAULT 'US',
+  scraped_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_amazon_trending_category ON amazon_trending(category);
+CREATE INDEX IF NOT EXISTS idx_amazon_trending_rank     ON amazon_trending(rank ASC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_amazon_trending_scraped  ON amazon_trending(scraped_at DESC);
+
+CREATE TABLE IF NOT EXISTS sourcing_products (
+  id             SERIAL PRIMARY KEY,
+  query          TEXT NOT NULL,
+  platform       VARCHAR(20),
+  supplier_name  VARCHAR(200),
+  product_title  TEXT,
+  unit_price     DECIMAL(10,2),
+  moq            INTEGER,
+  currency       VARCHAR(5) DEFAULT 'USD',
+  rating         DECIMAL(3,2),
+  orders_count   INTEGER,
+  scraped_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sourcing_query    ON sourcing_products(query);
+CREATE INDEX IF NOT EXISTS idx_sourcing_platform ON sourcing_products(platform);

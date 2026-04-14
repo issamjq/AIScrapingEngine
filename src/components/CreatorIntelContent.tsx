@@ -1,7 +1,107 @@
-import { useState } from "react"
-import { Search, ChevronDown, ChevronRight, Star, Download, SlidersHorizontal, ArrowUpRight, ArrowDownRight, BadgeCheck, ExternalLink } from "lucide-react"
+import { useState, useEffect, useCallback } from "react"
+import { Search, ChevronDown, ChevronRight, Star, Download, SlidersHorizontal, ArrowUpRight, ArrowDownRight, BadgeCheck, ExternalLink, RefreshCw } from "lucide-react"
+import { useAuth } from "@/context/AuthContext"
 
 interface Props { role?: string }
+
+const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
+
+// ─── API types ────────────────────────────────────────────────────────────────
+
+interface ApiTikTokProduct {
+  product_name:       string
+  category:           string | null
+  tiktok_price:       number | null
+  gmv_7d:             number | null
+  units_sold_7d:      number | null
+  growth_pct:         number | null
+  video_count:        number | null
+  top_creator_handle: string | null
+  shop_name:          string | null
+  image_url:          string | null
+  scraped_at?:        string
+}
+
+interface ApiAmazonProduct {
+  asin:         string | null
+  product_name: string
+  category:     string | null
+  rank:         number | null
+  price:        number | null
+  rating:       number | null
+  review_count: number | null
+  marketplace:  string
+}
+
+// ─── Adapters (API → display row format) ─────────────────────────────────────
+
+const AVATAR_COLORS = [
+  "bg-pink-400","bg-amber-400","bg-blue-400","bg-green-400",
+  "bg-purple-400","bg-red-400","bg-teal-400","bg-rose-400",
+]
+
+function formatGMV(v: number | null): string {
+  if (v === null) return "—"
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}m`
+  if (v >= 1_000)     return `$${(v / 1_000).toFixed(1)}k`
+  return `$${v.toFixed(0)}`
+}
+
+function formatCount(v: number | null): string {
+  if (v === null) return "—"
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}m`
+  if (v >= 1_000)     return `${(v / 1_000).toFixed(2)}k`
+  return String(v)
+}
+
+function pseudoTrend(growth: number, len = 12): number[] {
+  // Generate a plausible sparkline shape from the growth %
+  const arr: number[] = []
+  let v = 50
+  for (let i = 0; i < len; i++) {
+    v += (growth / len) + (Math.sin(i * 1.3) * 5)
+    arr.push(Math.max(10, Math.min(90, v)))
+  }
+  return arr
+}
+
+function adaptTikTok(products: ApiTikTokProduct[]): typeof TIKTOK_PRODUCTS {
+  return products.map((p, i) => ({
+    rank:      i + 1,
+    name:      p.product_name,
+    price:     p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
+    color:     AVATAR_COLORS[i % AVATAR_COLORS.length],
+    revenue:   formatGMV(p.gmv_7d),
+    trend:     pseudoTrend(p.growth_pct ?? 0),
+    growth:    p.growth_pct ?? 0,
+    itemsSold: formatCount(p.units_sold_7d),
+    avgPrice:  p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
+    commission:"—",
+    creators:  formatCount(p.video_count),
+    launch:    p.scraped_at ? new Date(p.scraped_at).toLocaleDateString("en-US", { month:"2-digit", day:"2-digit", year:"numeric" }) : "—",
+  }))
+}
+
+function adaptAmazon(products: ApiAmazonProduct[]): typeof AMAZON_PRODUCTS {
+  return products.map((p, i) => ({
+    rank:      p.rank ?? i + 1,
+    name:      p.product_name,
+    asin:      p.asin ?? "—",
+    brand:     p.category ?? "—",
+    price:     p.price != null ? `$${p.price.toFixed(2)}` : "—",
+    color:     AVATAR_COLORS[i % AVATAR_COLORS.length],
+    bsr:       p.rank ?? 0,
+    bsrDelta:  0,
+    trend:     pseudoTrend(0),
+    itemsSold: "—",
+    revenue:   "—",
+    revGrowth: 0,
+    ratings:   p.review_count != null ? p.review_count.toLocaleString() : "—",
+    rating:    p.rating ?? 0,
+    shelf:     "—",
+    sellers:   1,
+  }))
+}
 
 type Platform = "tiktok" | "amazon" | "alibaba"
 
@@ -335,14 +435,78 @@ function AlibabaTable({ products }: { products: typeof ALIBABA_PRODUCTS }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function CreatorIntelContent({ role: _role }: Props) {
-  const [platform, setPlatform]       = useState<Platform>("tiktok")
+export function CreatorIntelContent({ role }: Props) {
+  const { user } = useAuth()
+  const [platform, setPlatform]         = useState<Platform>("tiktok")
   const [platformOpen, setPlatformOpen] = useState(false)
-  const [activeTab, setActiveTab]     = useState(0)
-  const [search, setSearch]           = useState("")
+  const [activeTab, setActiveTab]       = useState(0)
+  const [search, setSearch]             = useState("")
 
-  const filters  = FILTERS[platform]
-  const tabs     = TABS[platform]
+  // Live data state
+  const [tiktokLive,    setTiktokLive]    = useState<typeof TIKTOK_PRODUCTS | null>(null)
+  const [amazonLive,    setAmazonLive]    = useState<typeof AMAZON_PRODUCTS | null>(null)
+  const [loading,       setLoading]       = useState(true)
+  const [refreshing,    setRefreshing]    = useState(false)
+  const [lastScraped,   setLastScraped]   = useState<string | null>(null)
+
+  const isAdmin = role === "dev" || role === "owner"
+
+  const getToken = useCallback(async () => {
+    try { return user ? await (user as any).getIdToken() : null } catch { return null }
+  }, [user])
+
+  const loadData = useCallback(async () => {
+    const token = await getToken()
+    if (!token) { setLoading(false); return }
+
+    try {
+      const [tkRes, amRes, freshRes] = await Promise.all([
+        fetch(`${API}/api/creator-intel/trending?limit=50`,       { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/amazon-trending?limit=50`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API}/api/creator-intel/freshness`,               { headers: { Authorization: `Bearer ${token}` } }),
+      ])
+
+      if (tkRes.ok) {
+        const json = await tkRes.json()
+        if (json.data?.length) setTiktokLive(adaptTikTok(json.data))
+      }
+      if (amRes.ok) {
+        const json = await amRes.json()
+        if (json.data?.length) setAmazonLive(adaptAmazon(json.data))
+      }
+      if (freshRes.ok) {
+        const json = await freshRes.json()
+        setLastScraped(json.data?.tiktok_last_scraped ?? null)
+      }
+    } catch { /* use fallback */ }
+    setLoading(false)
+  }, [getToken])
+
+  useEffect(() => { loadData() }, [loadData])
+
+  const handleRefresh = async () => {
+    const token = await getToken()
+    if (!token) return
+    setRefreshing(true)
+    try {
+      const endpoint = platform === "amazon" ? "scrape-amazon" : "scrape-tiktok"
+      await fetch(`${API}/api/creator-intel/${endpoint}`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ limit: 20 }),
+      })
+      await loadData()
+    } catch { /* ignore */ }
+    setRefreshing(false)
+  }
+
+  // Display data — real if loaded, fallback to dummy
+  const tiktokProducts = tiktokLive ?? TIKTOK_PRODUCTS
+  const amazonProducts  = amazonLive  ?? AMAZON_PRODUCTS
+  const isLive          = platform === "tiktok" ? !!tiktokLive : platform === "amazon" ? !!amazonLive : false
+
+  const filters = FILTERS[platform]
+  const tabs    = TABS[platform]
 
   return (
     <div className="flex flex-col h-full -m-4 sm:-m-6">
@@ -354,10 +518,28 @@ export function CreatorIntelContent({ role: _role }: Props) {
         <div className="flex items-center justify-between gap-4 mb-4">
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-black tracking-tight">Creator Intelligence</h1>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-500 border border-pink-500/20">Demo Data</span>
+            {loading ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border">Loading…</span>
+            ) : isLive ? (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+                Live Data{lastScraped ? ` · ${new Date(lastScraped).toLocaleDateString()}` : ""}
+              </span>
+            ) : (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-pink-500/10 text-pink-500 border border-pink-500/20">Demo Data</span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium hover:bg-muted/60 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Scraping…" : "Refresh Data"}
+              </button>
+            )}
             {/* Platform switcher */}
             <div className="relative">
               <button
@@ -464,21 +646,23 @@ export function CreatorIntelContent({ role: _role }: Props) {
 
           {/* Table */}
           <div className="flex-1 overflow-auto">
-            {platform === "tiktok"  && <TikTokTable  products={TIKTOK_PRODUCTS}  />}
-            {platform === "amazon"  && <AmazonTable  products={AMAZON_PRODUCTS}  />}
+            {platform === "tiktok"  && <TikTokTable  products={tiktokProducts}  />}
+            {platform === "amazon"  && <AmazonTable  products={amazonProducts}  />}
             {platform === "alibaba" && <AlibabaTable products={ALIBABA_PRODUCTS} />}
           </div>
 
           {/* Footer */}
           <div className="border-t px-4 py-2.5 bg-card flex items-center justify-between text-[11px] text-muted-foreground">
             <span>
-              Showing {platform === "tiktok" ? TIKTOK_PRODUCTS.length : platform === "amazon" ? AMAZON_PRODUCTS.length : ALIBABA_PRODUCTS.length} results
-              {platform === "tiktok" && " · 03/14 – 04/12"}
+              Showing {platform === "tiktok" ? tiktokProducts.length : platform === "amazon" ? amazonProducts.length : ALIBABA_PRODUCTS.length} results
+              {platform === "alibaba" && " · Demo data — Alibaba scraper coming soon"}
             </span>
             <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-pink-500/10 text-pink-500 font-semibold border border-pink-500/20">
-                Real data coming Q3 2026 — join the waitlist
-              </span>
+              {!isLive && platform !== "alibaba" && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-pink-500/10 text-pink-500 font-semibold border border-pink-500/20">
+                  No scraped data yet — click Refresh Data to load
+                </span>
+              )}
             </div>
           </div>
         </div>

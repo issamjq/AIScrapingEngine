@@ -1,0 +1,211 @@
+/**
+ * Creator Intelligence service.
+ *
+ * Orchestrates TikTok + Amazon scrapers, persists results to DB,
+ * and provides query functions for the API routes.
+ *
+ * Scrape runs are on-demand (POST /scrape-tiktok / /scrape-amazon).
+ * GET endpoints read from cache — no live scraping per user request.
+ */
+
+import { query }                    from "../db"
+import { scrapeTikTokTrending,
+         TikTokProduct }            from "../scraper/tiktokScraper"
+import { scrapeAmazonBestSellers,
+         AmazonProduct }            from "../scraper/amazonBestSellers"
+import { logger }                   from "../utils/logger"
+
+// ─── TikTok ──────────────────────────────────────────────────────────────────
+
+export async function runTikTokScrape(opts: {
+  category?: string
+  limit?:    number
+  apiKey:    string
+}): Promise<{ inserted: number }> {
+  const products = await scrapeTikTokTrending(opts)
+  if (products.length === 0) return { inserted: 0 }
+
+  // Upsert by product_name (no natural unique key from web_search results)
+  // Clear stale data for the same category first, then insert fresh batch.
+  const category = opts.category ?? "All"
+  if (category !== "All") {
+    await query(
+      `DELETE FROM tiktok_products WHERE category = $1 AND scraped_at < NOW() - INTERVAL '24 hours'`,
+      [category]
+    )
+  }
+
+  let inserted = 0
+  for (const p of products) {
+    try {
+      await query(
+        `INSERT INTO tiktok_products
+           (product_name, category, tiktok_price, gmv_7d, units_sold_7d,
+            growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, NOW())`,
+        [
+          p.product_name, p.category, p.tiktok_price, p.gmv_7d, p.units_sold_7d,
+          p.growth_pct, p.video_count, p.top_creator_handle, p.shop_name, p.image_url,
+        ]
+      )
+      inserted++
+    } catch (err: any) {
+      logger.warn("[CreatorIntel] TikTok upsert skip", { name: p.product_name, error: err.message })
+    }
+  }
+
+  logger.info("[CreatorIntel] TikTok scrape done", { category, inserted })
+  return { inserted }
+}
+
+export async function getTikTokTrending(opts: {
+  category?: string
+  limit?:    number
+  offset?:   number
+  sortBy?:   "gmv_7d" | "units_sold_7d" | "growth_pct"
+} = {}): Promise<TikTokProduct[]> {
+  const { category, limit = 50, offset = 0, sortBy = "gmv_7d" } = opts
+
+  const allowedSort = new Set(["gmv_7d", "units_sold_7d", "growth_pct"])
+  const sort = allowedSort.has(sortBy) ? sortBy : "gmv_7d"
+
+  const params: any[] = [limit, offset]
+  let where = ""
+  if (category && category !== "All") {
+    params.push(category)
+    where = `WHERE category = $${params.length}`
+  }
+
+  const res = await query(
+    `SELECT product_name, category, tiktok_price, gmv_7d, units_sold_7d,
+            growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at
+     FROM tiktok_products
+     ${where}
+     ORDER BY ${sort} DESC NULLS LAST, scraped_at DESC
+     LIMIT $1 OFFSET $2`,
+    params
+  )
+  return res.rows
+}
+
+export async function getTikTokCategories(): Promise<{ category: string; total_gmv: number; product_count: number }[]> {
+  const res = await query(
+    `SELECT category,
+            COALESCE(SUM(gmv_7d), 0)::FLOAT  AS total_gmv,
+            COUNT(*)::INT                      AS product_count
+     FROM tiktok_products
+     WHERE category IS NOT NULL
+     GROUP BY category
+     ORDER BY total_gmv DESC
+     LIMIT 20`
+  )
+  return res.rows
+}
+
+// ─── Amazon ──────────────────────────────────────────────────────────────────
+
+export async function runAmazonScrape(opts: {
+  category?:    string
+  marketplace?: string
+  limit?:       number
+  apiKey:       string
+}): Promise<{ inserted: number }> {
+  const products = await scrapeAmazonBestSellers(opts)
+  if (products.length === 0) return { inserted: 0 }
+
+  let inserted = 0
+  for (const p of products) {
+    try {
+      if (p.asin) {
+        // Upsert by ASIN
+        await query(
+          `INSERT INTO amazon_trending
+             (asin, product_name, category, rank, price, rating, review_count, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())
+           ON CONFLICT (asin) DO UPDATE SET
+             product_name = EXCLUDED.product_name,
+             category     = EXCLUDED.category,
+             rank         = EXCLUDED.rank,
+             price        = EXCLUDED.price,
+             rating       = EXCLUDED.rating,
+             review_count = EXCLUDED.review_count,
+             marketplace  = EXCLUDED.marketplace,
+             scraped_at   = NOW()`,
+          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.marketplace]
+        )
+      } else {
+        // No ASIN — plain insert
+        await query(
+          `INSERT INTO amazon_trending
+             (product_name, category, rank, price, rating, review_count, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7, NOW())`,
+          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.marketplace]
+        )
+      }
+      inserted++
+    } catch (err: any) {
+      logger.warn("[CreatorIntel] Amazon upsert skip", { asin: p.asin, error: err.message })
+    }
+  }
+
+  logger.info("[CreatorIntel] Amazon scrape done", { inserted })
+  return { inserted }
+}
+
+export async function getAmazonTrending(opts: {
+  category?:    string
+  marketplace?: string
+  limit?:       number
+  offset?:      number
+} = {}): Promise<AmazonProduct[]> {
+  const { category, marketplace = "US", limit = 50, offset = 0 } = opts
+
+  const params: any[] = [marketplace, limit, offset]
+  const conditions = ["marketplace = $1"]
+
+  if (category && category !== "All") {
+    params.splice(1, 0, category)   // insert at index 1, shift rest
+    conditions.push(`category = $2`)
+    // rebuild positional params
+    const res2 = await query(
+      `SELECT asin, product_name, category, rank, price, rating, review_count, marketplace
+       FROM amazon_trending
+       WHERE marketplace = $1 AND category = $2
+       ORDER BY rank ASC NULLS LAST, scraped_at DESC
+       LIMIT $3 OFFSET $4`,
+      [marketplace, category, limit, offset]
+    )
+    return res2.rows
+  }
+
+  const res = await query(
+    `SELECT asin, product_name, category, rank, price, rating, review_count, marketplace
+     FROM amazon_trending
+     WHERE marketplace = $1
+     ORDER BY rank ASC NULLS LAST, scraped_at DESC
+     LIMIT $2 OFFSET $3`,
+    [marketplace, limit, offset]
+  )
+  return res.rows
+}
+
+// ─── Freshness check ─────────────────────────────────────────────────────────
+
+export async function getDataFreshness(): Promise<{
+  tiktok_last_scraped:  string | null
+  amazon_last_scraped:  string | null
+  tiktok_product_count: number
+  amazon_product_count: number
+}> {
+  const [tk, am] = await Promise.all([
+    query(`SELECT MAX(scraped_at) AS last_scraped, COUNT(*)::INT AS cnt FROM tiktok_products`),
+    query(`SELECT MAX(scraped_at) AS last_scraped, COUNT(*)::INT AS cnt FROM amazon_trending`),
+  ])
+
+  return {
+    tiktok_last_scraped:  tk.rows[0]?.last_scraped ?? null,
+    amazon_last_scraped:  am.rows[0]?.last_scraped ?? null,
+    tiktok_product_count: tk.rows[0]?.cnt ?? 0,
+    amazon_product_count: am.rows[0]?.cnt ?? 0,
+  }
+}
