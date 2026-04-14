@@ -11,6 +11,7 @@
 import { query }                    from "../db"
 import { scrapeTikTokTrending,
          TikTokProduct }            from "../scraper/tiktokScraper"
+import { scrapeApifyTikTok }        from "../scraper/apifyTikTokScraper"
 import { scrapeAmazonBestSellers,
          AmazonProduct }            from "../scraper/amazonBestSellers"
 import { logger }                   from "../utils/logger"
@@ -18,15 +19,35 @@ import { logger }                   from "../utils/logger"
 // ─── TikTok ──────────────────────────────────────────────────────────────────
 
 export async function runTikTokScrape(opts: {
-  category?: string
-  limit?:    number
-  apiKey:    string
-}): Promise<{ inserted: number }> {
-  const products = await scrapeTikTokTrending(opts)
-  if (products.length === 0) return { inserted: 0 }
+  category?:   string
+  limit?:      number
+  apiKey:      string
+  apifyToken?: string
+  hashtags?:   string[]
+}): Promise<{ inserted: number; source: string }> {
+  const apifyToken = opts.apifyToken ?? process.env.APIFY_API_KEY
 
-  // Upsert by product_name (no natural unique key from web_search results)
-  // Clear stale data for the same category first, then insert fresh batch.
+  let products: TikTokProduct[]
+  let source: string
+
+  if (apifyToken) {
+    logger.info("[CreatorIntel] Using Apify scraper")
+    products = await scrapeApifyTikTok({
+      apifyToken,
+      claudeApiKey:     opts.apiKey,
+      hashtags:         opts.hashtags,
+      videosPerHashtag: 50,
+      limit:            opts.limit ?? 20,
+    })
+    source = "apify"
+  } else {
+    logger.info("[CreatorIntel] Using Claude web_search scraper (no APIFY_API_KEY set)")
+    products = await scrapeTikTokTrending(opts)
+    source = "claude_websearch"
+  }
+  if (products.length === 0) return { inserted: 0, source }
+
+  // Clear stale data, then insert fresh batch.
   const category = opts.category ?? "All"
   if (category !== "All") {
     await query(
@@ -54,8 +75,8 @@ export async function runTikTokScrape(opts: {
     }
   }
 
-  logger.info("[CreatorIntel] TikTok scrape done", { category, inserted })
-  return { inserted }
+  logger.info("[CreatorIntel] TikTok scrape done", { category, inserted, source })
+  return { inserted, source }
 }
 
 export async function getTikTokTrending(opts: {
