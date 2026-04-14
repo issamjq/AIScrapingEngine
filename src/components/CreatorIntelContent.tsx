@@ -70,17 +70,23 @@ function pseudoTrend(growth: number | string | null | undefined, len = 12): numb
   return arr
 }
 
+function formatPrice(v: number | string | null | undefined): string {
+  if (v === null || v === undefined) return "—"
+  const n = Number(v)
+  return isFinite(n) && n > 0 ? `$${n.toFixed(2)}` : "—"
+}
+
 function adaptTikTok(products: ApiTikTokProduct[]): typeof TIKTOK_PRODUCTS {
   return products.map((p, i) => ({
     rank:      i + 1,
     name:      p.product_name,
-    price:     p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
+    price:     formatPrice(p.tiktok_price),
     color:     AVATAR_COLORS[i % AVATAR_COLORS.length],
     revenue:   formatGMV(p.gmv_7d),
     trend:     pseudoTrend(p.growth_pct),
     growth:    Number(p.growth_pct ?? 0) || 0,
     itemsSold: formatCount(p.units_sold_7d),
-    avgPrice:  p.tiktok_price != null ? `$${p.tiktok_price.toFixed(2)}` : "—",
+    avgPrice:  formatPrice(p.tiktok_price),
     commission:"—",
     creators:  formatCount(p.video_count),
     launch:    p.scraped_at ? new Date(p.scraped_at).toLocaleDateString("en-US", { month:"2-digit", day:"2-digit", year:"numeric" }) : "—",
