@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.7.7
+**Current version:** v1.7.9
 
 ---
 
@@ -332,7 +332,7 @@ PORT=8080
 | `src/assets/notification.mpeg` | Notification sound played on B2C search complete |
 | `src/context/ThemeContext.tsx` | Theme provider (light/dark/system). Light = default for new visitors. |
 | `src/components/OnboardingContent.tsx` | Step 1: B2B/B2C role picker. Step 2: 3-plan picker (from `src/lib/plans.ts`) with billing interval toggle (Weekly/Monthly/Yearly). POSTs `role`, `plan_code`, `billing_interval` to `/signup`. |
-| `src/components/DashboardLayout.tsx` | Sidebar: 3 SidebarGroups. No section labels. |
+| `src/components/DashboardLayout.tsx` | Sidebar: 4 SidebarGroups. No section labels. |
 | `src/components/TopNavigation.tsx` | Top bar — sidebar trigger + title only. |
 | `src/components/UserMenuButton.tsx` | Sidebar footer: avatar, name, plan label, golden credit ring. |
 | `src/components/DiscoveringContent.tsx` | Routes by role. B2B has ProductDropdown + MarketplaceDropdown + ThinkingLog. |
