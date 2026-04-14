@@ -20,7 +20,7 @@ export function LandingFooter() {
               AI-powered price intelligence and market discovery for UAE retailers and global buyers.
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Powered by Claude Vision AI
+              Powered by Spark AI
             </p>
           </div>
 

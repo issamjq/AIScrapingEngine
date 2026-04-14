@@ -45,7 +45,7 @@ export function LandingPage() {
         badge="For Shoppers"
         badgeColor="bg-green-500/10 text-green-500"
         title="Find the Best Price on Anything, Anywhere"
-        subtitle="Type any product in plain language. Spark AI uses Claude web search and Vision AI to scan global retailers and return the cheapest prices sorted by distance from your location."
+        subtitle="Type any product in plain language. Spark AI scans global retailers using Vision AI and returns the cheapest prices sorted by distance from your location."
         features={[
           "No product links needed — just type what you're looking for",
           "Geo-aware search: your country first, then globally",

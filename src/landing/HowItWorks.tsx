@@ -13,7 +13,7 @@ const STEPS = [
     icon:    Cpu,
     number:  "02",
     title:   "AI Discovers Prices",
-    desc:    "Claude Vision AI scrapes product pages and extracts prices, availability, and promotions — even from dynamic JavaScript sites.",
+    desc:    "Spark Vision AI scrapes product pages and extracts prices, availability, and promotions — even from dynamic JavaScript sites.",
     color:   "text-amber-500",
     bg:      "bg-amber-500/10",
   },

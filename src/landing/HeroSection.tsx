@@ -114,7 +114,7 @@ export function HeroSection({ onSignIn }: Props) {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-xs font-medium shadow-sm">
             <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-            Powered by Claude Vision AI
+            Powered by Spark AI
           </div>
 
           {/* Headline */}
@@ -128,7 +128,7 @@ export function HeroSection({ onSignIn }: Props) {
 
           {/* Sub */}
           <p className="text-xl text-muted-foreground leading-relaxed max-w-lg">
-            Spark AI discovers, tracks, and monitors prices across the web in real time — using Claude Vision AI. Built for UAE retailers and global buyers alike.
+            Spark AI discovers, tracks, and monitors prices across the web in real time — using AI Vision technology. Built for UAE retailers and global buyers alike.
           </p>
 
           {/* CTAs */}

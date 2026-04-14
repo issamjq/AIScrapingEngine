@@ -2,7 +2,7 @@ import { Store, Cpu, Layers, ShieldCheck } from "lucide-react"
 
 const STATS = [
   { icon: Store,       value: "10+",    label: "UAE Retailers" },
-  { icon: Cpu,         value: "Claude", label: "Vision AI" },
+  { icon: Cpu,         value: "Spark",  label: "Vision AI" },
   { icon: Layers,      value: "3",      label: "Search Depths" },
   { icon: ShieldCheck, value: "100%",   label: "Secure & Private" },
 ]
