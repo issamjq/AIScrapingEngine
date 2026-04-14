@@ -1,21 +1,15 @@
 import { useState, useRef, useEffect } from "react"
 import { useTheme } from "@/context/ThemeContext"
-import { Search, BarChart3, Package, TrendingUp, Users, ShoppingBag, Sun, Moon, Menu, X, ChevronDown } from "lucide-react"
+import { Search, BarChart3, Package, Sparkles, Sun, Moon, Menu, X, ChevronDown, ArrowUpRight } from "lucide-react"
 
 interface Props {
   onSignIn: (target?: string) => void
 }
 
-const SPARK_DISCOVERY = [
+const MARKET_INTEL_ITEMS = [
   { icon: Search,    label: "Market Discovery",  desc: "Find best prices globally with AI",   target: "discovering" },
   { icon: BarChart3, label: "Price Tracking",    desc: "Monitor competitor prices over time",  target: "price-board" },
   { icon: Package,   label: "Catalog Discovery", desc: "Auto-match your catalog to stores",    target: "discovering" },
-]
-
-const TIKTOK_INTEL = [
-  { icon: TrendingUp, label: "Trending Products",  desc: "Discover viral TikTok Shop products",    soon: true },
-  { icon: Users,      label: "Creator Analytics",  desc: "Find the best affiliate creators",        soon: true },
-  { icon: ShoppingBag,label: "Shop Intelligence",  desc: "Full TikTok Shop market data",            soon: true },
 ]
 
 export function LandingNav({ onSignIn }: Props) {
@@ -65,57 +59,60 @@ export function LandingNav({ onSignIn }: Props) {
 
             {/* Mega menu */}
             {menuOpen && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[580px]">
-              <div className="bg-background border rounded-2xl shadow-xl p-5 grid grid-cols-2 gap-6">
-                {/* Spark Discovery */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
-                    Spark Discovery
-                  </p>
-                  <div className="space-y-1">
-                    {SPARK_DISCOVERY.map(({ icon: Icon, label, desc, target }) => (
+              <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[620px]">
+              <div className="bg-background border rounded-2xl shadow-xl p-5 grid grid-cols-2 gap-4">
+
+                {/* ── Product 1: Market Intelligence ── */}
+                <div className="rounded-xl border bg-muted/30 p-4">
+                  {/* Product header */}
+                  <div className="flex items-center gap-3 mb-3 pb-3 border-b">
+                    <div className="h-9 w-9 rounded-xl bg-amber-500/15 flex items-center justify-center shrink-0">
+                      <BarChart3 className="h-4.5 w-4.5 text-amber-500" style={{ height: 18, width: 18 }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold leading-none">Market Intelligence</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">Price discovery & competitor tracking</p>
+                    </div>
+                  </div>
+                  {/* Sub-items */}
+                  <div className="space-y-0.5">
+                    {MARKET_INTEL_ITEMS.map(({ icon: Icon, label, desc, target }) => (
                       <button
                         key={label}
                         onClick={() => onSignIn(target)}
-                        className="w-full flex items-start gap-3 p-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left group"
+                        className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-background transition-colors text-left group"
                       >
-                        <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
-                          <Icon className="h-4 w-4 text-amber-500" />
-                        </div>
+                        <Icon className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                         <div>
-                          <p className="text-sm font-medium leading-none mb-0.5">{label}</p>
-                          <p className="text-xs text-muted-foreground">{desc}</p>
+                          <p className="text-xs font-medium leading-none">{label}</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">{desc}</p>
                         </div>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* TikTok Intelligence */}
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
-                    TikTok Intelligence
-                  </p>
-                  <div className="space-y-1">
-                    {TIKTOK_INTEL.map(({ icon: Icon, label, desc }) => (
-                      <div
-                        key={label}
-                        className="flex items-start gap-3 p-2.5 rounded-xl opacity-60 select-none"
-                      >
-                        <div className="h-8 w-8 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
-                          <Icon className="h-4 w-4 text-pink-500" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium leading-none mb-0.5">{label}</p>
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-pink-500/10 text-pink-500 leading-none">SOON</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">{desc}</p>
-                        </div>
-                      </div>
-                    ))}
+                {/* ── Product 2: Creator Intelligence ── */}
+                <button
+                  onClick={() => onSignIn("creator-intel")}
+                  className="rounded-xl border bg-gradient-to-br from-pink-500/10 via-purple-500/5 to-background p-4 text-left hover:shadow-md transition-all group relative overflow-hidden"
+                >
+                  <div className="absolute top-3 right-3">
+                    <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-pink-500 transition-colors" />
                   </div>
-                </div>
+                  <div className="h-9 w-9 rounded-xl bg-pink-500/15 flex items-center justify-center mb-3">
+                    <Sparkles className="h-4.5 w-4.5 text-pink-500" style={{ height: 18, width: 18 }} />
+                  </div>
+                  <p className="text-sm font-bold leading-none mb-1">Creator Intelligence</p>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mb-4">
+                    TikTok shop analytics, trending products, and creator performance data — all in one platform.
+                  </p>
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full bg-pink-500/10 text-pink-500 border border-pink-500/20">
+                    <Sparkles className="h-3 w-3" />
+                    Coming Q3 2026
+                  </span>
+                </button>
+
               </div>
               </div>
             )}
@@ -166,20 +163,20 @@ export function LandingNav({ onSignIn }: Props) {
       {mobileOpen && (
         <div className="md:hidden bg-background border-b shadow-lg px-4 pb-6 space-y-4">
           <div className="pt-4 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-2">Spark Discovery</p>
-            {SPARK_DISCOVERY.map(({ icon: Icon, label, target }) => (
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-2">Market Intelligence</p>
+            {MARKET_INTEL_ITEMS.map(({ icon: Icon, label, target }) => (
               <button key={label} onClick={() => { setMobileOpen(false); onSignIn(target) }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 text-sm font-medium transition-colors text-left">
                 <Icon className="h-4 w-4 text-amber-500" />{label}
               </button>
             ))}
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mt-4 mb-2">TikTok Intelligence</p>
-            {TIKTOK_INTEL.map(({ icon: Icon, label }) => (
-              <div key={label} className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium opacity-50 select-none">
-                <Icon className="h-4 w-4 text-pink-500" />{label}
-                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-pink-500/10 text-pink-500">SOON</span>
-              </div>
-            ))}
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mt-4 mb-2">Creator Intelligence</p>
+            <button onClick={() => { setMobileOpen(false); onSignIn("creator-intel") }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 text-sm font-medium transition-colors text-left">
+              <Sparkles className="h-4 w-4 text-pink-500" />
+              Creator Intelligence
+              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-pink-500/10 text-pink-500 ml-auto">Q3 2026</span>
+            </button>
           </div>
           <div className="border-t pt-4 flex flex-col gap-2">
             <button onClick={() => setTheme(isDark ? "light" : "dark")}

@@ -5,6 +5,7 @@ import {
   TrendingUp,
   Package,
   Building2,
+  Sparkles,
 } from "lucide-react"
 import {
   Sidebar,
@@ -106,7 +107,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
 
           <SidebarContent className="overflow-y-auto overflow-x-hidden">
 
-            {/* ── Market Discovery + Price Activity — one group, no gap between them ── */}
+            {/* ── Market Intelligence: Market Discovery + Price Activity ── */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -114,6 +115,15 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
                   {!hidePriceActivity && (
                     <NavButton item={{ title: "Price Activity",   icon: TrendingUp, id: "price-board"  }} currentPage={currentPage} onNavigate={onNavigate} />
                   )}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* ── Creator Intelligence (gap above) ── */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <NavButton item={{ title: "Creator Intel", icon: Sparkles, id: "creator-intel" }} currentPage={currentPage} onNavigate={onNavigate} />
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
