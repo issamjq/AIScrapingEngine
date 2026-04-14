@@ -23,7 +23,8 @@ export function LandingNav({ onSignIn }: Props) {
   const [menuOpen,    setMenuOpen]    = useState(false)
   const [mobileOpen,  setMobileOpen]  = useState(false)
   const [scrolled,    setScrolled]    = useState(false)
-  const menuRef = useRef<HTMLDivElement>(null)
+  const menuRef    = useRef<HTMLDivElement>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)
@@ -52,8 +53,8 @@ export function LandingNav({ onSignIn }: Props) {
           <div
             ref={menuRef}
             className="relative"
-            onMouseEnter={() => setMenuOpen(true)}
-            onMouseLeave={() => setMenuOpen(false)}
+            onMouseEnter={() => { if (closeTimer.current) clearTimeout(closeTimer.current); setMenuOpen(true) }}
+            onMouseLeave={() => { closeTimer.current = setTimeout(() => setMenuOpen(false), 150) }}
           >
             <button className={`flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
               menuOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
@@ -64,7 +65,8 @@ export function LandingNav({ onSignIn }: Props) {
 
             {/* Mega menu */}
             {menuOpen && (
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-[580px] bg-background border rounded-2xl shadow-xl p-5 grid grid-cols-2 gap-6">
+              <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[580px]">
+              <div className="bg-background border rounded-2xl shadow-xl p-5 grid grid-cols-2 gap-6">
                 {/* Price Intelligence */}
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
@@ -114,6 +116,7 @@ export function LandingNav({ onSignIn }: Props) {
                     ))}
                   </div>
                 </div>
+              </div>
               </div>
             )}
           </div>
