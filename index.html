@@ -8,9 +8,11 @@
       <script>
         (function() {
           var t = localStorage.getItem('theme');
-          if (t === 'dark' || (!t && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+          // If user has explicitly chosen dark, or explicitly chosen 'system' + system is dark → dark
+          if (t === 'dark' || (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
           }
+          // No saved preference → light (landing page default)
         })();
       </script>
     </head>

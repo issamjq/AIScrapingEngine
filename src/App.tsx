@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 import spinnerGif from "@/assets/spinner.gif"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { Toaster } from "./components/ui/sonner"
-import { LoginPage } from "./components/LoginPage"
+import { LandingPage } from "./landing/LandingPage"
 import { DashboardLayout } from "./components/DashboardLayout"
 import { OnboardingContent } from "./components/OnboardingContent"
 
@@ -217,7 +217,7 @@ function AppInner() {
   }, [isB2C, currentPage])
 
   if (loading || (user && appState === "loading")) return <AppLoader />
-  if (!user) return <LoginPage />
+  if (!user) return <LandingPage />
   if (appState === "onboarding") return <OnboardingContent onComplete={() => setRetryCount((n) => n + 1)} />
   if (appState === "denied") return <AccessDenied onChoosePlan={() => setAppState("onboarding")} />
   if (appState === "error") return <ConnectionError onRetry={() => setRetryCount((n) => n + 1)} />
