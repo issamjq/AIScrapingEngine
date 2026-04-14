@@ -1,7 +1,7 @@
 import { Search, Sparkles, ArrowRight, Star } from "lucide-react"
 
 interface Props {
-  onSignIn: () => void
+  onSignIn: (target?: string) => void
 }
 
 const DEMO_RESULTS = [

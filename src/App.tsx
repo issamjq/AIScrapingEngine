@@ -180,6 +180,12 @@ function AppInner() {
           if (data.success) {
             setUserRole(data.data?.role ?? null)
             setUserSubscription(data.data?.subscription ?? null)
+            // Check if user clicked a specific nav item on landing page
+            const navTarget = sessionStorage.getItem("spark_nav_target")
+            if (navTarget) {
+              sessionStorage.removeItem("spark_nav_target")
+              if (VALID_PAGES.has(navTarget)) setCurrentPage(navTarget)
+            }
             setAppState("ready")
           }
           else if (data.error?.code === "NEW_USER") setAppState("denied")

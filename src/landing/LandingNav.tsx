@@ -3,13 +3,13 @@ import { useTheme } from "@/context/ThemeContext"
 import { Search, BarChart3, Package, TrendingUp, Users, ShoppingBag, Sun, Moon, Menu, X, ChevronDown } from "lucide-react"
 
 interface Props {
-  onSignIn: () => void
+  onSignIn: (target?: string) => void
 }
 
-const PRICE_INTEL = [
-  { icon: Search,    label: "Market Discovery",   desc: "Find best prices globally with AI",      soon: false },
-  { icon: BarChart3, label: "Price Tracking",      desc: "Monitor competitors in real time",        soon: false },
-  { icon: Package,   label: "Catalog Discovery",   desc: "Auto-match products to stores",           soon: false },
+const SPARK_DISCOVERY = [
+  { icon: Search,    label: "Market Discovery",  desc: "Find best prices globally with AI",   target: "discovering" },
+  { icon: BarChart3, label: "Price Tracking",    desc: "Monitor competitor prices over time",  target: "price-board" },
+  { icon: Package,   label: "Catalog Discovery", desc: "Auto-match your catalog to stores",    target: "discovering" },
 ]
 
 const TIKTOK_INTEL = [
@@ -67,16 +67,16 @@ export function LandingNav({ onSignIn }: Props) {
             {menuOpen && (
               <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[580px]">
               <div className="bg-background border rounded-2xl shadow-xl p-5 grid grid-cols-2 gap-6">
-                {/* Price Intelligence */}
+                {/* Spark Discovery */}
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-3">
-                    Price Intelligence
+                    Spark Discovery
                   </p>
                   <div className="space-y-1">
-                    {PRICE_INTEL.map(({ icon: Icon, label, desc }) => (
+                    {SPARK_DISCOVERY.map(({ icon: Icon, label, desc, target }) => (
                       <button
                         key={label}
-                        onClick={onSignIn}
+                        onClick={() => onSignIn(target)}
                         className="w-full flex items-start gap-3 p-2.5 rounded-xl hover:bg-muted/60 transition-colors text-left group"
                       >
                         <div className="h-8 w-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0 group-hover:bg-amber-500/20 transition-colors">
@@ -166,9 +166,9 @@ export function LandingNav({ onSignIn }: Props) {
       {mobileOpen && (
         <div className="md:hidden bg-background border-b shadow-lg px-4 pb-6 space-y-4">
           <div className="pt-4 space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-2">Price Intelligence</p>
-            {PRICE_INTEL.map(({ icon: Icon, label }) => (
-              <button key={label} onClick={() => { setMobileOpen(false); onSignIn() }}
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground px-2 mb-2">Spark Discovery</p>
+            {SPARK_DISCOVERY.map(({ icon: Icon, label, target }) => (
+              <button key={label} onClick={() => { setMobileOpen(false); onSignIn(target) }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-muted/60 text-sm font-medium transition-colors text-left">
                 <Icon className="h-4 w-4 text-amber-500" />{label}
               </button>

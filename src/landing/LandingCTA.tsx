@@ -1,7 +1,7 @@
 import { ArrowRight, Sparkles } from "lucide-react"
 
 interface Props {
-  onSignIn: () => void
+  onSignIn: (target?: string) => void
 }
 
 export function LandingCTA({ onSignIn }: Props) {

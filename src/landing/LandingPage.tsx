@@ -12,9 +12,10 @@ import { LandingFooter }    from "./LandingFooter"
 export function LandingPage() {
   const { signInWithGoogle } = useAuth()
 
-  async function handleSignIn() {
+  async function handleSignIn(target?: string) {
+    if (target) sessionStorage.setItem("spark_nav_target", target)
     try { await signInWithGoogle() }
-    catch { /* popup closed or error — stay on landing */ }
+    catch { sessionStorage.removeItem("spark_nav_target") }
   }
 
   return (
