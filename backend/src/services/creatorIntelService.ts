@@ -47,6 +47,8 @@ export async function runTikTokScrape(opts: {
   }
   if (products.length === 0) return { inserted: 0, source }
 
+  const category = opts.category ?? "All"
+
   // Just insert — keep all historical rows so date filters work over time.
   let inserted = 0
   for (const p of products) {
