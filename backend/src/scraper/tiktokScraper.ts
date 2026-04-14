@@ -1,14 +1,12 @@
 /**
  * TikTok Shop trending product scraper.
  *
- * Strategy: use Claude's web_search tool to find trending TikTok Shop data
- * from public analytics/leaderboard pages. Direct Playwright scraping of
- * TikTok is blocked by aggressive bot detection; web_search is reliable
- * and returns real data aggregated from public sources (kalodata, shoplus,
- * TikTok's own indexed pages, affiliate marketing reports).
+ * Two-step approach (more reliable than one-shot JSON):
+ *   Step 1 — web_search: find raw text about trending TikTok Shop products
+ *   Step 2 — extract:    Claude reads that text and outputs clean JSON
  *
- * Results are saved to the `tiktok_products` table and served cached.
- * Consumers call GET /api/creator-intel/trending — no live scraping per request.
+ * This separation avoids the failure mode where Claude haiku mixes
+ * search commentary with JSON output, breaking JSON.parse().
  */
 
 import { callClaude } from "../utils/claudeClient"
@@ -18,50 +16,110 @@ export interface TikTokProduct {
   product_name:       string
   category:           string | null
   tiktok_price:       number | null
-  gmv_7d:             number | null   // USD
+  gmv_7d:             number | null
   units_sold_7d:      number | null
-  growth_pct:         number | null   // % vs prior 7 days
+  growth_pct:         number | null
   video_count:        number | null
   top_creator_handle: string | null
   shop_name:          string | null
   image_url:          string | null
 }
 
-const SYSTEM_PROMPT =
-  `You are a TikTok Shop market analytics API. Your output must ALWAYS be a raw JSON array — never plain text, never explanations.`
+// ── Step 1: web search ────────────────────────────────────────────────────────
 
-function buildPrompt(category: string, limit: number): string {
+async function searchTikTokTrending(
+  category: string,
+  limit:    number,
+  apiKey:   string
+): Promise<string> {
   const catLine = category === "All"
-    ? "across ALL TikTok Shop categories"
-    : `in the "${category}" TikTok Shop category`
+    ? "across all TikTok Shop categories"
+    : `in the TikTok Shop "${category}" category`
 
-  return (
-    `Search the web right now for the top ${limit} trending products ${catLine}.\n\n` +
-    `Use your web search tool to find real data from sources like:\n` +
-    `- kalodata.com, shoplus.net, pipiads.com (TikTok analytics platforms)\n` +
-    `- TikTok Shop leaderboards, affiliate marketing reports\n` +
-    `- Creator economy blogs publishing weekly trending lists\n\n` +
-    `For each product extract or estimate:\n` +
-    `- product_name: full product name as listed\n` +
-    `- category: product category (e.g. "Beauty", "Womenswear", "Home & Kitchen")\n` +
-    `- tiktok_price: current listing price in USD (number, no $ sign)\n` +
-    `- gmv_7d: estimated 7-day GMV in USD (number — e.g. 1450000 for $1.45M)\n` +
-    `- units_sold_7d: estimated units sold in last 7 days (integer)\n` +
-    `- growth_pct: % growth vs prior 7 days (positive = growing, negative = declining)\n` +
-    `- video_count: approx number of TikTok videos featuring this product (integer)\n` +
-    `- top_creator_handle: @handle of the top creator promoting this (or null)\n` +
-    `- shop_name: TikTok Shop seller name (or null)\n` +
-    `- image_url: product image URL if found in search results (or null)\n\n` +
-    `CRITICAL OUTPUT RULES:\n` +
-    `- Output ONLY the JSON array. Zero other text before or after.\n` +
-    `- All number fields must be actual numbers (not strings like "$1.45M").\n` +
-    `- If a field is unknown, use null — never omit the key.\n` +
-    `- Return exactly ${limit} products sorted by estimated GMV descending.\n` +
-    `- NEVER return an empty array. If exact GMV is unavailable, estimate from context.\n\n` +
-    `JSON format (your ENTIRE response):\n` +
-    `[{"product_name":"...","category":"...","tiktok_price":29.99,"gmv_7d":1450000,"units_sold_7d":37000,"growth_pct":-18.4,"video_count":1620,"top_creator_handle":"@fashionista","shop_name":"StyleHub","image_url":null}]`
-  )
+  const prompt =
+    `Search the web for the top ${limit} best-selling / trending products ${catLine} right now.\n\n` +
+    `Look for sources like:\n` +
+    `- kalodata.com, shoplus.net, pipiads.com\n` +
+    `- TikTok Shop leaderboard pages\n` +
+    `- Affiliate marketing weekly trending reports\n` +
+    `- E-commerce analyst blogs\n\n` +
+    `Collect as much detail as possible: product names, prices, estimated revenue (GMV), units sold, growth rate, shop names, creator handles, and categories.\n` +
+    `Write a detailed summary of everything you found — raw facts and numbers, no commentary.`
+
+  const data = await callClaude(apiKey, {
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    tools:      [{ type: "web_search_20250305", name: "web_search" }],
+    messages:   [{ role: "user", content: prompt }],
+    beta:       "web-search-2025-03-05",
+  })
+
+  // Collect all text blocks from the response
+  let raw = ""
+  for (const block of data?.content ?? []) {
+    if (block.type === "text") raw += block.text + "\n"
+  }
+  return raw.trim()
 }
+
+// ── Step 2: extract JSON from raw text ───────────────────────────────────────
+
+async function extractProducts(
+  rawText: string,
+  limit:   number,
+  apiKey:  string
+): Promise<TikTokProduct[]> {
+  if (!rawText || rawText.length < 50) return []
+
+  const prompt =
+    `You are a data extraction API. Parse the following text about trending TikTok Shop products and return a JSON array.\n\n` +
+    `TEXT:\n${rawText.slice(0, 6000)}\n\n` +
+    `Extract up to ${limit} products. For each product output:\n` +
+    `- product_name (string): full product name\n` +
+    `- category (string|null): e.g. "Beauty", "Womenswear", "Home & Kitchen"\n` +
+    `- tiktok_price (number|null): price in USD, digits only\n` +
+    `- gmv_7d (number|null): 7-day GMV in USD — convert "$1.45M" → 1450000, "$876K" → 876000\n` +
+    `- units_sold_7d (number|null): units sold last 7 days, integer\n` +
+    `- growth_pct (number|null): % growth — positive if growing, negative if declining\n` +
+    `- video_count (number|null): number of TikTok videos/creators, integer\n` +
+    `- top_creator_handle (string|null): @handle of top promoting creator\n` +
+    `- shop_name (string|null): TikTok Shop seller name\n` +
+    `- image_url (string|null): product image URL if mentioned\n\n` +
+    `RULES:\n` +
+    `- Output ONLY the JSON array — no text before or after, no markdown fences.\n` +
+    `- All number fields must be actual numbers (not strings).\n` +
+    `- Unknown fields → null. Never omit a key.\n` +
+    `- Sort by gmv_7d descending. If gmv_7d is unknown, put those last.\n\n` +
+    `Output:`
+
+  const data = await callClaude(apiKey, {
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 4096,
+    messages:   [{ role: "user", content: prompt }],
+  })
+
+  const raw = (data?.content?.[0]?.text ?? "").trim()
+
+  // Strip markdown fences if present
+  const jsonStr = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim()
+  const start   = jsonStr.indexOf("[")
+  const end     = jsonStr.lastIndexOf("]")
+
+  if (start === -1 || end === -1) {
+    logger.warn("[TikTokScraper] No JSON array in extraction response", { preview: jsonStr.slice(0, 200) })
+    return []
+  }
+
+  try {
+    const arr: any[] = JSON.parse(jsonStr.slice(start, end + 1))
+    return arr.map(sanitize)
+  } catch (err: any) {
+    logger.error("[TikTokScraper] JSON parse failed", { error: err.message, preview: jsonStr.slice(0, 300) })
+    return []
+  }
+}
+
+// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function scrapeTikTokTrending(opts: {
   category?: string
@@ -69,44 +127,29 @@ export async function scrapeTikTokTrending(opts: {
   apiKey:    string
 }): Promise<TikTokProduct[]> {
   const { category = "All", limit = 20, apiKey } = opts
-  logger.info("[TikTokScraper] Starting web search", { category, limit })
+  logger.info("[TikTokScraper] Start", { category, limit })
 
-  let raw = ""
   try {
-    const data = await callClaude(apiKey, {
-      model:      "claude-haiku-4-5-20251001",
-      max_tokens: 4096,
-      tools:      [{ type: "web_search_20250305", name: "web_search" }],
-      messages:   [{ role: "user", content: buildPrompt(category, limit) }],
-      beta:       "web-search-2025-03-05",
-    })
+    // Step 1: search
+    const rawText = await searchTikTokTrending(category, limit, apiKey)
+    logger.info("[TikTokScraper] Search complete", { chars: rawText.length })
 
-    // Extract text from the final assistant turn
-    for (const block of data?.content ?? []) {
-      if (block.type === "text") raw += block.text
-    }
-  } catch (err: any) {
-    logger.error("[TikTokScraper] Claude call failed", { error: err.message })
-    return []
-  }
-
-  // Parse JSON — strip any accidental markdown fences
-  try {
-    const jsonStr = raw.replace(/```(?:json)?/gi, "").trim()
-    const start = jsonStr.indexOf("[")
-    const end   = jsonStr.lastIndexOf("]")
-    if (start === -1 || end === -1) {
-      logger.warn("[TikTokScraper] No JSON array found in response", { raw: raw.slice(0, 300) })
+    if (!rawText) {
+      logger.warn("[TikTokScraper] Empty search result")
       return []
     }
-    const arr: any[] = JSON.parse(jsonStr.slice(start, end + 1))
-    logger.info("[TikTokScraper] Parsed products", { count: arr.length, category })
-    return arr.map(sanitize)
+
+    // Step 2: extract
+    const products = await extractProducts(rawText, limit, apiKey)
+    logger.info("[TikTokScraper] Extracted products", { count: products.length })
+    return products
   } catch (err: any) {
-    logger.error("[TikTokScraper] JSON parse failed", { error: err.message, raw: raw.slice(0, 500) })
+    logger.error("[TikTokScraper] Failed", { error: err.message })
     return []
   }
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function sanitize(p: any): TikTokProduct {
   return {

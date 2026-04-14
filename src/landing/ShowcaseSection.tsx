@@ -1,15 +1,11 @@
 import { CheckCircle2, type LucideIcon } from "lucide-react"
 
-interface Feature {
-  text: string
-}
-
 interface Props {
   badge:     string
   badgeColor: string
   title:     string
   subtitle:  string
-  features:  Feature[]
+  features:  string[]
   visual:    React.ReactNode
   reversed?: boolean
   id?:       string
@@ -29,8 +25,8 @@ export function ShowcaseSection({ badge, badgeColor, title, subtitle, features, 
             <h2 className="text-4xl lg:text-5xl font-black tracking-tight leading-tight">{title}</h2>
             <p className="text-lg text-muted-foreground leading-relaxed">{subtitle}</p>
             <ul className="space-y-3">
-              {features.map(({ text }) => (
-                <li key={text} className="flex items-start gap-3">
+              {features.map((text, i) => (
+                <li key={i} className="flex items-start gap-3">
                   <CheckCircle2 className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
                   <span className="text-base text-muted-foreground">{text}</span>
                 </li>
