@@ -471,8 +471,8 @@ export function CreatorIntelContent({ role }: Props) {
             placeholder="Search Product Name"
             className="flex-1 px-3 py-1.5 text-sm outline-none bg-white"
           />
-          <button className="h-full px-3 bg-[#4b7cf3] hover:bg-[#3b6de0] flex items-center justify-center transition-colors">
-            <Search className="h-4 w-4 text-white" />
+          <button className="h-full px-3 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors border-l border-gray-300">
+            <Search className="h-4 w-4 text-gray-500" />
           </button>
         </div>
 
