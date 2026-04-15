@@ -300,11 +300,6 @@ function ProductImage({ src, name }: { src: string | null; name: string }) {
 
   return (
     <div className="relative shrink-0">
-      {/* Amazon orange "a" badge */}
-      <div className="absolute -top-1 -left-1 z-10 h-5 w-5 rounded-full bg-[#FF9900] flex items-center justify-center shadow">
-        <span className="text-[9px] font-black text-black leading-none">a</span>
-      </div>
-
       {src && !broken ? (
         <img
           src={src}
@@ -645,6 +640,31 @@ export function CreatorIntelContent({ role }: Props) {
         </div>
       )}
 
+      {/* ── Amazon marketplace header ───────────────────────────────── */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3">
+        {/* Amazon wordmark */}
+        <div className="flex items-center gap-2.5">
+          <div className="flex flex-col items-start leading-none">
+            <span className="text-[#232f3e] font-black text-[15px] tracking-[-0.5px]">amazon</span>
+            {/* Smile arc */}
+            <svg width="48" height="7" viewBox="0 0 48 7" className="-mt-0.5">
+              <path d="M2 4 Q24 8 46 4" stroke="#FF9900" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="h-5 w-px bg-gray-200" />
+          <div className="flex items-center gap-1.5">
+            <span className="text-base leading-none">🇺🇸</span>
+            <span className="text-xs font-medium text-gray-700">United States</span>
+          </div>
+          <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#f0faf5] text-[#067D62] rounded-full border border-[#067D62]/20">
+            Best Sellers
+          </span>
+        </div>
+        <div className="ml-auto text-[10px] text-gray-400">
+          amazon.com/gp/bestsellers
+        </div>
+      </div>
+
       {/* ── Body: filter panel + table ──────────────────────────────── */}
       <div className="flex">
 
@@ -831,9 +851,9 @@ export function CreatorIntelContent({ role }: Props) {
                               <div className="font-semibold text-[#0f1111]">{fmtUSD(p.price)}</div>
                             </div>
 
-                            {/* Badges */}
+                            {/* Badges — use scraped badge; fall back to rank-1=Best Seller while awaiting rescrape */}
                             <div className="flex items-center gap-1 mt-1.5">
-                              <Badge type={p.badge} />
+                              <Badge type={p.badge ?? (p.rank === 1 ? "Best Seller" : null)} />
                               {p.rank === 1 && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#f0c14b] text-[#111] leading-none">#1</span>
                               )}
