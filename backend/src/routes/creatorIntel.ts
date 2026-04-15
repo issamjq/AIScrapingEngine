@@ -7,6 +7,7 @@ import {
   getTikTokCategories,
   runAmazonScrape,
   getAmazonTrending,
+  getAmazonRankHistory,
   getDataFreshness,
 } from "../services/creatorIntelService"
 import { logger } from "../utils/logger"
@@ -65,6 +66,18 @@ creatorIntelRouter.get("/amazon-trending", async (req: AuthRequest, res: Respons
   } catch (err: any) {
     logger.error("[CreatorIntel] GET /amazon-trending", { error: err.message })
     res.status(500).json({ success: false, error: "Failed to fetch Amazon trending" })
+  }
+})
+
+// ── GET /api/creator-intel/amazon-history ────────────────────────────────────
+creatorIntelRouter.get("/amazon-history", async (req: AuthRequest, res: Response) => {
+  try {
+    const marketplace = String(req.query.marketplace ?? "US")
+    const history = await getAmazonRankHistory(marketplace)
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /amazon-history", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch rank history" })
   }
 })
 

@@ -135,46 +135,26 @@ export async function runAmazonScrape(opts: {
   limit?:       number
   apiKey?:      string
 }): Promise<{ inserted: number }> {
-  // Always scrape AE — marketplace param ignored
   const products = await scrapeAmazonBestSellers({ category: opts.category, limit: opts.limit })
   if (products.length === 0) return { inserted: 0 }
 
+  // Always INSERT a fresh snapshot — no upsert. This accumulates history so
+  // the sparkline can show real rank-over-time data.
   let inserted = 0
   for (const p of products) {
     try {
-      if (p.asin) {
-        await query(
-          `INSERT INTO amazon_trending
-             (asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())
-           ON CONFLICT (asin) DO UPDATE SET
-             product_name = EXCLUDED.product_name,
-             category     = EXCLUDED.category,
-             rank         = EXCLUDED.rank,
-             price        = EXCLUDED.price,
-             rating       = EXCLUDED.rating,
-             review_count = EXCLUDED.review_count,
-             image_url    = COALESCE(EXCLUDED.image_url, amazon_trending.image_url),
-             product_url  = COALESCE(EXCLUDED.product_url, amazon_trending.product_url),
-             badge        = EXCLUDED.badge,
-             brand        = EXCLUDED.brand,
-             marketplace  = EXCLUDED.marketplace,
-             scraped_at   = NOW()`,
-          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count,
-           p.image_url, (p as any).product_url, (p as any).badge, (p as any).brand, p.marketplace]
-        )
-      } else {
-        await query(
-          `INSERT INTO amazon_trending
-             (product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, NOW())`,
-          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count,
-           p.image_url, (p as any).product_url, (p as any).badge, (p as any).brand, p.marketplace]
-        )
-      }
+      await query(
+        `INSERT INTO amazon_trending
+           (asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
+         p.review_count, p.image_url, (p as any).product_url,
+         (p as any).badge, (p as any).brand, p.marketplace]
+      )
       inserted++
     } catch (err: any) {
-      logger.warn("[CreatorIntel] Amazon upsert skip", { asin: p.asin, error: err.message })
+      logger.warn("[CreatorIntel] Amazon insert skip", { asin: p.asin, error: err.message })
     }
   }
 
@@ -188,35 +168,71 @@ export async function getAmazonTrending(opts: {
   limit?:       number
   offset?:      number
 } = {}): Promise<AmazonProduct[]> {
-  const { category, marketplace = "AE", limit = 50, offset = 0 } = opts
+  const { category, marketplace = "US", limit = 50, offset = 0 } = opts
 
-  const params: any[] = [marketplace, limit, offset]
-  const conditions = ["marketplace = $1"]
-
+  // Deduplicate: for each asin keep the most recent snapshot, then sort by rank
   if (category && category !== "All") {
-    params.splice(1, 0, category)   // insert at index 1, shift rest
-    conditions.push(`category = $2`)
-    // rebuild positional params
-    const res2 = await query(
-      `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace
-       FROM amazon_trending
-       WHERE marketplace = $1 AND category = $2
-       ORDER BY rank ASC NULLS LAST, scraped_at DESC
+    const res = await query(
+      `SELECT asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM (
+         SELECT DISTINCT ON (COALESCE(asin, product_name))
+                asin, product_name, category, rank, price, rating, review_count,
+                image_url, product_url, badge, brand, marketplace, scraped_at
+         FROM amazon_trending
+         WHERE marketplace = $1 AND category = $2
+         ORDER BY COALESCE(asin, product_name), scraped_at DESC
+       ) latest
+       ORDER BY rank ASC NULLS LAST
        LIMIT $3 OFFSET $4`,
       [marketplace, category, limit, offset]
     )
-    return res2.rows
+    return res.rows
   }
 
   const res = await query(
-    `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace
-     FROM amazon_trending
-     WHERE marketplace = $1
-     ORDER BY rank ASC NULLS LAST, scraped_at DESC
+    `SELECT asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at
+     FROM (
+       SELECT DISTINCT ON (COALESCE(asin, product_name))
+              asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM amazon_trending
+       WHERE marketplace = $1
+       ORDER BY COALESCE(asin, product_name), scraped_at DESC
+     ) latest
+     ORDER BY rank ASC NULLS LAST
      LIMIT $2 OFFSET $3`,
     [marketplace, limit, offset]
   )
   return res.rows
+}
+
+// Returns all historical rank snapshots grouped by ASIN — used for sparklines.
+// Only returns ASINs with at least 2 data points (need history to draw a line).
+export async function getAmazonRankHistory(marketplace = "US"): Promise<
+  Record<string, { rank: number; date: string }[]>
+> {
+  const res = await query(
+    `SELECT asin, rank, scraped_at
+     FROM amazon_trending
+     WHERE marketplace = $1 AND asin IS NOT NULL AND rank IS NOT NULL
+     ORDER BY asin, scraped_at ASC`,
+    [marketplace]
+  )
+
+  const history: Record<string, { rank: number; date: string }[]> = {}
+  for (const row of res.rows) {
+    if (!history[row.asin]) history[row.asin] = []
+    history[row.asin].push({ rank: Number(row.rank), date: row.scraped_at })
+  }
+
+  // Only keep ASINs with >= 2 snapshots — single point can't draw a line
+  for (const asin of Object.keys(history)) {
+    if (history[asin].length < 2) delete history[asin]
+  }
+
+  return history
 }
 
 // ─── Freshness check ─────────────────────────────────────────────────────────

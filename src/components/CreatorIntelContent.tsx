@@ -50,64 +50,97 @@ function fmtRelative(iso: string | null | undefined) {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
-// Estimate monthly sold from BSR (very rough, for reference)
-function estimateSold(rank: number | null, price: string | number | null): { sold: string; revenue: string } {
+// Estimate monthly sold from BSR rank + review count proxy
+function estimateSold(
+  rank: number | null,
+  price: string | number | null,
+  reviewCount: string | number | null,
+): { sold: string; revenue: string } {
   if (!rank) return { sold: "—", revenue: "—" }
-  let perMonth = 0
-  if (rank <= 5)    perMonth = 40000
-  else if (rank <= 20)  perMonth = 15000
-  else if (rank <= 50)  perMonth = 5000
-  else if (rank <= 100) perMonth = 2000
-  else if (rank <= 200) perMonth = 800
-  else                  perMonth = 200
-  const sold = fmtCount(perMonth)
+
+  // Granular base by exact rank position
+  let base = 0
+  if      (rank === 1)  base = 44000
+  else if (rank === 2)  base = 32000
+  else if (rank === 3)  base = 24000
+  else if (rank === 4)  base = 18000
+  else if (rank === 5)  base = 14000
+  else if (rank <= 10)  base = 9000
+  else if (rank <= 20)  base = 5500
+  else if (rank <= 50)  base = 2200
+  else if (rank <= 100) base = 800
+  else                  base = 250
+
+  // Scale by review count — a strong proxy for sales volume
+  const rv = n(reviewCount) ?? 0
+  const factor =
+    rv >= 500_000 ? 1.45 :
+    rv >= 100_000 ? 1.25 :
+    rv >= 50_000  ? 1.10 :
+    rv >= 10_000  ? 1.00 :
+    rv >= 1_000   ? 0.85 :
+    rv >  0       ? 0.70 : 1.00
+
+  const perMonth = Math.round(base * factor)
   const p = n(price)
-  const revenue = p ? fmtCount(perMonth * p) : "—"
-  return { sold, revenue: revenue !== "—" ? `$${(perMonth * (p ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—" }
+  return {
+    sold:    fmtCount(perMonth),
+    revenue: p ? `$${(perMonth * p).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—",
+  }
 }
 
-// ─── Sparkline (Kalodata blue, smooth, with hover tooltip) ───────────────────
+// ─── Sparkline (real history when available, estimated fallback) ──────────────
 
-function Sparkline({ rank }: { rank: number | null }) {
+type HistoryPoint = { rank: number; date: string }
+
+function salesFromRank(rank: number): number {
+  if (rank <= 5)   return 40000
+  if (rank <= 20)  return 15000
+  if (rank <= 50)  return 5000
+  if (rank <= 100) return 2000
+  if (rank <= 200) return 800
+  return 200
+}
+
+function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPoint[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
-  const W = 120, H = 44, LEN = 7
+  const W = 120, H = 44, PAD = 6
 
-  const now = new Date()
+  const hasReal = history && history.length >= 2
 
-  const baseSales = (() => {
-    if (!rank) return 500
-    if (rank <= 5)   return 40000
-    if (rank <= 20)  return 15000
-    if (rank <= 50)  return 5000
-    if (rank <= 100) return 2000
-    if (rank <= 200) return 800
-    return 200
-  })()
+  // Build display points — real data or pseudo-estimated fallback
+  const pts: { label: string; sales: number }[] = hasReal
+    ? history!.map(h => ({
+        label: new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit" }).replace("/", "/").slice(0, 7),
+        sales: salesFromRank(h.rank),
+        rank:  h.rank,
+      }))
+    : (() => {
+        const now = new Date()
+        const base = rank ? salesFromRank(rank) : 500
+        return Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - (6 - i), 1)
+          const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 0.15
+          const trend = rank != null && rank <= 50 ? 0.03 * i : -0.02 * i
+          return {
+            label: `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}`,
+            sales: Math.round(base * Math.max(0.4, Math.min(1.8, 0.8 + trend + noise))),
+          }
+        })
+      })()
 
-  // Pre-generate monthly data points
-  const pts = Array.from({ length: LEN }, (_, i) => {
-    const date = new Date(now.getFullYear(), now.getMonth() - (LEN - 1 - i), 1)
-    const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 0.15
-    const trend = rank != null && rank <= 50 ? 0.03 * i : -0.02 * i
-    const factor = Math.max(0.4, Math.min(1.8, 0.8 + trend + noise))
-    return {
-      sales: Math.round(baseSales * factor),
-      label: `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}`,
-    }
-  })
-
+  const LEN = pts.length
   const maxS = Math.max(...pts.map(p => p.sales))
   const minS = Math.min(...pts.map(p => p.sales))
   const range = maxS - minS || 1
-  const PAD = 6
 
   const coords = pts.map((p, i) => ({
     x: (i / (LEN - 1)) * W,
     y: H - PAD - ((p.sales - minS) / range) * (H - PAD * 2),
-    ...p,
+    label: p.label,
+    sales: p.sales,
   }))
 
-  // Smooth bezier path
   const path = coords.reduce((acc, pt, i) => {
     if (i === 0) return `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
     const prev = coords[i - 1]
@@ -132,18 +165,14 @@ function Sparkline({ rank }: { rank: number | null }) {
         }}
         onMouseLeave={() => setHoverIdx(null)}
       >
-        {/* Vertical dashed guide on hover */}
         {hov && <line x1={hov.x} y1={0} x2={hov.x} y2={H} stroke="#4b7cf3" strokeWidth={1} strokeDasharray="2,2" opacity={0.45} />}
         <path d={path} fill="none" stroke="#4b7cf3" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-        {/* End dot always visible */}
         <circle cx={coords[LEN - 1].x} cy={coords[LEN - 1].y} r={2.5} fill="#4b7cf3" />
-        {/* Hover dot */}
         {hov && hoverIdx !== LEN - 1 && (
           <circle cx={hov.x} cy={hov.y} r={3.5} fill="#4b7cf3" stroke="white" strokeWidth={1.5} />
         )}
       </svg>
 
-      {/* Tooltip */}
       {hov && (
         <div
           className="absolute z-50 pointer-events-none"
@@ -160,6 +189,7 @@ function Sparkline({ rank }: { rank: number | null }) {
               <span className="inline-block w-2 h-2 rounded-full bg-[#4b7cf3] shrink-0" />
               Monthly Sales: {hov.sales.toLocaleString()}
             </div>
+            {!hasReal && <div className="text-[#8ba3d4] mt-0.5">est. — scrape more for real data</div>}
           </div>
         </div>
       )}
@@ -312,6 +342,7 @@ export function CreatorIntelContent({ role }: Props) {
   const [refreshing,   setRefreshing]   = useState(false)
   const [lastScraped,  setLastScraped]  = useState<string | null>(null)
   const [totalCount,   setTotalCount]   = useState(0)
+  const [rankHistory,  setRankHistory]  = useState<Record<string, HistoryPoint[]>>({})
 
   const [filters,   setFilters]   = useState<Filters>(DEFAULT_FILTERS)
   const [pending,   setPending]   = useState<Filters>(DEFAULT_FILTERS)   // staged in form
@@ -353,6 +384,20 @@ export function CreatorIntelContent({ role }: Props) {
   }, [getToken, filters])
 
   useEffect(() => { loadData() }, [])
+
+  // ── Load rank history after products arrive ───────────────────────────────
+  useEffect(() => {
+    if (allProducts.length === 0) return
+    getToken().then(token => {
+      if (!token) return
+      fetch(`${API}/api/creator-intel/amazon-history?marketplace=US`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then(r => r.ok ? r.json() : null)
+        .then(j => { if (j?.data) setRankHistory(j.data) })
+        .catch(() => {})
+    })
+  }, [allProducts, getToken])
 
   // ── Client-side filtering + sorting ──────────────────────────────────────
 
@@ -519,8 +564,9 @@ export function CreatorIntelContent({ role }: Props) {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
-        <div className="w-56 shrink-0 bg-white border-r border-gray-200 hidden lg:flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto">
+        {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
+        <div className="w-56 shrink-0 bg-white border-r border-gray-200 hidden lg:block overflow-y-auto [&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar]:hidden" style={{ scrollbarWidth: "none" }}>
+          <div>
 
             {/* Dates */}
             <FilterGroup label="Dates" defaultOpen>
@@ -612,22 +658,22 @@ export function CreatorIntelContent({ role }: Props) {
                 <p className="text-[10px] text-gray-400 italic">Coming soon</p>
               </FilterGroup>
             ))}
-          </div>
 
-          {/* Submit / Reset */}
-          <div className="border-t border-gray-200 p-3 flex gap-2 bg-white">
-            <button
-              onClick={resetFilters}
-              className="flex-1 py-1.5 rounded border border-gray-300 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              Reset
-            </button>
-            <button
-              onClick={submitFilters}
-              className="flex-1 py-1.5 rounded bg-[#4b7cf3] text-white text-xs font-semibold hover:bg-[#3b6de0] transition-colors"
-            >
-              Submit
-            </button>
+            {/* Submit / Reset — sticky at bottom of scroll area */}
+            <div className="sticky bottom-0 border-t border-gray-200 p-3 flex gap-2 bg-white shadow-[0_-2px_6px_rgba(0,0,0,0.05)]">
+              <button
+                onClick={resetFilters}
+                className="flex-1 py-1.5 rounded border border-gray-300 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Reset
+              </button>
+              <button
+                onClick={submitFilters}
+                className="flex-1 py-1.5 rounded bg-[#4b7cf3] text-white text-xs font-semibold hover:bg-[#3b6de0] transition-colors"
+              >
+                Submit
+              </button>
+            </div>
           </div>
         </div>
 
@@ -662,7 +708,7 @@ export function CreatorIntelContent({ role }: Props) {
               </thead>
               <tbody>
                 {displayed.map((p, i) => {
-                  const est = estimateSold(p.rank, p.price)
+                  const est = estimateSold(p.rank, p.price, p.review_count)
                   return (
                     <tr key={p.asin ?? i} className="border-b border-gray-100 hover:bg-blue-50/30 transition-colors bg-white">
 
@@ -762,7 +808,7 @@ export function CreatorIntelContent({ role }: Props) {
 
                       {/* Sale Trend */}
                       <td className="px-3 py-3 align-middle text-center">
-                        <Sparkline rank={p.rank} />
+                        <Sparkline rank={p.rank} history={p.asin ? rankHistory[p.asin] : undefined} />
                         <div className="text-[10px] text-gray-400 mt-0.5">
                           {new Date().toLocaleDateString("en-US", { year: "numeric", month: "2-digit" })}
                         </div>
