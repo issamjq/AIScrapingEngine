@@ -223,18 +223,22 @@ function Stars({ rating }: { rating: number }) {
   )
 }
 
-// ─── Product image with hover zoom ───────────────────────────────────────────
+// ─── Product image with hover zoom (fixed-position popup — bypasses table clip) ─
 
 function ProductImage({ src, name }: { src: string | null; name: string }) {
   const [broken, setBroken] = useState(false)
-  const [hovered, setHovered] = useState(false)
+  const [popup,  setPopup]  = useState<{ x: number; y: number } | null>(null)
+
+  const handleMouseEnter = (e: React.MouseEvent<HTMLImageElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    // Place popup to the right of the thumbnail; flip left if too close to right edge
+    const x = rect.right + 10 + 176 > window.innerWidth ? rect.left - 176 - 10 : rect.right + 10
+    const y = Math.min(rect.top, window.innerHeight - 176 - 8)
+    setPopup({ x, y })
+  }
 
   return (
-    <div
-      className="relative shrink-0 cursor-zoom-in"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div className="relative shrink-0">
       {/* Amazon orange "a" badge */}
       <div className="absolute -top-1 -left-1 z-10 h-5 w-5 rounded-full bg-[#FF9900] flex items-center justify-center shadow">
         <span className="text-[9px] font-black text-black leading-none">a</span>
@@ -244,8 +248,9 @@ function ProductImage({ src, name }: { src: string | null; name: string }) {
         <img
           src={src}
           alt={name}
-          className="h-20 w-20 object-contain bg-white border border-gray-100 rounded p-1 transition-transform duration-150"
-          style={{ transform: hovered ? "scale(1.06)" : "scale(1)" }}
+          className="h-20 w-20 object-contain bg-white border border-gray-100 rounded p-1 cursor-zoom-in"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={() => setPopup(null)}
           onError={() => setBroken(true)}
         />
       ) : (
@@ -254,13 +259,16 @@ function ProductImage({ src, name }: { src: string | null; name: string }) {
         </div>
       )}
 
-      {/* Zoomed preview on hover */}
-      {hovered && src && !broken && (
-        <div className="absolute left-[88px] top-0 z-50 pointer-events-none">
+      {/* Zoom popup — fixed to viewport, no table clipping */}
+      {popup && src && !broken && (
+        <div
+          className="pointer-events-none"
+          style={{ position: "fixed", left: popup.x, top: popup.y, zIndex: 9999 }}
+        >
           <img
             src={src}
             alt={name}
-            className="h-44 w-44 object-contain bg-white border border-gray-200 rounded-lg shadow-xl p-2"
+            className="h-44 w-44 object-contain bg-white border border-gray-200 rounded-lg shadow-2xl p-2"
           />
         </div>
       )}
