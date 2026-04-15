@@ -66,36 +66,104 @@ function estimateSold(rank: number | null, price: string | number | null): { sol
   return { sold, revenue: revenue !== "—" ? `$${(perMonth * (p ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—" }
 }
 
-// ─── Sparkline (Kalodata blue, smooth) ───────────────────────────────────────
+// ─── Sparkline (Kalodata blue, smooth, with hover tooltip) ───────────────────
 
 function Sparkline({ rank }: { rank: number | null }) {
-  const W = 100, H = 36
-  // Generate pseudo trend — lower rank = upward trend
-  const points: [number, number][] = []
-  const len = 8
-  let v = rank != null && rank <= 30 ? 65 : rank != null && rank <= 70 ? 50 : 35
-  for (let i = 0; i < len; i++) {
-    const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 8
-    const trend = rank != null && rank <= 50 ? (i / len) * 20 : -(i / len) * 15
-    v = Math.max(10, Math.min(90, v + trend / len + noise))
-    points.push([(i / (len - 1)) * W, H - (v / 100) * H + 2])
-  }
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const W = 120, H = 44, LEN = 7
 
-  // Build smooth bezier path
-  const d = points.reduce((acc, pt, i) => {
-    if (i === 0) return `M ${pt[0]} ${pt[1]}`
-    const prev = points[i - 1]
-    const cx1  = prev[0] + (pt[0] - prev[0]) / 3
-    const cx2  = pt[0]   - (pt[0] - prev[0]) / 3
-    return `${acc} C ${cx1} ${prev[1]} ${cx2} ${pt[1]} ${pt[0]} ${pt[1]}`
+  const now = new Date()
+
+  const baseSales = (() => {
+    if (!rank) return 500
+    if (rank <= 5)   return 40000
+    if (rank <= 20)  return 15000
+    if (rank <= 50)  return 5000
+    if (rank <= 100) return 2000
+    if (rank <= 200) return 800
+    return 200
+  })()
+
+  // Pre-generate monthly data points
+  const pts = Array.from({ length: LEN }, (_, i) => {
+    const date = new Date(now.getFullYear(), now.getMonth() - (LEN - 1 - i), 1)
+    const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 0.15
+    const trend = rank != null && rank <= 50 ? 0.03 * i : -0.02 * i
+    const factor = Math.max(0.4, Math.min(1.8, 0.8 + trend + noise))
+    return {
+      sales: Math.round(baseSales * factor),
+      label: `${date.getFullYear()}/${String(date.getMonth() + 1).padStart(2, "0")}`,
+    }
+  })
+
+  const maxS = Math.max(...pts.map(p => p.sales))
+  const minS = Math.min(...pts.map(p => p.sales))
+  const range = maxS - minS || 1
+  const PAD = 6
+
+  const coords = pts.map((p, i) => ({
+    x: (i / (LEN - 1)) * W,
+    y: H - PAD - ((p.sales - minS) / range) * (H - PAD * 2),
+    ...p,
+  }))
+
+  // Smooth bezier path
+  const path = coords.reduce((acc, pt, i) => {
+    if (i === 0) return `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
+    const prev = coords[i - 1]
+    const cx1 = (prev.x + (pt.x - prev.x) / 3).toFixed(1)
+    const cx2 = (pt.x  - (pt.x - prev.x) / 3).toFixed(1)
+    return `${acc} C ${cx1} ${prev.y.toFixed(1)} ${cx2} ${pt.y.toFixed(1)} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
   }, "")
 
+  const hov = hoverIdx !== null ? coords[hoverIdx] : null
+
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="overflow-visible">
-      <path d={d} fill="none" stroke="#4b7cf3" strokeWidth={1.5} strokeLinecap="round" />
-      {/* Last dot */}
-      <circle cx={points[points.length - 1][0]} cy={points[points.length - 1][1]} r={2.5} fill="#4b7cf3" />
-    </svg>
+    <div className="relative inline-block">
+      <svg
+        width={W} height={H} viewBox={`0 0 ${W} ${H}`}
+        className="overflow-visible cursor-crosshair"
+        onMouseMove={e => {
+          const rect = e.currentTarget.getBoundingClientRect()
+          const mx = ((e.clientX - rect.left) / rect.width) * W
+          let best = 0, bestD = Infinity
+          coords.forEach((c, i) => { const d = Math.abs(c.x - mx); if (d < bestD) { bestD = d; best = i } })
+          setHoverIdx(best)
+        }}
+        onMouseLeave={() => setHoverIdx(null)}
+      >
+        {/* Vertical dashed guide on hover */}
+        {hov && <line x1={hov.x} y1={0} x2={hov.x} y2={H} stroke="#4b7cf3" strokeWidth={1} strokeDasharray="2,2" opacity={0.45} />}
+        <path d={path} fill="none" stroke="#4b7cf3" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+        {/* End dot always visible */}
+        <circle cx={coords[LEN - 1].x} cy={coords[LEN - 1].y} r={2.5} fill="#4b7cf3" />
+        {/* Hover dot */}
+        {hov && hoverIdx !== LEN - 1 && (
+          <circle cx={hov.x} cy={hov.y} r={3.5} fill="#4b7cf3" stroke="white" strokeWidth={1.5} />
+        )}
+      </svg>
+
+      {/* Tooltip */}
+      {hov && (
+        <div
+          className="absolute z-50 pointer-events-none"
+          style={{
+            bottom: `${H - hov.y + 10}px`,
+            ...(hoverIdx! >= LEN - 2
+              ? { right: `${W - hov.x + 6}px` }
+              : { left: `${hov.x - 6}px` }),
+          }}
+        >
+          <div className="bg-[#1a2234] text-white rounded px-2.5 py-1.5 shadow-xl whitespace-nowrap text-[10px]">
+            <div className="font-semibold mb-0.5">{hov.label}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#4b7cf3] shrink-0" />
+              Monthly Sales: {hov.sales.toLocaleString()}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -146,23 +214,23 @@ function ProductImage({ src, name }: { src: string | null; name: string }) {
         <img
           src={src}
           alt={name}
-          className="h-14 w-14 object-contain bg-white border border-gray-100 rounded p-0.5 transition-transform duration-150"
-          style={{ transform: hovered ? "scale(1.08)" : "scale(1)" }}
+          className="h-20 w-20 object-contain bg-white border border-gray-100 rounded p-1 transition-transform duration-150"
+          style={{ transform: hovered ? "scale(1.06)" : "scale(1)" }}
           onError={() => setBroken(true)}
         />
       ) : (
-        <div className="h-14 w-14 rounded border border-gray-100 bg-gray-50 flex items-center justify-center">
-          <span className="text-[10px] text-gray-400 font-bold">{name.slice(0, 2).toUpperCase()}</span>
+        <div className="h-20 w-20 rounded border border-gray-100 bg-gray-50 flex items-center justify-center">
+          <span className="text-sm text-gray-400 font-bold">{name.slice(0, 2).toUpperCase()}</span>
         </div>
       )}
 
       {/* Zoomed preview on hover */}
       {hovered && src && !broken && (
-        <div className="absolute left-16 top-0 z-50 pointer-events-none">
+        <div className="absolute left-[88px] top-0 z-50 pointer-events-none">
           <img
             src={src}
             alt={name}
-            className="h-36 w-36 object-contain bg-white border border-gray-200 rounded-lg shadow-xl p-2"
+            className="h-44 w-44 object-contain bg-white border border-gray-200 rounded-lg shadow-xl p-2"
           />
         </div>
       )}
@@ -451,8 +519,8 @@ export function CreatorIntelContent({ role }: Props) {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
-        <div className="w-56 shrink-0 bg-white border-r border-gray-200 overflow-y-auto hidden lg:flex flex-col">
-          <div className="flex-1 overflow-y-auto">
+        <div className="w-56 shrink-0 bg-white border-r border-gray-200 hidden lg:flex flex-col">
+          <div className="flex-1 min-h-0 overflow-y-auto">
 
             {/* Dates */}
             <FilterGroup label="Dates" defaultOpen>
@@ -689,7 +757,7 @@ export function CreatorIntelContent({ role }: Props) {
                       {/* BSR */}
                       <td className="px-3 py-3 text-right align-top whitespace-nowrap">
                         <div className="font-bold text-sm text-[#0f1111]">{p.rank ?? "—"}</div>
-                        <div className="text-[10px] text-gray-400 mt-0.5">0%</div>
+                        <div className="text-[10px] text-gray-400 mt-0.5">—</div>
                       </td>
 
                       {/* Sale Trend */}
