@@ -320,6 +320,16 @@ interface Filters {
   bsrMax:       string
 }
 
+// Numeric-only sold estimate — used for sorting
+function soldNum(rank: number | null, reviewCount: string | number | null): number {
+  if (!rank) return 0
+  let base = rank === 1 ? 44000 : rank === 2 ? 32000 : rank === 3 ? 24000 : rank === 4 ? 18000 : rank === 5 ? 14000
+    : rank <= 10 ? 9000 : rank <= 20 ? 5500 : rank <= 50 ? 2200 : rank <= 100 ? 800 : 250
+  const rv = n(reviewCount) ?? 0
+  const f = rv >= 500_000 ? 1.45 : rv >= 100_000 ? 1.25 : rv >= 50_000 ? 1.10 : rv >= 10_000 ? 1.00 : rv >= 1_000 ? 0.85 : rv > 0 ? 0.70 : 1.00
+  return Math.round(base * f)
+}
+
 const DEFAULT_FILTERS: Filters = {
   dates: "L30", category: "All",
   priceMin: "", priceMax: "",
@@ -347,7 +357,7 @@ export function CreatorIntelContent({ role }: Props) {
   const [filters,   setFilters]   = useState<Filters>(DEFAULT_FILTERS)
   const [pending,   setPending]   = useState<Filters>(DEFAULT_FILTERS)   // staged in form
   const [search,    setSearch]    = useState("")
-  const [sortCol,   setSortCol]   = useState<"rank" | "price" | "rating" | "review_count">("rank")
+  const [sortCol,   setSortCol]   = useState<"product_name" | "rank" | "price" | "rating" | "review_count" | "items_sold" | "revenue">("rank")
   const [sortDir,   setSortDir]   = useState<"asc" | "desc">("asc")
 
   const isAdmin = role === "dev" || role === "owner"
@@ -428,11 +438,17 @@ export function CreatorIntelContent({ role }: Props) {
 
     // Sort
     rows.sort((a, b) => {
+      if (sortCol === "product_name") {
+        const cmp = a.product_name.localeCompare(b.product_name)
+        return sortDir === "asc" ? cmp : -cmp
+      }
       let va = 0, vb = 0
-      if (sortCol === "rank")         { va = a.rank ?? 9999;      vb = b.rank ?? 9999 }
-      if (sortCol === "price")        { va = n(a.price) ?? 0;     vb = n(b.price) ?? 0 }
-      if (sortCol === "rating")       { va = n(a.rating) ?? 0;    vb = n(b.rating) ?? 0 }
+      if (sortCol === "rank")         { va = a.rank ?? 9999;         vb = b.rank ?? 9999 }
+      if (sortCol === "price")        { va = n(a.price) ?? 0;        vb = n(b.price) ?? 0 }
+      if (sortCol === "rating")       { va = n(a.rating) ?? 0;       vb = n(b.rating) ?? 0 }
       if (sortCol === "review_count") { va = n(a.review_count) ?? 0; vb = n(b.review_count) ?? 0 }
+      if (sortCol === "items_sold")   { va = soldNum(a.rank, a.review_count); vb = soldNum(b.rank, b.review_count) }
+      if (sortCol === "revenue")      { va = soldNum(a.rank, a.review_count) * (n(a.price) ?? 0); vb = soldNum(b.rank, b.review_count) * (n(b.price) ?? 0) }
       return sortDir === "asc" ? va - vb : vb - va
     })
 
@@ -472,9 +488,9 @@ export function CreatorIntelContent({ role }: Props) {
 
   // ── Sort column header ────────────────────────────────────────────────────
 
-  const SortHeader = ({ col, label }: { col: typeof sortCol; label: string }) => (
+  const SortHeader = ({ col, label, align = "right" }: { col: typeof sortCol; label: string; align?: "left" | "right" }) => (
     <th
-      className="px-3 py-2.5 text-right text-[11px] font-semibold text-gray-500 cursor-pointer hover:text-[#4b7cf3] whitespace-nowrap select-none"
+      className={`px-3 py-2.5 text-[11px] font-semibold text-gray-500 cursor-pointer hover:text-[#4b7cf3] whitespace-nowrap select-none ${align === "left" ? "text-left" : "text-right"}`}
       onClick={() => { if (sortCol === col) setSortDir(d => d === "asc" ? "desc" : "asc"); else { setSortCol(col); setSortDir("asc") } }}
     >
       {label} {sortCol === col ? (sortDir === "asc" ? "↑" : "↓") : ""}
@@ -493,7 +509,7 @@ export function CreatorIntelContent({ role }: Props) {
   if (filters.bsrMax) activeChips.push({ label: `BSR ≤ ${filters.bsrMax}`, clear: () => setFilters(f => ({ ...f, bsrMax: "" })) })
 
   return (
-    <div className="flex flex-col h-full -m-4 sm:-m-6 bg-[#f4f5f7]">
+    <div className="flex flex-col -m-4 sm:-m-6 bg-[#f4f5f7]">
 
       {/* ── AI suggestion bar ──────────────────────────────────────── */}
       <div className="bg-[#e8f0fe] border-b border-[#c5d5f8] px-5 py-2.5 flex items-start gap-2">
@@ -561,7 +577,7 @@ export function CreatorIntelContent({ role }: Props) {
       )}
 
       {/* ── Body: filter panel + table ──────────────────────────────── */}
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
@@ -678,7 +694,7 @@ export function CreatorIntelContent({ role }: Props) {
         </div>
 
         {/* ── Main table area ───────────────────────────────────────── */}
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 min-w-0">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3">
               <RefreshCw className="h-7 w-7 text-[#4b7cf3] animate-spin" />
@@ -697,13 +713,13 @@ export function CreatorIntelContent({ role }: Props) {
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-white border-b border-gray-200 sticky top-0 z-10">
-                  <th className="text-left px-4 py-2.5 font-semibold text-gray-500 min-w-[340px]">Product Info</th>
+                  <SortHeader col="product_name" label="Product Info" align="left" />
                   <SortHeader col="rank" label="BSR" />
-                  <th className="px-3 py-2.5 text-center font-semibold text-gray-500 w-28">Sale Trend</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-500 whitespace-nowrap">Item Sold (L30D)</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-500 whitespace-nowrap">Revenue (L30D)</th>
-                  <th className="px-3 py-2.5 text-right font-semibold text-gray-500 whitespace-nowrap">No. of Ratings</th>
-                  <SortHeader col="rating" label="Rating" />
+                  <th className="px-3 py-2.5 text-center font-semibold text-gray-500 w-28 text-[11px]">Sale Trend</th>
+                  <SortHeader col="items_sold" label="Item Sold (L30D)" />
+                  <SortHeader col="revenue" label="Revenue (L30D)" />
+                  <SortHeader col="review_count" label="No. of Ratings" />
+                  <SortHeader col="rating" label="Rating" align="left" />
                 </tr>
               </thead>
               <tbody>
@@ -832,7 +848,7 @@ export function CreatorIntelContent({ role }: Props) {
                       </td>
 
                       {/* Rating */}
-                      <td className="px-3 py-3 align-top">
+                      <td className="px-3 py-3 align-top text-left">
                         {n(p.rating) != null && n(p.rating)! > 0
                           ? <Stars rating={n(p.rating)!} />
                           : <span className="text-gray-400">—</span>
@@ -847,7 +863,7 @@ export function CreatorIntelContent({ role }: Props) {
           )}
 
           {/* Footer note */}
-          <div className="sticky bottom-0 bg-white border-t border-gray-200 px-4 py-2 text-[10px] text-gray-400 text-right">
+          <div className="bg-white border-t border-gray-200 px-4 py-2 text-[10px] text-gray-400 text-right">
             Data processed by algorithm, for reference only. Amazon.com Best Sellers · Estimated sales are indicative only.
           </div>
         </div>
