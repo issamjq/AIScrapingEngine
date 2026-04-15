@@ -19,7 +19,7 @@ export interface AmazonProduct {
   review_count: number | null
   image_url:    string | null
   product_url:  string | null
-  badge:        string | null   // "Best Seller" | "Amazon's Choice" | null
+  badge:        string | null   // comma-separated: "Best Seller" | "Amazon's Choice" | "A+" | combinations
   brand:        string | null
   marketplace:  string
 }
@@ -132,23 +132,35 @@ async function scrapeCategoryPage(
       const image_url = imgEl?.getAttribute("src") ?? null
 
       // ── Badge ─────────────────────────────────────────────────────────────
-      let badge: string | null = null
+      const badges: string[] = []
+
+      // Best Seller + Amazon's Choice — shown directly on BSR cards
       const badgeEl =
-        card.querySelector(".zg-badge-wrapper")   ??
+        card.querySelector(".zg-badge-wrapper")    ??
         card.querySelector("[class*='p13n-badge']") ??
         card.querySelector("[class*='badge']")
       if (badgeEl) {
         const t = badgeEl.textContent?.trim() ?? ""
-        if (t.toLowerCase().includes("best seller"))       badge = "Best Seller"
-        else if (t.toLowerCase().includes("amazon's choice")) badge = "Amazon's Choice"
+        if (t.toLowerCase().includes("best seller"))          badges.push("Best Seller")
+        else if (t.toLowerCase().includes("amazon's choice")) badges.push("Amazon's Choice")
       }
-      // Also check the rank position — rank 1 in a category is "Best Seller"
-      // Amazon shows "#1 Best Seller" text for top rank
-      if (!badge) {
+      if (badges.length === 0) {
         const allText = card.textContent ?? ""
-        if (allText.includes("#1 Best Seller") || allText.includes("Best Seller in"))  badge = "Best Seller"
-        else if (allText.includes("Amazon's Choice")) badge = "Amazon's Choice"
+        if (allText.includes("#1 Best Seller") || allText.includes("Best Seller in")) badges.push("Best Seller")
+        else if (allText.includes("Amazon's Choice")) badges.push("Amazon's Choice")
       }
+
+      // A+ Content — check for brand content sections on the BSR card.
+      // BSR cards for A+ products often have a brand banner / "From the brand" block.
+      const hasAPlus =
+        !!card.querySelector("[data-component-type*='aplus']")        ||
+        !!card.querySelector("[class*='aplus']")                      ||
+        !!card.querySelector(".a-carousel-brand-story-card")          ||
+        !!card.querySelector("[data-cel-widget*='aplus']")            ||
+        !!(card.textContent ?? "").includes("A+ Content")
+      if (hasAPlus) badges.push("A+")
+
+      const badge = badges.length > 0 ? badges.join(",") : null
 
       // ── Brand ─────────────────────────────────────────────────────────────
       let brand: string | null = null
@@ -176,6 +188,59 @@ async function scrapeCategoryPage(
   }, category)
 
   return products.map(p => ({ ...p, marketplace: "US" }))
+}
+
+// ─── A+ Content detection via product detail page ────────────────────────────
+// For top-ranked products (rank ≤ 5) that don't already have A+, we do a
+// lightweight visit to the product detail page and check for the #aplus section.
+// This is fast because we only load DOM (no images/media) and only hit a few ASINs.
+
+async function checkAplusContent(
+  products: AmazonProduct[],
+  page: import("playwright").Page
+): Promise<AmazonProduct[]> {
+  // Only check top 5 per category — good signal, not too many requests
+  const toCheck = products
+    .filter(p => p.asin && p.product_url && p.rank !== null && p.rank <= 5)
+    .filter(p => !(p.badge ?? "").includes("A+"))   // skip if already detected
+
+  logger.info("[AmazonScraper] Checking A+ on product pages", { count: toCheck.length })
+
+  const aplusAsins = new Set<string>()
+
+  for (const p of toCheck) {
+    try {
+      await page.goto(p.product_url!, { waitUntil: "domcontentloaded", timeout: 20_000 })
+      await page.waitForTimeout(800)
+
+      const hasAPlus = await page.evaluate(() => {
+        return !!(
+          document.querySelector("#aplus")            ||
+          document.querySelector(".aplus-module")     ||
+          document.querySelector(".aplus-v2")         ||
+          document.querySelector("[id^='aplus']")     ||
+          document.querySelector("[class*='aplus']")
+        )
+      })
+
+      if (hasAPlus && p.asin) {
+        aplusAsins.add(p.asin)
+        logger.info("[AmazonScraper] A+ detected", { asin: p.asin, name: p.product_name })
+      }
+    } catch (err: any) {
+      logger.warn("[AmazonScraper] A+ check failed", { asin: p.asin, error: err.message })
+    }
+    await page.waitForTimeout(600 + Math.random() * 400)
+  }
+
+  if (aplusAsins.size === 0) return products
+
+  return products.map(p => {
+    if (!p.asin || !aplusAsins.has(p.asin)) return p
+    const existing = p.badge ? p.badge.split(",") : []
+    if (!existing.includes("A+")) existing.push("A+")
+    return { ...p, badge: existing.join(",") }
+  })
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -225,7 +290,7 @@ export async function scrapeAmazonBestSellers(opts: {
     }
   })
 
-  const allProducts: AmazonProduct[] = []
+  let allProducts: AmazonProduct[] = []
 
   try {
     for (const target of targets) {
@@ -236,6 +301,9 @@ export async function scrapeAmazonBestSellers(opts: {
       // Polite delay between categories
       await page.waitForTimeout(2000 + Math.random() * 1000)
     }
+
+    // A+ Content: visit product detail pages for top-ranked products
+    allProducts = await checkAplusContent(allProducts, page)
   } finally {
     await browser.close()
   }

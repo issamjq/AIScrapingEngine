@@ -93,16 +93,34 @@ function estimateSold(
 
 type HistoryPoint = { rank: number; date: string }
 
-function salesFromRank(rank: number): number {
-  if (rank <= 5)   return 40000
-  if (rank <= 20)  return 15000
-  if (rank <= 50)  return 5000
-  if (rank <= 100) return 2000
-  if (rank <= 200) return 800
-  return 200
+function salesFromRank(rank: number, reviewCount?: number | null): number {
+  // Same granular tiers as estimateSold
+  let base = 0
+  if      (rank === 1)  base = 44000
+  else if (rank === 2)  base = 32000
+  else if (rank === 3)  base = 24000
+  else if (rank === 4)  base = 18000
+  else if (rank === 5)  base = 14000
+  else if (rank <= 10)  base = 9000
+  else if (rank <= 20)  base = 5500
+  else if (rank <= 50)  base = 2200
+  else if (rank <= 100) base = 800
+  else if (rank <= 200) base = 400
+  else                  base = 200
+
+  const rv = reviewCount ?? 0
+  const factor =
+    rv >= 500_000 ? 1.45 :
+    rv >= 100_000 ? 1.25 :
+    rv >= 50_000  ? 1.10 :
+    rv >= 10_000  ? 1.00 :
+    rv >= 1_000   ? 0.85 :
+    rv >  0       ? 0.70 : 1.00
+
+  return Math.round(base * factor)
 }
 
-function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPoint[] }) {
+function Sparkline({ rank, reviewCount, history }: { rank: number | null; reviewCount?: number | null; history?: HistoryPoint[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   // Stable unique gradient ID per instance (avoids SVG id conflicts across rows)
   const [gradId] = useState(() => `sg${Math.random().toString(36).slice(2, 8)}`)
@@ -113,11 +131,11 @@ function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPo
   const pts: { label: string; sales: number }[] = hasReal
     ? history!.map(h => ({
         label: new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit" }).slice(0, 7),
-        sales: salesFromRank(h.rank),
+        sales: salesFromRank(h.rank, reviewCount),
       }))
     : (() => {
         const now = new Date()
-        const base = rank ? salesFromRank(rank) : 500
+        const base = rank ? salesFromRank(rank, reviewCount) : 500
         return Array.from({ length: 8 }, (_, i) => {
           const d = new Date(now.getFullYear(), now.getMonth() - (7 - i), 1)
           const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 0.15
@@ -221,15 +239,36 @@ function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPo
 
 // ─── Badge chips ──────────────────────────────────────────────────────────────
 
-function Badge({ type }: { type: string | null }) {
-  if (!type) return null
-  if (type === "Best Seller") return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#c45500] text-white leading-none">BS</span>
+function BadgeChip({ label }: { label: string }) {
+  if (label === "Best Seller") return (
+    <span title="This listing is a Best Seller in a specific category."
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#c45500] text-white leading-none">
+      BS
+    </span>
   )
-  if (type === "Amazon's Choice") return (
-    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#232f3e] text-white leading-none">AC</span>
+  if (label === "Amazon's Choice") return (
+    <span title="This listing has the Amazon's Choice badge."
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#232f3e] text-white leading-none">
+      AC
+    </span>
+  )
+  if (label === "A+") return (
+    <span title="This listing includes A+ Content (Enhanced Brand Content)."
+      className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-[#0066c0] text-white leading-none">
+      A+
+    </span>
   )
   return null
+}
+
+function Badge({ type }: { type: string | null }) {
+  if (!type) return null
+  const labels = type.split(",").map(s => s.trim()).filter(Boolean)
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {labels.map(l => <BadgeChip key={l} label={l} />)}
+    </span>
+  )
 }
 
 // ─── Stars ────────────────────────────────────────────────────────────────────
@@ -854,7 +893,7 @@ export function CreatorIntelContent({ role }: Props) {
 
                       {/* Sale Trend */}
                       <td className="px-3 py-3 align-middle text-center">
-                        <Sparkline rank={p.rank} history={p.asin ? rankHistory[p.asin] : undefined} />
+                        <Sparkline rank={p.rank} reviewCount={n(p.review_count)} history={p.asin ? rankHistory[p.asin] : undefined} />
                         <div className="text-[10px] text-gray-400 mt-0.5">
                           {new Date().toLocaleDateString("en-US", { year: "numeric", month: "2-digit" })}
                         </div>
