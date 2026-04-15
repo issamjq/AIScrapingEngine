@@ -143,11 +143,10 @@ export async function runAmazonScrape(opts: {
   for (const p of products) {
     try {
       if (p.asin) {
-        // Upsert by ASIN — update price + rank + image each run
         await query(
           `INSERT INTO amazon_trending
-             (asin, product_name, category, rank, price, rating, review_count, image_url, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
+             (asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())
            ON CONFLICT (asin) DO UPDATE SET
              product_name = EXCLUDED.product_name,
              category     = EXCLUDED.category,
@@ -156,16 +155,21 @@ export async function runAmazonScrape(opts: {
              rating       = EXCLUDED.rating,
              review_count = EXCLUDED.review_count,
              image_url    = COALESCE(EXCLUDED.image_url, amazon_trending.image_url),
+             product_url  = COALESCE(EXCLUDED.product_url, amazon_trending.product_url),
+             badge        = EXCLUDED.badge,
+             brand        = EXCLUDED.brand,
              marketplace  = EXCLUDED.marketplace,
              scraped_at   = NOW()`,
-          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.image_url, p.marketplace]
+          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count,
+           p.image_url, (p as any).product_url, (p as any).badge, (p as any).brand, p.marketplace]
         )
       } else {
         await query(
           `INSERT INTO amazon_trending
-             (product_name, category, rank, price, rating, review_count, image_url, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())`,
-          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.image_url, p.marketplace]
+             (product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, NOW())`,
+          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count,
+           p.image_url, (p as any).product_url, (p as any).badge, (p as any).brand, p.marketplace]
         )
       }
       inserted++
@@ -194,7 +198,7 @@ export async function getAmazonTrending(opts: {
     conditions.push(`category = $2`)
     // rebuild positional params
     const res2 = await query(
-      `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, marketplace
+      `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace
        FROM amazon_trending
        WHERE marketplace = $1 AND category = $2
        ORDER BY rank ASC NULLS LAST, scraped_at DESC
@@ -205,7 +209,7 @@ export async function getAmazonTrending(opts: {
   }
 
   const res = await query(
-    `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, marketplace
+    `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace
      FROM amazon_trending
      WHERE marketplace = $1
      ORDER BY rank ASC NULLS LAST, scraped_at DESC

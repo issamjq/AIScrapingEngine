@@ -56,7 +56,7 @@ creatorIntelRouter.get("/categories", async (_req: AuthRequest, res: Response) =
 creatorIntelRouter.get("/amazon-trending", async (req: AuthRequest, res: Response) => {
   try {
     const category    = String(req.query.category ?? "All")
-    const marketplace = String(req.query.marketplace ?? "US")
+    const marketplace = "US"
     const limit       = Math.min(Number(req.query.limit ?? 50), 100)
     const offset      = Number(req.query.offset ?? 0)
 
