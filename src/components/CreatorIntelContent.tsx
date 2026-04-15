@@ -104,22 +104,22 @@ function salesFromRank(rank: number): number {
 
 function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPoint[] }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
-  const W = 120, H = 44, PAD = 6
+  // Stable unique gradient ID per instance (avoids SVG id conflicts across rows)
+  const [gradId] = useState(() => `sg${Math.random().toString(36).slice(2, 8)}`)
+  const W = 130, H = 48, PAD = 5
 
   const hasReal = history && history.length >= 2
 
-  // Build display points — real data or pseudo-estimated fallback
   const pts: { label: string; sales: number }[] = hasReal
     ? history!.map(h => ({
-        label: new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit" }).replace("/", "/").slice(0, 7),
+        label: new Date(h.date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit" }).slice(0, 7),
         sales: salesFromRank(h.rank),
-        rank:  h.rank,
       }))
     : (() => {
         const now = new Date()
         const base = rank ? salesFromRank(rank) : 500
-        return Array.from({ length: 7 }, (_, i) => {
-          const d = new Date(now.getFullYear(), now.getMonth() - (6 - i), 1)
+        return Array.from({ length: 8 }, (_, i) => {
+          const d = new Date(now.getFullYear(), now.getMonth() - (7 - i), 1)
           const noise = Math.sin(i * 1.8 + (rank ?? 0) * 0.1) * 0.15
           const trend = rank != null && rank <= 50 ? 0.03 * i : -0.02 * i
           return {
@@ -141,13 +141,17 @@ function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPo
     sales: p.sales,
   }))
 
-  const path = coords.reduce((acc, pt, i) => {
+  // Smooth bezier line path
+  const linePath = coords.reduce((acc, pt, i) => {
     if (i === 0) return `M ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
     const prev = coords[i - 1]
     const cx1 = (prev.x + (pt.x - prev.x) / 3).toFixed(1)
     const cx2 = (pt.x  - (pt.x - prev.x) / 3).toFixed(1)
     return `${acc} C ${cx1} ${prev.y.toFixed(1)} ${cx2} ${pt.y.toFixed(1)} ${pt.x.toFixed(1)} ${pt.y.toFixed(1)}`
   }, "")
+
+  // Closed area path for gradient fill
+  const areaPath = `${linePath} L ${coords[LEN - 1].x.toFixed(1)} ${H} L ${coords[0].x.toFixed(1)} ${H} Z`
 
   const hov = hoverIdx !== null ? coords[hoverIdx] : null
 
@@ -165,10 +169,28 @@ function Sparkline({ rank, history }: { rank: number | null; history?: HistoryPo
         }}
         onMouseLeave={() => setHoverIdx(null)}
       >
-        {hov && <line x1={hov.x} y1={0} x2={hov.x} y2={H} stroke="#4b7cf3" strokeWidth={1} strokeDasharray="2,2" opacity={0.45} />}
-        <path d={path} fill="none" stroke="#4b7cf3" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx={coords[LEN - 1].x} cy={coords[LEN - 1].y} r={2.5} fill="#4b7cf3" />
-        {hov && hoverIdx !== LEN - 1 && (
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#4b7cf3" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#4b7cf3" stopOpacity="0.01" />
+          </linearGradient>
+        </defs>
+
+        {/* Gradient area fill */}
+        <path d={areaPath} fill={`url(#${gradId})`} stroke="none" />
+
+        {/* Vertical hover guide */}
+        {hov && <line x1={hov.x} y1={0} x2={hov.x} y2={H} stroke="#4b7cf3" strokeWidth={1} strokeDasharray="2,2" opacity={0.4} />}
+
+        {/* Line */}
+        <path d={linePath} fill="none" stroke="#4b7cf3" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+
+        {/* Endpoint dot (only when not hovering) */}
+        {hoverIdx === null && (
+          <circle cx={coords[LEN - 1].x} cy={coords[LEN - 1].y} r={3} fill="#4b7cf3" stroke="white" strokeWidth={1.5} />
+        )}
+        {/* Hover dot */}
+        {hov && (
           <circle cx={hov.x} cy={hov.y} r={3.5} fill="#4b7cf3" stroke="white" strokeWidth={1.5} />
         )}
       </svg>
