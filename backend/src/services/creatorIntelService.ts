@@ -133,20 +133,21 @@ export async function runAmazonScrape(opts: {
   category?:    string
   marketplace?: string
   limit?:       number
-  apiKey:       string
+  apiKey?:      string
 }): Promise<{ inserted: number }> {
-  const products = await scrapeAmazonBestSellers(opts)
+  // Always scrape AE — marketplace param ignored
+  const products = await scrapeAmazonBestSellers({ category: opts.category, limit: opts.limit })
   if (products.length === 0) return { inserted: 0 }
 
   let inserted = 0
   for (const p of products) {
     try {
       if (p.asin) {
-        // Upsert by ASIN
+        // Upsert by ASIN — update price + rank + image each run
         await query(
           `INSERT INTO amazon_trending
-             (asin, product_name, category, rank, price, rating, review_count, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())
+             (asin, product_name, category, rank, price, rating, review_count, image_url, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, NOW())
            ON CONFLICT (asin) DO UPDATE SET
              product_name = EXCLUDED.product_name,
              category     = EXCLUDED.category,
@@ -154,17 +155,17 @@ export async function runAmazonScrape(opts: {
              price        = EXCLUDED.price,
              rating       = EXCLUDED.rating,
              review_count = EXCLUDED.review_count,
+             image_url    = COALESCE(EXCLUDED.image_url, amazon_trending.image_url),
              marketplace  = EXCLUDED.marketplace,
              scraped_at   = NOW()`,
-          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.marketplace]
+          [p.asin, p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.image_url, p.marketplace]
         )
       } else {
-        // No ASIN — plain insert
         await query(
           `INSERT INTO amazon_trending
-             (product_name, category, rank, price, rating, review_count, marketplace, scraped_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7, NOW())`,
-          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.marketplace]
+             (product_name, category, rank, price, rating, review_count, image_url, marketplace, scraped_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW())`,
+          [p.product_name, p.category, p.rank, p.price, p.rating, p.review_count, p.image_url, p.marketplace]
         )
       }
       inserted++
@@ -183,7 +184,7 @@ export async function getAmazonTrending(opts: {
   limit?:       number
   offset?:      number
 } = {}): Promise<AmazonProduct[]> {
-  const { category, marketplace = "US", limit = 50, offset = 0 } = opts
+  const { category, marketplace = "AE", limit = 50, offset = 0 } = opts
 
   const params: any[] = [marketplace, limit, offset]
   const conditions = ["marketplace = $1"]
@@ -193,7 +194,7 @@ export async function getAmazonTrending(opts: {
     conditions.push(`category = $2`)
     // rebuild positional params
     const res2 = await query(
-      `SELECT asin, product_name, category, rank, price, rating, review_count, marketplace
+      `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, marketplace
        FROM amazon_trending
        WHERE marketplace = $1 AND category = $2
        ORDER BY rank ASC NULLS LAST, scraped_at DESC
@@ -204,7 +205,7 @@ export async function getAmazonTrending(opts: {
   }
 
   const res = await query(
-    `SELECT asin, product_name, category, rank, price, rating, review_count, marketplace
+    `SELECT asin, product_name, category, rank, price, rating, review_count, image_url, marketplace
      FROM amazon_trending
      WHERE marketplace = $1
      ORDER BY rank ASC NULLS LAST, scraped_at DESC

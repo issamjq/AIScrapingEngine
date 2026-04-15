@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.7.9
+**Current version:** v1.9.7
 
 ---
 
@@ -17,9 +17,10 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **LATEST STABLE** | `405709e` (v1.7.7) | Landing page persistent after sign-in, two-product mega-menu, Creator Intelligence dummy dashboard, deep-link nav |
-| **Previous stable** | `05e7938` (v1.7.4) | Landing page, subscription system v2, daily/weekly/cycle limits, new plan config, usage UI |
-| **Old stable** | `af4b507` (v1.6.7) | B2B dual-mode discovery, notification sound, sidebar restructure, company logos, template download, per-store credits |
+| **LATEST STABLE** | `2be4784` (v1.9.7) | Creator Intel v2 live dashboard (TikTok + Amazon real data), dual sidebar entries, v2 placeholder replaced |
+| **Previous stable** | `7282071` (v1.9.6) | New Creator Intel sidebar split (v2 placeholder + old backup entry) |
+| **Before Creator Intel** | `405709e` (v1.7.7) | Landing page persistent after sign-in, two-product mega-menu, Creator Intelligence dummy dashboard, deep-link nav |
+| **Old stable** | `05e7938` (v1.7.4) | Landing page, subscription system v2, daily/weekly/cycle limits, new plan config, usage UI |
 
 ---
 
@@ -183,15 +184,17 @@ Two modes toggled by pill tabs:
 
 Four separate `<SidebarGroup>` elements to control gaps:
 1. **Group 1**: Market Discovery + Price Activity (all roles)
-2. **Group 2** (gap above): Creator Intel — `#creator-intel` (all roles, Sparkles icon)
+2. **Group 2** (gap above): Creator Intel v2 (`#creator-intel`) + Creator Intel Old (`#creator-intel-backup`) — both use Sparkles icon, all roles
 3. **Group 3** (gap above): Products + Stores — B2B/dev only
 4. **Group 4** (gap above): Dashboard — B2B/dev only
 
 - Dashboard is intentionally at the **bottom**, below Stores
 - Default landing page = **Market Discovery** (`discovering`), not dashboard
-- B2C users: see Market Discovery + Price Activity (if paid plan) + Creator Intel
+- B2C users: see Market Discovery + Price Activity (if paid plan) + both Creator Intel entries
 - Recent Searches section = hidden (`{false && isB2C && ...}`)
 - No section labels (no "Catalog", no "AI", no "Monitoring" text)
+- **"Creator Intel (Old)"** = `CreatorIntelContent.tsx` — keeps the original working Kalodata-style UI (Apify + web search data, blurred sections, dummy data fallback). Keep until v2 is proven.
+- **"Creator Intel"** = `CreatorIntelV2Content.tsx` — the new clean dashboard. This is the active build target.
 
 ---
 
@@ -340,7 +343,8 @@ PORT=8080
 | `src/components/PlansContent.tsx` | Plans page: B2B/B2C audience toggle + Weekly/Monthly/Yearly interval toggle + 3 plan cards. No max-width. |
 | `src/components/PlansModal.tsx` | Plans comparison modal — shown on credit limit hit for B2B. Stripe CTA = "Coming soon". |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data — real data coming) |
-| `src/components/CreatorIntelContent.tsx` | Creator Intelligence page (`#creator-intel`). Full dummy dashboard: stats row, trending products table, category GMV bars, top creators grid, early access banner. All data sections blurred with "Coming Q3 2026" lock overlay. Real build starts next. |
+| `src/components/CreatorIntelV2Content.tsx` | **Creator Intel v2** (`#creator-intel`) — ACTIVE BUILD. Live Kalodata-style dashboard: stats row, TikTok Shop tab (products table with GMV/units/sparkline/growth), Amazon BSR tab (rank/price/rating/reviews), date chips (7d/30d/90d), category filter, sort by GMV/units/growth, Amazon marketplace switcher (US/AE/UK), search bar, collapsible filter panel. Dev-only scrape buttons. All data from real API. |
+| `src/components/CreatorIntelContent.tsx` | **Creator Intel (Old)** (`#creator-intel-backup`) — backup reference. Original Kalodata-style UI with Apify TikTok data, blurred sections, dummy data mixed with real. Keep until v2 is fully proven, then remove. |
 | `src/components/CompaniesContent.tsx` | Stores — shows `logo_url` img. Add/Edit via Sheet. B2C cannot access. |
 | `src/components/ProductsContent.tsx` | Products — Add via Sheet, CSV/TSV import, Download Template button. |
 | `src/components/SettingsContent.tsx` | 5 tabs. UsageTab: 3 progress bars (daily/weekly/cycle) from `GET /api/wallet/usage`. |
@@ -353,7 +357,7 @@ PORT=8080
 ## URL Hash Navigation (BUILT)
 
 Pages persist across refresh via `window.location.hash`:
-- `#discovering` (default), `#price-board`, `#products`, `#companies`, `#plans`, `#settings`, `#dashboard`, `#creator-intel`
+- `#discovering` (default), `#price-board`, `#products`, `#companies`, `#plans`, `#settings`, `#dashboard`, `#creator-intel`, `#creator-intel-backup`
 - Settings sub-tabs: `#settings:general`, `#settings:billing`, `#settings:usage`, etc.
 - B2C users who land on blocked hashes → redirected to `#discovering`
 - Browser back/forward works via `hashchange` listener
@@ -433,6 +437,13 @@ POST /api/wallet/deduct          ← Deduct N credits (used for unlock; dev/owne
 POST /api/wallet/add             ← Manually add credits (admin only)
 GET  /api/currency-rates         ← USD→AED conversion rate
 GET  /api/export?format=json|csv|pdf ← Download user data export
+
+GET  /api/creator-intel/trending          ← TikTok trending products (filterable: category, sortBy, days, limit, offset)
+GET  /api/creator-intel/categories        ← Category GMV breakdown from tiktok_products table
+GET  /api/creator-intel/amazon-trending   ← Amazon BSR products (filterable: category, marketplace, limit, offset)
+GET  /api/creator-intel/freshness         ← Last scrape timestamps + product counts for TikTok + Amazon
+POST /api/creator-intel/scrape-tiktok     ← Trigger TikTok scrape (dev/owner only) — uses Apify if APIFY_API_KEY set, else Claude web_search
+POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/owner only) — uses Claude web_search
 ```
 
 ---
@@ -489,27 +500,11 @@ GET  /api/export?format=json|csv|pdf ← Download user data export
 
 ---
 
-## Creator Intelligence — Why It Exists & What It Is
+## Creator Intelligence — What It Is & Why
 
-### The problem we're solving
-TikTok Shop is exploding — billions of dollars of products are being sold through short videos and live streams. Sellers, brands, and affiliates need to know: **what products are trending, which creators drive the most sales, and which shops are winning** — before everyone else catches on. This is exactly what [Kalodata.com](https://kalodata.com) does, and it charges $50–$300/month for it. We are building our own version of this, better and cheaper, inside Spark AI as a second product.
+**The product:** Our answer to [Kalodata.com](https://kalodata.com) — a TikTok Shop analytics SaaS that charges $50–$300/month. We're building the same thing inside Spark AI, but cross-platform (TikTok + Amazon + eventually Alibaba) and UAE/MENA focused.
 
-### Inspiration: Kalodata
-Kalodata is a TikTok Shop analytics SaaS. It tracks:
-- Trending products on TikTok Shop by GMV, units sold, growth rate
-- Top creator affiliates — who is promoting what, what's converting
-- Shop revenue estimates — which brands are winning on TikTok Shop
-- Category-level breakdowns — where the money is flowing
-
-Our **Creator Intelligence** product is Spark AI's answer to Kalodata. Same concept, but:
-- Integrated with our existing Market Intelligence product (one platform)
-- Cross-platform: not just TikTok — also Amazon trending + Alibaba/AliExpress sourcing
-- More affordable, UAE/MENA market focus alongside global data
-- AI-powered trend prediction, not just raw data display
-
-### The full vision: TikTok → Amazon → Alibaba pipeline
-This is the core insight behind Creator Intelligence. The workflow a serious dropshipper or brand follows is:
-
+**The vision — TikTok → Amazon → Alibaba pipeline:**
 ```
 1. DISCOVER  → Find trending products on TikTok Shop (what's going viral)
 2. VALIDATE  → Cross-check if the same product is selling on Amazon (proof of demand)
@@ -517,134 +512,69 @@ This is the core insight behind Creator Intelligence. The workflow a serious dro
 4. TRACK     → Monitor price changes across all three platforms over time
 ```
 
-Creator Intelligence supports all 4 steps in one place. This is what makes it different from Kalodata (TikTok only) and from our Market Intelligence product (price scraping only).
+---
+
+## Creator Intelligence — Current State (as of v1.9.7)
+
+### What is BUILT ✅
+
+**Sidebar (DashboardLayout.tsx):**
+- "Creator Intel" → `#creator-intel` → `CreatorIntelV2Content.tsx` (v2, active build)
+- "Creator Intel (Old)" → `#creator-intel-backup` → `CreatorIntelContent.tsx` (backup, keep for now)
+
+**Backend (fully working):**
+- `backend/src/scraper/tiktokScraper.ts` — Claude `web_search_20250305` searches kalodata/shoplus/pipiads for trending TikTok products, then Claude haiku extracts JSON
+- `backend/src/scraper/apifyTikTokScraper.ts` — Apify `clockworks~tiktok-scraper` actor: scrapes real TikTok videos by search queries → Claude extracts products. Returns `playCount`, `diggCount`, flat fields `"authorMeta.name"`, `"authorMeta.avatar"`. Uses `searchQueries` (not `hashtags` — hashtags omit playCount). Image round-robin from top-viewed creator avatars.
+- `backend/src/scraper/amazonBestSellers.ts` — Claude `web_search_20250305` for Amazon BSR/trending, then Claude haiku extracts JSON
+- `backend/src/services/creatorIntelService.ts` — orchestrates scrapers, INSERTs (no DELETE — accumulates history), `DISTINCT ON (product_name)` dedup, date-range filtering by `scraped_at`
+- `backend/src/routes/creatorIntel.ts` — all API routes, admin-only scrape triggers
+
+**DB tables (live in Neon):**
+- `tiktok_products` — product_name, category, tiktok_price, gmv_7d, units_sold_7d, growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at
+- `amazon_trending` — asin (UNIQUE), product_name, category, rank, price, rating, review_count, marketplace, scraped_at
+- Historical data accumulates — no truncation. `scraped_at` is the timestamp for date filtering.
+
+**Frontend v2 (`CreatorIntelV2Content.tsx`):**
+- Stats row: TikTok product count, total GMV 7d, Amazon product count, filtered results count (all live from API)
+- **TikTok Shop tab:** product image/avatar, GMV 7d, units sold, price, creator count, sparkline trend, growth %, category badge
+- **Amazon BSR tab:** BSR rank, product name+category+ASIN, price, star rating, review count, marketplace badge
+- Date chips (7d / 30d / 90d) — hit real API with `days` param
+- Category filter with active chip + × dismiss
+- Sort by GMV / Units Sold / Growth Rate
+- Amazon marketplace switcher (US / UAE AE / UK)
+- Search bar (client-side filter by product name)
+- Collapsible filter panel (left sidebar)
+- Freshness indicator ("TikTok updated Xh ago")
+- Dev-only: "Scrape TikTok" + "Scrape Amazon" buttons with spinner + result feedback
+
+**Scrape trigger flow (dev only):**
+1. Click "Scrape TikTok" → `POST /api/creator-intel/scrape-tiktok`
+2. If `APIFY_API_KEY` set → uses Apify scraper (real video data, real images)
+3. Else → uses Claude web_search scraper (trend reports from kalodata/shoplus/pipiads)
+4. Results inserted into `tiktok_products`, frontend auto-refreshes
 
 ---
 
-## Creator Intelligence — Data Sources & Import Strategy
+### What is NOT YET BUILT ❌
 
-### Source 1: TikTok Shop
+**Data quality improvements (next priority):**
+- `tiktok_price` is often null — need better price extraction from video captions
+- `growth_pct` is often null — need baseline comparison (compare today's scrape to 7d ago)
+- `shop_name` is often null — need better shop detection
+- Cron job for auto-scraping (daily, on Render) — currently manual trigger only
 
-**What we need:**
-- Trending products (by GMV, units, growth rate, category)
-- Creator profiles (followers, niche, GMV generated, video count)
-- Shop performance (revenue estimates, top products, brand)
-- Live stream data (peak viewers, conversion rate)
+**New features to build next (in order):**
+1. **Category GMV bar chart** — horizontal bars, click to filter table. Uses `GET /api/creator-intel/categories`
+2. **Top Creators tab** — new `tiktok_creators` DB table, scrape creator profiles, show followers/GMV/niche grid
+3. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
+4. **Unified product modal** — click any TikTok product → see matching Amazon rank + Alibaba sourcing in one modal
+5. **Daily auto-scrape cron** — Render cron job, scrapes TikTok + Amazon every 24h, accumulates history
+6. **Real image URLs** — TikTok product images (not creator avatars). Requires Playwright scraping of TikTok Shop pages directly.
+7. **Real GMV data** — current GMV is estimated from `views × 0.005 × price`. Real data requires TikTok Shop Partner API (needs application) or Playwright on affiliate.tiktok.com (requires login).
 
-**How we get it:**
-TikTok does not offer a public API for shop/creator data. Options in order of preference:
-
-| Method | Description | Status |
-|---|---|---|
-| **Playwright scraper** | Scrape `tiktok.com/shop`, `affiliate.tiktok.com`, product pages. Use our existing Playwright engine + Claude Vision for data extraction. | **Preferred — build this first** |
-| **TikTok Research API** | Official API, requires approval, limited to US market, mostly for academic research. Not useful for commercial GMV data. | ❌ Not viable |
-| **Third-party data provider** | Buy data from a TikTok data reseller (e.g., Datamam, Apify TikTok scrapers). Pay per dataset. | Fallback if scraping is blocked |
-| **Partner/affiliate network data** | If we register as a TikTok Shop affiliate, we get access to the affiliate dashboard which shows product performance data. | Explore later |
-
-**Key TikTok pages to scrape:**
-- `https://shop.tiktok.com/` — trending products feed
-- `https://www.tiktok.com/@{creator}/` — creator profile + pinned shop videos
-- TikTok search: `tiktok.com/search?q={product}` — product mentions + views
-- Affiliate portal (requires login): best GMV data lives here
-
-**Data to extract per product (Claude Vision on screenshot):**
-`product_name, category, price, units_sold_7d, gmv_7d, growth_pct, top_creator, shop_name, video_count, avg_views`
-
----
-
-### Source 2: Amazon (Global + AE)
-
-**What we need:**
-- Best Sellers lists by category (`amazon.com/best-sellers`, `amazon.ae/best-sellers`)
-- Movers & Shakers (fastest rising products in last 24h)
-- Product detail: price, reviews, rating, rank, FBA status
-- Cross-reference: is this TikTok-trending product also on Amazon?
-
-**How we get it:**
-Amazon data is already partially supported in our Market Intelligence scraper (price tracking). For Creator Intelligence we extend it:
-
-| Method | Description |
-|---|---|
-| **Playwright scraper (existing engine)** | Extend `companyConfigs.ts` with Amazon Best Sellers + Movers & Shakers pages. Claude Vision extracts rank, product name, price, rating. |
-| **Amazon Product Advertising API (PAAPI)** | Official API for product data. Requires Amazon Associates account. Free with 1 request/sec limit. Returns price, reviews, rank, images. **Best for validation step.** |
-| **Keepa API** | Amazon price history + rank history data. Paid ($20/mo developer plan). Excellent for trend validation. Consider as optional add-on. |
-
-**Key Amazon pages:**
-- `amazon.com/best-sellers/{category}` — top 100 per category
-- `amazon.com/gp/movers-and-shakers/{category}` — fastest rising (hourly update)
-- `amazon.ae/best-sellers` — UAE-specific demand signals
-
----
-
-### Source 3: Alibaba / AliExpress (Sourcing)
-
-**What we need:**
-- Supplier listings for a product (price per unit, MOQ, shipping)
-- Product quality signals (order count, supplier rating, years active)
-- Price comparison across suppliers for the same product
-- Cross-border shipping estimates to UAE/US
-
-**How we get it:**
-
-| Method | Description |
-|---|---|
-| **AliExpress Affiliate API** | Official API (requires registration). Returns product listings, prices, ratings, affiliate links. **Best option — apply for access.** |
-| **Alibaba.com scraper** | Playwright scrape of `alibaba.com/trade/search?q={product}`. Claude Vision extracts supplier name, MOQ, price range, rating, order count. Works but rate-limited. |
-| **AliExpress scraper** | `aliexpress.com/wholesale?SearchText={product}`. Simpler than Alibaba, more consumer-oriented, good for single-unit sourcing. |
-| **1688.com** | Chinese domestic sourcing platform (cheaper than Alibaba). Requires Chinese IP or proxy. Future consideration. |
-
-**Data to extract per supplier:**
-`supplier_name, product_title, unit_price, moq, shipping_to_uae, rating, orders_count, response_rate, years_on_platform`
-
----
-
-### The unified pipeline (how all 3 connect)
-
-```
-User searches: "Stanley Tumbler"
-                    │
-         ┌──────────┼──────────┐
-         ▼          ▼          ▼
-    TikTok Shop   Amazon     Alibaba
-    ─────────     ──────     ───────
-    GMV: $2.4M   Rank: #3   Price: $4.20/unit
-    Growth: +312% Reviews: 4.8★  MOQ: 50 units
-    Top creator  ASIN: B0...  Supplier: ⭐⭐⭐⭐⭐
-         │          │          │
-         └──────────┼──────────┘
-                    ▼
-         Unified product card:
-         "This product is trending on TikTok (+312% GMV),
-          validated on Amazon (#3 Best Seller),
-          sourceable from Alibaba at $4.20/unit.
-          Potential margin: 89% at $39.99 retail."
-```
-
-This unified view is the killer feature. No other tool connects all three.
-
----
-
-### Creator Intelligence — Backend Build Plan
-
-**New DB tables needed (add to `backend/sql/schema.sql`):**
+**Planned DB tables (not yet created):**
 ```sql
--- Products trending on TikTok Shop
-CREATE TABLE tiktok_products (
-  id SERIAL PRIMARY KEY,
-  product_name TEXT NOT NULL,
-  category VARCHAR(100),
-  tiktok_price DECIMAL(10,2),
-  gmv_7d DECIMAL(15,2),         -- estimated 7-day GMV in USD
-  units_sold_7d INTEGER,
-  growth_pct DECIMAL(6,2),      -- % growth vs prior 7 days
-  video_count INTEGER,
-  top_creator_handle VARCHAR(100),
-  shop_name VARCHAR(150),
-  image_url TEXT,
-  scraped_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- TikTok creators / affiliates
+-- TikTok creator profiles (not yet built)
 CREATE TABLE tiktok_creators (
   id SERIAL PRIMARY KEY,
   handle VARCHAR(100) UNIQUE NOT NULL,
@@ -658,25 +588,11 @@ CREATE TABLE tiktok_creators (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Amazon cross-reference
-CREATE TABLE amazon_trending (
-  id SERIAL PRIMARY KEY,
-  asin VARCHAR(20) UNIQUE,
-  product_name TEXT,
-  category VARCHAR(100),
-  rank INTEGER,
-  price DECIMAL(10,2),
-  rating DECIMAL(3,2),
-  review_count INTEGER,
-  marketplace VARCHAR(10) DEFAULT 'US', -- US, AE, UK, etc.
-  scraped_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Alibaba/AliExpress sourcing data
+-- Alibaba/AliExpress sourcing (not yet built)
 CREATE TABLE sourcing_products (
   id SERIAL PRIMARY KEY,
   query TEXT NOT NULL,
-  platform VARCHAR(20),          -- 'alibaba', 'aliexpress', '1688'
+  platform VARCHAR(20),   -- 'alibaba', 'aliexpress'
   supplier_name VARCHAR(200),
   product_title TEXT,
   unit_price DECIMAL(10,2),
@@ -688,49 +604,44 @@ CREATE TABLE sourcing_products (
 );
 ```
 
-**New backend routes (add to `backend/src/routes/creatorIntel.ts`):**
-```
-GET /api/creator-intel/trending          ← TikTok trending products (paginated, filterable)
-GET /api/creator-intel/creators          ← Top creators by GMV
-GET /api/creator-intel/categories        ← Category GMV breakdown
-GET /api/creator-intel/amazon-trending   ← Amazon movers & shakers
-GET /api/creator-intel/source?q={}       ← Alibaba/AliExpress sourcing for a product
-GET /api/creator-intel/unified?q={}      ← Combined TikTok + Amazon + Alibaba for one product
-POST /api/creator-intel/scrape-tiktok    ← Trigger a fresh TikTok scrape run (admin/cron)
-POST /api/creator-intel/scrape-amazon    ← Trigger fresh Amazon best-sellers scrape
-```
-
-**New scraper files needed:**
-- `backend/src/scraper/tiktokScraper.ts` — Playwright scrape of TikTok Shop pages
-- `backend/src/scraper/amazonBestSellers.ts` — Playwright scrape of Amazon Best Sellers / Movers & Shakers
-- `backend/src/scraper/aliexpressScraper.ts` — Playwright scrape of AliExpress product listings
-- `backend/src/services/creatorIntelService.ts` — orchestrates all three scrapers, deduplication, DB upsert
-
 ---
 
-### Creator Intelligence — Frontend Build Plan
+## Creator Intelligence — Key Technical Facts
 
-Replace dummy data in `CreatorIntelContent.tsx` with:
+**Apify scraper field mapping (IMPORTANT — flat dot-notation, NOT nested):**
+```typescript
+// Apify clockworks~tiktok-scraper returns FLAT fields:
+v.playCount              // views (NOT v.stats.playCount)
+v.diggCount              // likes
+v["authorMeta.name"]     // creator handle
+v["authorMeta.avatar"]   // creator profile image URL
+v.text                   // video caption
+v.webVideoUrl            // video URL
+// Use searchQueries input (NOT hashtags) — hashtags omit playCount
+```
 
-1. **Stats row** — live counts from DB (trending products count, total GMV tracked, creator count, shops count)
-2. **Trending products table** — real data, filters: category, date range (7d/30d/90d), country (US/UAE/UK/Global), sort by GMV or growth
-3. **Top creators grid** — real profiles, GMV, niche filter, "View videos" link to TikTok
-4. **Category GMV chart** — real numbers, click a category to filter the products table
-5. **Shop Intelligence tab** — top TikTok shops by revenue, brand profile cards
-6. **Amazon Movers tab** — fastest rising Amazon products (cross-reference signal)
-7. **Sourcing tab** — search any product → see Alibaba/AliExpress supplier cards with price + MOQ
-8. **Unified product card** — click any trending product → see TikTok + Amazon + Alibaba data in one modal
-9. **Search bar** — search by product name, creator handle, or keyword across all three sources
-10. **Date range picker** — 7d / 30d / 90d toggle (affects all charts and tables)
-11. **Trend alerts** — "Notify me when [product] spikes" — stored in DB, email/in-app notification
+**Image assignment logic:**
+- Claude is told `image_url: null` in prompt (doesn't try to copy URLs)
+- After Claude returns products, code assigns images:
+  1. Try exact handle match in `creatorImageMap` (built from `"authorMeta.avatar"`)
+  2. Fallback: round-robin from `allImages[]` sorted by playCount desc → `allImages[i % allImages.length]`
 
-### Other planned items
+**Historical data strategy:**
+- INSERT without DELETE — rows accumulate over time
+- `DISTINCT ON (product_name)` deduplicates on read, keeping row with highest gmv_7d
+- `scraped_at >= NOW() - ($N || ' days')::INTERVAL` for date range filtering
+- NEVER truncate or DELETE tiktok_products / amazon_trending — historical data is the asset
+
+**Postgres DECIMAL → JavaScript:**
+- Neon returns DECIMAL columns as strings, not numbers
+- Always use `Number(p.gmv_7d)` before arithmetic — `p.gmv_7d + 0` will concatenate, not add
+
+### Other planned items (non-Creator-Intel)
 - **Stripe payment integration** — "Coming soon" in PlansModal and PlansContent
 - **B2C query intelligence guard** — classify query before searching (product → proceed, unrelated → block)
 - **B2C Price Activity** — save B2C search results to price activity tab
 - **Real data in PriceBoardContent** — still mock data
 - **Edit product** — no edit form yet, only add + deactivate
-- **Wire up waitlist emails** — `TikTokTeaser.tsx` and `CreatorIntelContent.tsx` notify inputs to a DB waitlist table
 
 ---
 

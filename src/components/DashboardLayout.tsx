@@ -124,8 +124,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  <NavButton item={{ title: "Creator Intel",        icon: Sparkles, id: "creator-intel"        }} currentPage={currentPage} onNavigate={onNavigate} />
-                  <NavButton item={{ title: "Creator Intel (Old)",  icon: Sparkles, id: "creator-intel-backup" }} currentPage={currentPage} onNavigate={onNavigate} />
+                  <NavButton item={{ title: "Creator Intel", icon: Sparkles, id: "creator-intel" }} currentPage={currentPage} onNavigate={onNavigate} />
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
