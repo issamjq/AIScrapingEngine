@@ -28,6 +28,7 @@ import { ProductsContent }         from "./components/ProductsContent"
 import { CompaniesContent }        from "./components/CompaniesContent"
 import { PlansContent }            from "./components/PlansContent"
 import { CreatorIntelContent }     from "./components/CreatorIntelContent"
+import { CreatorIntelV2Content }   from "./components/CreatorIntelV2Content"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
@@ -127,7 +128,7 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 
 const VALID_PAGES = new Set([
   "dashboard", "discovering", "price-board", "tracked-urls",
-  "products", "companies", "plans", "settings", "creator-intel",
+  "products", "companies", "plans", "settings", "creator-intel", "creator-intel-backup",
 ])
 const B2C_BLOCKED = new Set(["products", "companies"])
 
@@ -274,7 +275,8 @@ function AppInner() {
       case "companies":       return isB2C ? <DashboardContent role={role} /> : <CompaniesContent role={role} />
 
       case "plans":           return <PlansContent role={role} />
-      case "creator-intel":  return <CreatorIntelContent role={role} />
+      case "creator-intel":         return <CreatorIntelV2Content role={role} />
+      case "creator-intel-backup":  return <CreatorIntelContent role={role} />
 
       default:                return <DashboardContent role={role} />
     }
