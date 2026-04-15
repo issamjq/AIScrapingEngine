@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.9.7
+**Current version:** v1.10.2
 
 ---
 
@@ -17,9 +17,9 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **LATEST STABLE** | `2be4784` (v1.9.7) | Creator Intel v2 live dashboard (TikTok + Amazon real data), dual sidebar entries, v2 placeholder replaced |
-| **Previous stable** | `7282071` (v1.9.6) | New Creator Intel sidebar split (v2 placeholder + old backup entry) |
-| **Before Creator Intel** | `405709e` (v1.7.7) | Landing page persistent after sign-in, two-product mega-menu, Creator Intelligence dummy dashboard, deep-link nav |
+| **LATEST STABLE** | `ea131e9` (v1.10.2) | Creator Intel — Kalodata UI, amazon.com scraper, real rank history, sparkline tooltips, sticky filter buttons |
+| **Previous stable** | `fa1bcf0` (v1.9.10) | Kalodata-style Creator Intel full rewrite, amazon.com BSR Playwright scraper, all filters working |
+| **Before Creator Intel rewrite** | `2be4784` (v1.9.7) | Creator Intel v2 live dashboard (TikTok + Amazon real data), dual sidebar entries |
 | **Old stable** | `05e7938` (v1.7.4) | Landing page, subscription system v2, daily/weekly/cycle limits, new plan config, usage UI |
 
 ---
@@ -343,8 +343,7 @@ PORT=8080
 | `src/components/PlansContent.tsx` | Plans page: B2B/B2C audience toggle + Weekly/Monthly/Yearly interval toggle + 3 plan cards. No max-width. |
 | `src/components/PlansModal.tsx` | Plans comparison modal — shown on credit limit hit for B2B. Stripe CTA = "Coming soon". |
 | `src/components/PriceBoardContent.tsx` | Price activity table (mock data — real data coming) |
-| `src/components/CreatorIntelV2Content.tsx` | **Creator Intel v2** (`#creator-intel`) — ACTIVE BUILD. Live Kalodata-style dashboard: stats row, TikTok Shop tab (products table with GMV/units/sparkline/growth), Amazon BSR tab (rank/price/rating/reviews), date chips (7d/30d/90d), category filter, sort by GMV/units/growth, Amazon marketplace switcher (US/AE/UK), search bar, collapsible filter panel. Dev-only scrape buttons. All data from real API. |
-| `src/components/CreatorIntelContent.tsx` | **Creator Intel (Old)** (`#creator-intel-backup`) — backup reference. Original Kalodata-style UI with Apify TikTok data, blurred sections, dummy data mixed with real. Keep until v2 is fully proven, then remove. |
+| `src/components/CreatorIntelContent.tsx` | **Creator Intel** (`#creator-intel`) — ACTIVE BUILD. Full Kalodata-style Amazon BSR dashboard. AI suggestion bar, search, filtering conditions strip, left filter panel (sticky Submit/Reset, hidden scrollbar), table with hover-zoom images, BS/AC/#1 badges, real sparkline (rank history from API), estimated Item Sold (rank×reviews formula), action buttons. Dev-only "Refresh Data" button. |
 | `src/components/CompaniesContent.tsx` | Stores — shows `logo_url` img. Add/Edit via Sheet. B2C cannot access. |
 | `src/components/ProductsContent.tsx` | Products — Add via Sheet, CSV/TSV import, Download Template button. |
 | `src/components/SettingsContent.tsx` | 5 tabs. UsageTab: 3 progress bars (daily/weekly/cycle) from `GET /api/wallet/usage`. |
@@ -440,10 +439,11 @@ GET  /api/export?format=json|csv|pdf ← Download user data export
 
 GET  /api/creator-intel/trending          ← TikTok trending products (filterable: category, sortBy, days, limit, offset)
 GET  /api/creator-intel/categories        ← Category GMV breakdown from tiktok_products table
-GET  /api/creator-intel/amazon-trending   ← Amazon BSR products (filterable: category, marketplace, limit, offset)
+GET  /api/creator-intel/amazon-trending   ← Amazon BSR latest per ASIN (DISTINCT ON subquery); filterable: category, marketplace, limit, offset
+GET  /api/creator-intel/amazon-history    ← All rank snapshots grouped by ASIN { [asin]: [{rank, date}] } — used for real sparklines
 GET  /api/creator-intel/freshness         ← Last scrape timestamps + product counts for TikTok + Amazon
 POST /api/creator-intel/scrape-tiktok     ← Trigger TikTok scrape (dev/owner only) — uses Apify if APIFY_API_KEY set, else Claude web_search
-POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/owner only) — uses Claude web_search
+POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/owner only) — Playwright on amazon.com, plain INSERT (accumulates history)
 ```
 
 ---
@@ -514,63 +514,64 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 ---
 
-## Creator Intelligence — Current State (as of v1.9.7)
+## Creator Intelligence — Current State (as of v1.10.2)
 
 ### What is BUILT ✅
 
 **Sidebar (DashboardLayout.tsx):**
-- "Creator Intel" → `#creator-intel` → `CreatorIntelV2Content.tsx` (v2, active build)
-- "Creator Intel (Old)" → `#creator-intel-backup` → `CreatorIntelContent.tsx` (backup, keep for now)
+- Single entry: "Creator Intel" → `#creator-intel` → `CreatorIntelContent.tsx`
+- `CreatorIntelV2Content.tsx` was removed — merged into `CreatorIntelContent.tsx`
+- `#creator-intel-backup` route removed from App.tsx and VALID_PAGES
 
 **Backend (fully working):**
 - `backend/src/scraper/tiktokScraper.ts` — Claude `web_search_20250305` searches kalodata/shoplus/pipiads for trending TikTok products, then Claude haiku extracts JSON
-- `backend/src/scraper/apifyTikTokScraper.ts` — Apify `clockworks~tiktok-scraper` actor: scrapes real TikTok videos by search queries → Claude extracts products. Returns `playCount`, `diggCount`, flat fields `"authorMeta.name"`, `"authorMeta.avatar"`. Uses `searchQueries` (not `hashtags` — hashtags omit playCount). Image round-robin from top-viewed creator avatars.
-- `backend/src/scraper/amazonBestSellers.ts` — Claude `web_search_20250305` for Amazon BSR/trending, then Claude haiku extracts JSON
-- `backend/src/services/creatorIntelService.ts` — orchestrates scrapers, INSERTs (no DELETE — accumulates history), `DISTINCT ON (product_name)` dedup, date-range filtering by `scraped_at`
+- `backend/src/scraper/apifyTikTokScraper.ts` — Apify `clockworks~tiktok-scraper` actor: real TikTok videos → Claude extracts products
+- `backend/src/scraper/amazonBestSellers.ts` — **Real Playwright scraper** hitting amazon.com/gp/bestsellers for 10 categories. Extracts: ASIN, product_name, brand, rank, price, rating, review_count, image_url, product_url, badge (Best Seller / Amazon's Choice), marketplace=US
+- `backend/src/services/creatorIntelService.ts`:
+  - `runAmazonScrape`: plain INSERT per scrape run — **no upsert, no dedup** — accumulates history rows
+  - `getAmazonTrending`: `DISTINCT ON (COALESCE(asin, product_name))` subquery ordered by `scraped_at DESC` → returns latest per product, then sorted by rank ASC
+  - `getAmazonRankHistory`: returns all historical `{ rank, date }` snapshots grouped by ASIN, only for ASINs with ≥2 data points
 - `backend/src/routes/creatorIntel.ts` — all API routes, admin-only scrape triggers
 
 **DB tables (live in Neon):**
 - `tiktok_products` — product_name, category, tiktok_price, gmv_7d, units_sold_7d, growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at
-- `amazon_trending` — asin (UNIQUE), product_name, category, rank, price, rating, review_count, marketplace, scraped_at
-- Historical data accumulates — no truncation. `scraped_at` is the timestamp for date filtering.
+- `amazon_trending` — asin (NO unique constraint — dropped), product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at
+  - **No unique constraint on asin** — multiple rows per ASIN (one per scrape run) = historical data
+  - Current data: ~196 rows from initial scrape
 
-**Frontend v2 (`CreatorIntelV2Content.tsx`):**
-- Stats row: TikTok product count, total GMV 7d, Amazon product count, filtered results count (all live from API)
-- **TikTok Shop tab:** product image/avatar, GMV 7d, units sold, price, creator count, sparkline trend, growth %, category badge
-- **Amazon BSR tab:** BSR rank, product name+category+ASIN, price, star rating, review count, marketplace badge
-- Date chips (7d / 30d / 90d) — hit real API with `days` param
-- Category filter with active chip + × dismiss
-- Sort by GMV / Units Sold / Growth Rate
-- Amazon marketplace switcher (US / UAE AE / UK)
-- Search bar (client-side filter by product name)
-- Collapsible filter panel (left sidebar)
-- Freshness indicator ("TikTok updated Xh ago")
-- Dev-only: "Scrape TikTok" + "Scrape Amazon" buttons with spinner + result feedback
+**Frontend (`CreatorIntelContent.tsx`) — Kalodata-style:**
+- AI suggestion bar (blue gradient)
+- Search bar (white, gray icon, no blue background)
+- Filtering conditions strip with dismissible chips
+- Left filter panel (220px): Dates (L30/L60/L90), Category, Price range, Number of Ratings, Rating, Biggest Movers Rank, + coming-soon groups (Monthly BSR Growth Rate, Item Sold, Revenue, Weight, Size, FBA Fee, Gross Margin, On-shelf Time, Product Flag, Competition Info)
+- **Submit/Reset buttons**: `sticky bottom-0` inside single `overflow-y-auto` container → always visible, no flex height bugs
+- Filter panel scrollbar: hidden via `::-webkit-scrollbar` + `scrollbarWidth: none`
+- Table columns: Product Info (image h-20 + hover zoom h-44, Amazon orange badge, name link, ASIN copy, brand, price, BS/AC/#1 badges, action buttons), BSR, Sale Trend (sparkline), Item Sold (L30D), Revenue (L30D), No. of Ratings, Rating
+- **Sparkline**: real data when ≥2 scrape runs exist (from `/amazon-history`); estimated fallback otherwise. Hover tooltip shows date + Monthly Sales estimate. Vertical dashed guide on hover.
+- **Item Sold estimate**: granular per-rank tiers (rank 1=44k, 2=32k, 3=24k, 4=18k, 5=14k…) scaled by review count — same-rank products show different numbers
+- BSR % change column: shows "—" (no historical comparison yet; will be real once 2+ scrapes)
+- Action buttons: "Trend Details" → amazon.com/dp/, "TikTok Matching" → tiktok.com/search, "Similar Products" → amazon.com/s?k=
+- Dev-only: "Refresh Data" button (orange) triggers `POST /api/creator-intel/scrape-amazon`
+- Loads rank history in background after products load; passes `history` prop per ASIN to each sparkline
 
 **Scrape trigger flow (dev only):**
-1. Click "Scrape TikTok" → `POST /api/creator-intel/scrape-tiktok`
-2. If `APIFY_API_KEY` set → uses Apify scraper (real video data, real images)
-3. Else → uses Claude web_search scraper (trend reports from kalodata/shoplus/pipiads)
-4. Results inserted into `tiktok_products`, frontend auto-refreshes
+1. Click "Refresh Data" → `POST /api/creator-intel/scrape-amazon`
+2. Playwright scrapes 10 amazon.com BSR category pages (~100 products each)
+3. Fresh INSERT rows added to `amazon_trending` (old rows kept — history accumulates)
+4. Page reloads: table shows latest per-ASIN, sparklines show real rank trend (after ≥2 runs)
+5. Each scrape run takes ~2–3 min on Render
 
 ---
 
 ### What is NOT YET BUILT ❌
 
-**Data quality improvements (next priority):**
-- `tiktok_price` is often null — need better price extraction from video captions
-- `growth_pct` is often null — need baseline comparison (compare today's scrape to 7d ago)
-- `shop_name` is often null — need better shop detection
-- Cron job for auto-scraping (daily, on Render) — currently manual trigger only
-
 **New features to build next (in order):**
-1. **Category GMV bar chart** — horizontal bars, click to filter table. Uses `GET /api/creator-intel/categories`
-2. **Top Creators tab** — new `tiktok_creators` DB table, scrape creator profiles, show followers/GMV/niche grid
-3. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
-4. **Unified product modal** — click any TikTok product → see matching Amazon rank + Alibaba sourcing in one modal
-5. **Daily auto-scrape cron** — Render cron job, scrapes TikTok + Amazon every 24h, accumulates history
-6. **Real image URLs** — TikTok product images (not creator avatars). Requires Playwright scraping of TikTok Shop pages directly.
-7. **Real GMV data** — current GMV is estimated from `views × 0.005 × price`. Real data requires TikTok Shop Partner API (needs application) or Playwright on affiliate.tiktok.com (requires login).
+1. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically. Deferred — doing manual testing first.
+2. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN. Needs `getAmazonRankHistory` already built.
+3. **TikTok tab** — currently hidden/removed from Creator Intel. Will re-add once Amazon data is validated.
+4. **Top Creators tab** — new `tiktok_creators` DB table, scrape creator profiles, show followers/GMV/niche grid
+5. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
+6. **Unified product modal** — click any Amazon product → see TikTok match + Alibaba sourcing in one modal
 
 **Planned DB tables (not yet created):**
 ```sql
