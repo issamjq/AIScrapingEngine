@@ -405,11 +405,74 @@ const DEFAULT_FILTERS: Filters = {
 const CATEGORIES = ["All", "Electronics", "Beauty", "Home & Kitchen", "Health",
   "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"]
 
+// ─── Marketplace tab config ───────────────────────────────────────────────────
+
+type MarketplaceId = "Amazon" | "Walmart" | "iHerb" | "Alibaba" | "Tesco"
+
+const MARKETPLACES: {
+  id:     MarketplaceId
+  live:   boolean
+  logo:   React.ReactNode
+  badge?: string
+  flag?:  string
+}[] = [
+  {
+    id: "Amazon", live: true, flag: "🇺🇸",
+    logo: (
+      <span className="flex flex-col items-start leading-none">
+        <span className="font-black text-[14px] tracking-[-0.5px] text-[#232f3e]">amazon</span>
+        <svg width="44" height="6" viewBox="0 0 44 6" className="-mt-0.5">
+          <path d="M2 3.5 Q22 7 42 3.5" stroke="#FF9900" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+        </svg>
+      </span>
+    ),
+  },
+  {
+    id: "Walmart", live: false, flag: "🇺🇸",
+    logo: (
+      <span className="flex items-center gap-1 leading-none">
+        {/* Walmart spark */}
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+          <circle cx="7" cy="7" r="1.5" fill="#FFC220"/>
+          {[0,45,90,135,180,225,270,315].map((deg, i) => {
+            const r = Math.PI * deg / 180
+            return <line key={i} x1={7 + Math.cos(r)*2.5} y1={7 + Math.sin(r)*2.5} x2={7 + Math.cos(r)*5.5} y2={7 + Math.sin(r)*5.5} stroke="#FFC220" strokeWidth="1.5" strokeLinecap="round" />
+          })}
+        </svg>
+        <span className="font-black text-[14px] tracking-[-0.3px] text-[#0071CE]">walmart</span>
+      </span>
+    ),
+  },
+  {
+    id: "iHerb", live: false, flag: "🌍",
+    logo: (
+      <span className="font-black text-[14px] tracking-[-0.3px]">
+        <span className="text-[#1B7340]">i</span><span className="text-[#66A830]">Herb</span>
+      </span>
+    ),
+  },
+  {
+    id: "Alibaba", live: false, flag: "🇨🇳",
+    logo: (
+      <span className="font-black text-[14px] tracking-[-0.3px] text-[#FF6A00]">alibaba</span>
+    ),
+  },
+  {
+    id: "Tesco", live: false, flag: "🇬🇧",
+    logo: (
+      <span className="flex items-center gap-0.5 font-black text-[14px] tracking-[-0.3px]">
+        <span className="text-[#00539F]">Tesc</span><span className="text-[#EE1C25]">o</span>
+      </span>
+    ),
+  },
+]
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export function CreatorIntelContent({ role }: Props) {
   const { user } = useAuth()
 
+  const [activeMarket, setActiveMarket] = useState<MarketplaceId>("Amazon")
   const [allProducts,  setAllProducts]  = useState<AmazonProduct[]>([])
   const [displayed,    setDisplayed]    = useState<AmazonProduct[]>([])
   const [loading,      setLoading]      = useState(true)
@@ -640,33 +703,51 @@ export function CreatorIntelContent({ role }: Props) {
         </div>
       )}
 
-      {/* ── Amazon marketplace header ───────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3">
-        {/* Amazon wordmark */}
-        <div className="flex items-center gap-2.5">
-          <div className="flex flex-col items-start leading-none">
-            <span className="text-[#232f3e] font-black text-[15px] tracking-[-0.5px]">amazon</span>
-            {/* Smile arc */}
-            <svg width="48" height="7" viewBox="0 0 48 7" className="-mt-0.5">
-              <path d="M2 4 Q24 8 46 4" stroke="#FF9900" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-            </svg>
-          </div>
-          <div className="h-5 w-px bg-gray-200" />
-          <div className="flex items-center gap-1.5">
-            <span className="text-base leading-none">🇺🇸</span>
-            <span className="text-xs font-medium text-gray-700">United States</span>
-          </div>
-          <span className="px-2 py-0.5 text-[10px] font-semibold bg-[#f0faf5] text-[#067D62] rounded-full border border-[#067D62]/20">
-            Best Sellers
-          </span>
-        </div>
-        <div className="ml-auto text-[10px] text-gray-400">
-          amazon.com/gp/bestsellers
-        </div>
+      {/* ── Marketplace tab bar ─────────────────────────────────────── */}
+      <div className="bg-white border-b border-gray-200 px-4 flex items-end gap-1 overflow-x-auto">
+        {MARKETPLACES.map(m => {
+          const isActive = activeMarket === m.id
+          return (
+            <button
+              key={m.id}
+              onClick={() => setActiveMarket(m.id)}
+              className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm whitespace-nowrap transition-colors border-b-2 ${
+                isActive
+                  ? "border-[#FF9900] bg-white"
+                  : "border-transparent hover:bg-gray-50 text-gray-400"
+              }`}
+            >
+              {m.logo}
+              {m.flag && <span className="text-[11px] leading-none">{m.flag}</span>}
+              {!m.live && (
+                <span className="ml-1 px-1 py-0 text-[8px] font-bold bg-gray-100 text-gray-400 rounded leading-4">
+                  SOON
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
 
+      {/* ── Coming Soon overlay for non-Amazon tabs ─────────────────── */}
+      {activeMarket !== "Amazon" && (
+        <div className="flex flex-col items-center justify-center py-28 gap-4 bg-[#f4f5f7]">
+          <div className="text-5xl">🚀</div>
+          <div className="text-xl font-bold text-gray-700">{activeMarket} data is coming soon</div>
+          <div className="text-sm text-gray-400 max-w-xs text-center">
+            We're building the {activeMarket} scraper. Switch back to Amazon to see live Best Sellers data.
+          </div>
+          <button
+            onClick={() => setActiveMarket("Amazon")}
+            className="mt-2 px-5 py-2 rounded bg-[#FF9900] text-black text-sm font-bold hover:bg-[#e88800] transition-colors"
+          >
+            Back to Amazon
+          </button>
+        </div>
+      )}
+
       {/* ── Body: filter panel + table ──────────────────────────────── */}
-      <div className="flex">
+      {activeMarket === "Amazon" && <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
@@ -956,7 +1037,8 @@ export function CreatorIntelContent({ role }: Props) {
             Data processed by algorithm, for reference only. Amazon.com Best Sellers · Estimated sales are indicative only.
           </div>
         </div>
-      </div>
+      </div>}
+
     </div>
   )
 }
