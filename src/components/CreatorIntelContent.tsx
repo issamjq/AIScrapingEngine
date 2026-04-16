@@ -428,7 +428,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Walmart", live: false, flag: "🇺🇸",
+    id: "Walmart", live: true, flag: "🇺🇸",
     logo: (
       <span className="flex items-center gap-1 leading-none">
         {/* Walmart spark */}
@@ -493,38 +493,48 @@ export function CreatorIntelContent({ role }: Props) {
     try { return user ? await (user as any).getIdToken() : null } catch { return null }
   }, [user])
 
-  // ── Load from API ─────────────────────────────────────────────────────────
+  // ── Load from API (marketplace-aware) ────────────────────────────────────
 
-  const loadData = useCallback(async (f: Filters = filters) => {
+  const loadData = useCallback(async (f: Filters = filters, market: MarketplaceId = activeMarket) => {
     const token = await getToken()
     if (!token) { setLoading(false); return }
 
-    const params = new URLSearchParams({ marketplace: "US", limit: "200" })
+    setLoading(true)
+    setAllProducts([])
+    setRankHistory({})
+
+    const params = new URLSearchParams({ limit: "200" })
     if (f.category !== "All") params.set("category", f.category)
 
     try {
-      const [amRes, freshRes] = await Promise.all([
-        fetch(`${API}/api/creator-intel/amazon-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API}/api/creator-intel/freshness`,                  { headers: { Authorization: `Bearer ${token}` } }),
-      ])
-      if (amRes.ok) {
-        const j = await amRes.json()
-        setAllProducts(j.data ?? [])
-      }
-      if (freshRes.ok) {
-        const j = await freshRes.json()
-        setLastScraped(j.data?.amazon_last_scraped ?? null)
-        setTotalCount(j.data?.amazon_product_count ?? 0)
+      if (market === "Amazon") {
+        params.set("marketplace", "US")
+        const [amRes, freshRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/amazon-trending?${params}`,  { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/freshness`,                   { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (amRes.ok)    { const j = await amRes.json();    setAllProducts(j.data ?? []) }
+        if (freshRes.ok) { const j = await freshRes.json(); setLastScraped(j.data?.amazon_last_scraped ?? null); setTotalCount(j.data?.amazon_product_count ?? 0) }
+      } else if (market === "Walmart") {
+        const [wmRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/walmart-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/walmart-history`,            { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (wmRes.ok)   { const j = await wmRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
       }
     } catch (e) { console.error(e) }
     setLoading(false)
-  }, [getToken, filters])
+  }, [getToken, filters, activeMarket])
 
+  // Reload when marketplace tab changes
+  useEffect(() => { loadData(filters, activeMarket) }, [activeMarket])
   useEffect(() => { loadData() }, [])
 
-  // ── Load rank history after products arrive ───────────────────────────────
+  // ── Load rank history after Amazon products arrive ────────────────────────
   useEffect(() => {
-    if (allProducts.length === 0) return
+    if (activeMarket !== "Amazon" || allProducts.length === 0) return
     getToken().then(token => {
       if (!token) return
       fetch(`${API}/api/creator-intel/amazon-history?marketplace=US`, {
@@ -534,7 +544,7 @@ export function CreatorIntelContent({ role }: Props) {
         .then(j => { if (j?.data) setRankHistory(j.data) })
         .catch(() => {})
     })
-  }, [allProducts, getToken])
+  }, [allProducts, activeMarket, getToken])
 
   // ── Client-side filtering + sorting ──────────────────────────────────────
 
@@ -596,19 +606,22 @@ export function CreatorIntelContent({ role }: Props) {
     loadData(DEFAULT_FILTERS)
   }
 
-  // ── Scrape trigger ────────────────────────────────────────────────────────
+  // ── Scrape trigger (marketplace-aware) ───────────────────────────────────
 
   const handleRefresh = async () => {
     const token = await getToken()
     if (!token) return
     setRefreshing(true)
     try {
-      await fetch(`${API}/api/creator-intel/scrape-amazon`, {
+      const endpoint = activeMarket === "Walmart"
+        ? `${API}/api/creator-intel/scrape-walmart`
+        : `${API}/api/creator-intel/scrape-amazon`
+      await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ limit: 100 }),
       })
-      await loadData()
+      await loadData(filters, activeMarket)
     } catch { /* ignore */ }
     setRefreshing(false)
   }
@@ -729,8 +742,8 @@ export function CreatorIntelContent({ role }: Props) {
         })}
       </div>
 
-      {/* ── Coming Soon overlay for non-Amazon tabs ─────────────────── */}
-      {activeMarket !== "Amazon" && (
+      {/* ── Coming Soon overlay for unbuilt marketplaces ────────────── */}
+      {activeMarket !== "Amazon" && activeMarket !== "Walmart" && (
         <div className="flex flex-col items-center justify-center py-28 gap-4 bg-[#f4f5f7]">
           <div className="text-5xl">🚀</div>
           <div className="text-xl font-bold text-gray-700">{activeMarket} data is coming soon</div>
@@ -747,7 +760,7 @@ export function CreatorIntelContent({ role }: Props) {
       )}
 
       {/* ── Body: filter panel + table ──────────────────────────────── */}
-      {activeMarket === "Amazon" && <div className="flex">
+      {(activeMarket === "Amazon" || activeMarket === "Walmart") && <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
