@@ -8,9 +8,9 @@ import {
   runAmazonScrape,
   getAmazonTrending,
   getAmazonRankHistory,
-  runWalmartScrape,
-  getWalmartTrending,
-  getWalmartRankHistory,
+  runEbayScrape,
+  getEbayTrending,
+  getEbayRankHistory,
   getDataFreshness,
 } from "../services/creatorIntelService"
 import { logger } from "../utils/logger"
@@ -132,44 +132,44 @@ creatorIntelRouter.post("/scrape-amazon", async (req: AuthRequest, res: Response
   }
 })
 
-// ── GET /api/creator-intel/walmart-trending ──────────────────────────────────
-creatorIntelRouter.get("/walmart-trending", async (req: AuthRequest, res: Response) => {
+// ── GET /api/creator-intel/ebay-trending ─────────────────────────────────────
+creatorIntelRouter.get("/ebay-trending", async (req: AuthRequest, res: Response) => {
   try {
     const category = String(req.query.category ?? "All")
     const limit    = Math.min(Number(req.query.limit ?? 50), 100)
     const offset   = Number(req.query.offset ?? 0)
 
-    const products = await getWalmartTrending({ category, limit, offset })
+    const products = await getEbayTrending({ category, limit, offset })
     res.json({ success: true, data: products, count: products.length })
   } catch (err: any) {
-    logger.error("[CreatorIntel] GET /walmart-trending", { error: err.message })
-    res.status(500).json({ success: false, error: "Failed to fetch Walmart trending" })
+    logger.error("[CreatorIntel] GET /ebay-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch eBay trending" })
   }
 })
 
-// ── GET /api/creator-intel/walmart-history ───────────────────────────────────
-creatorIntelRouter.get("/walmart-history", async (_req: AuthRequest, res: Response) => {
+// ── GET /api/creator-intel/ebay-history ──────────────────────────────────────
+creatorIntelRouter.get("/ebay-history", async (_req: AuthRequest, res: Response) => {
   try {
-    const history = await getWalmartRankHistory()
+    const history = await getEbayRankHistory()
     res.json({ success: true, data: history })
   } catch (err: any) {
-    logger.error("[CreatorIntel] GET /walmart-history", { error: err.message })
-    res.status(500).json({ success: false, error: "Failed to fetch Walmart rank history" })
+    logger.error("[CreatorIntel] GET /ebay-history", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch eBay rank history" })
   }
 })
 
-// ── POST /api/creator-intel/scrape-walmart ───────────────────────────────────
-creatorIntelRouter.post("/scrape-walmart", async (req: AuthRequest, res: Response) => {
+// ── POST /api/creator-intel/scrape-ebay ──────────────────────────────────────
+creatorIntelRouter.post("/scrape-ebay", async (req: AuthRequest, res: Response) => {
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
 
   try {
     const { category = "All", limit = 100 } = req.body
-    logger.info("[CreatorIntel] Walmart scrape triggered", { category, limit, by: req.email })
-    const result = await runWalmartScrape({ category, limit })
+    logger.info("[CreatorIntel] eBay scrape triggered", { category, limit, by: req.email })
+    const result = await runEbayScrape({ category, limit })
     res.json({ success: true, ...result })
   } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-walmart", { error: err.message })
+    logger.error("[CreatorIntel] POST /scrape-ebay", { error: err.message })
     res.status(500).json({ success: false, error: err.message })
   }
 })

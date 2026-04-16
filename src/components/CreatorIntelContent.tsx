@@ -407,7 +407,7 @@ const CATEGORIES = ["All", "Electronics", "Beauty", "Home & Kitchen", "Health",
 
 // ─── Marketplace tab config ───────────────────────────────────────────────────
 
-type MarketplaceId = "Amazon" | "Walmart" | "iHerb" | "Alibaba" | "Tesco"
+type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba" | "Tesco"
 
 const MARKETPLACES: {
   id:     MarketplaceId
@@ -428,18 +428,13 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Walmart", live: true, flag: "🇺🇸",
+    id: "eBay", live: true, flag: "🇺🇸",
     logo: (
-      <span className="flex items-center gap-1 leading-none">
-        {/* Walmart spark */}
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-          <circle cx="7" cy="7" r="1.5" fill="#FFC220"/>
-          {[0,45,90,135,180,225,270,315].map((deg, i) => {
-            const r = Math.PI * deg / 180
-            return <line key={i} x1={7 + Math.cos(r)*2.5} y1={7 + Math.sin(r)*2.5} x2={7 + Math.cos(r)*5.5} y2={7 + Math.sin(r)*5.5} stroke="#FFC220" strokeWidth="1.5" strokeLinecap="round" />
-          })}
-        </svg>
-        <span className="font-black text-[14px] tracking-[-0.3px] text-[#0071CE]">walmart</span>
+      <span className="flex items-center leading-none font-black text-[15px] tracking-[-1px]">
+        <span style={{ color: "#e53238" }}>e</span>
+        <span style={{ color: "#0064d2" }}>B</span>
+        <span style={{ color: "#f5af02" }}>a</span>
+        <span style={{ color: "#86b817" }}>y</span>
       </span>
     ),
   },
@@ -515,12 +510,12 @@ export function CreatorIntelContent({ role }: Props) {
         ])
         if (amRes.ok)    { const j = await amRes.json();    setAllProducts(j.data ?? []) }
         if (freshRes.ok) { const j = await freshRes.json(); setLastScraped(j.data?.amazon_last_scraped ?? null); setTotalCount(j.data?.amazon_product_count ?? 0) }
-      } else if (market === "Walmart") {
-        const [wmRes, histRes] = await Promise.all([
-          fetch(`${API}/api/creator-intel/walmart-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API}/api/creator-intel/walmart-history`,            { headers: { Authorization: `Bearer ${token}` } }),
+      } else if (market === "eBay") {
+        const [ebRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/ebay-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/ebay-history`,             { headers: { Authorization: `Bearer ${token}` } }),
         ])
-        if (wmRes.ok)   { const j = await wmRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (ebRes.ok)   { const j = await ebRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       }
@@ -613,8 +608,8 @@ export function CreatorIntelContent({ role }: Props) {
     if (!token) return
     setRefreshing(true)
     try {
-      const endpoint = activeMarket === "Walmart"
-        ? `${API}/api/creator-intel/scrape-walmart`
+      const endpoint = activeMarket === "eBay"
+        ? `${API}/api/creator-intel/scrape-ebay`
         : `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
         method: "POST",
@@ -743,7 +738,7 @@ export function CreatorIntelContent({ role }: Props) {
       </div>
 
       {/* ── Coming Soon overlay for unbuilt marketplaces ────────────── */}
-      {activeMarket !== "Amazon" && activeMarket !== "Walmart" && (
+      {activeMarket !== "Amazon" && activeMarket !== "eBay" && (
         <div className="flex flex-col items-center justify-center py-28 gap-4 bg-[#f4f5f7]">
           <div className="text-5xl">🚀</div>
           <div className="text-xl font-bold text-gray-700">{activeMarket} data is coming soon</div>
@@ -760,7 +755,7 @@ export function CreatorIntelContent({ role }: Props) {
       )}
 
       {/* ── Body: filter panel + table ──────────────────────────────── */}
-      {(activeMarket === "Amazon" || activeMarket === "Walmart") && <div className="flex">
+      {(activeMarket === "Amazon" || activeMarket === "eBay") && <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}

@@ -14,7 +14,7 @@ import { scrapeTikTokTrending,
 import { scrapeApifyTikTok }        from "../scraper/apifyTikTokScraper"
 import { scrapeAmazonBestSellers,
          AmazonProduct }            from "../scraper/amazonBestSellers"
-import { scrapeWalmartBestSellers } from "../scraper/walmartBestSellers"
+import { scrapeEbayBestSellers }    from "../scraper/ebayBestSellers"
 import { logger }                   from "../utils/logger"
 
 // ─── TikTok ──────────────────────────────────────────────────────────────────
@@ -236,15 +236,21 @@ export async function getAmazonRankHistory(marketplace = "US"): Promise<
   return history
 }
 
-// ─── Walmart ─────────────────────────────────────────────────────────────────
-// Walmart data reuses the amazon_trending table with marketplace = "Walmart".
+// ─── eBay ─────────────────────────────────────────────────────────────────────
+// eBay data reuses the amazon_trending table with marketplace = "eBay".
 // Same INSERT / DISTINCT ON / rank history pattern as Amazon.
 
-export async function runWalmartScrape(opts: {
+export async function runEbayScrape(opts: {
   category?: string
   limit?:    number
 }): Promise<{ inserted: number }> {
-  const products = await scrapeWalmartBestSellers({ category: opts.category, limit: opts.limit })
+  const appId = process.env.EBAY_APP_ID
+  if (!appId) {
+    logger.warn("[CreatorIntel] EBAY_APP_ID not set — skipping eBay scrape")
+    return { inserted: 0 }
+  }
+
+  const products = await scrapeEbayBestSellers({ category: opts.category, limit: opts.limit, appId })
   if (products.length === 0) return { inserted: 0 }
 
   let inserted = 0
@@ -256,19 +262,19 @@ export async function runWalmartScrape(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
         [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
-         p.review_count, p.image_url, p.product_url, p.badge, p.brand, "Walmart"]
+         p.review_count, p.image_url, p.product_url, p.badge, p.brand, "eBay"]
       )
       inserted++
     } catch (err: any) {
-      logger.warn("[CreatorIntel] Walmart insert skip", { asin: p.asin, error: err.message })
+      logger.warn("[CreatorIntel] eBay insert skip", { asin: p.asin, error: err.message })
     }
   }
 
-  logger.info("[CreatorIntel] Walmart scrape done", { inserted })
+  logger.info("[CreatorIntel] eBay scrape done", { inserted })
   return { inserted }
 }
 
-export async function getWalmartTrending(opts: {
+export async function getEbayTrending(opts: {
   category?: string
   limit?:    number
   offset?:   number
@@ -284,7 +290,7 @@ export async function getWalmartTrending(opts: {
                 asin, product_name, category, rank, price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
-         WHERE marketplace = 'Walmart' AND category = $1
+         WHERE marketplace = 'eBay' AND category = $1
          ORDER BY COALESCE(asin, product_name), scraped_at DESC
        ) latest
        ORDER BY rank ASC NULLS LAST
@@ -302,7 +308,7 @@ export async function getWalmartTrending(opts: {
               asin, product_name, category, rank, price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
-       WHERE marketplace = 'Walmart'
+       WHERE marketplace = 'eBay'
        ORDER BY COALESCE(asin, product_name), scraped_at DESC
      ) latest
      ORDER BY rank ASC NULLS LAST
@@ -312,13 +318,13 @@ export async function getWalmartTrending(opts: {
   return res.rows
 }
 
-export async function getWalmartRankHistory(): Promise<
+export async function getEbayRankHistory(): Promise<
   Record<string, { rank: number; date: string }[]>
 > {
   const res = await query(
     `SELECT asin, rank, scraped_at
      FROM amazon_trending
-     WHERE marketplace = 'Walmart' AND asin IS NOT NULL AND rank IS NOT NULL
+     WHERE marketplace = 'eBay' AND asin IS NOT NULL AND rank IS NOT NULL
      ORDER BY asin, scraped_at ASC`
   )
 
