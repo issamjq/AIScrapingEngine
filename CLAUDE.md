@@ -570,10 +570,10 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 | **Amazon** | ✅ Done | BSR scraper live, sparklines, badges, rank history |
 | **iHerb** | ✅ Done | Playwright scraper live, 8 categories |
 | **Alibaba** | ✅ Done | Playwright scraper, window.runParams extraction, 8 categories |
-| **Shein** | ✅ Done | Playwright scraper, 6 categories (Women/Men/Shoes/Bags/Beauty/Home) |
-| **Etsy** | ✅ Done | Playwright scraper, 8 categories, JSON-in-script + DOM fallback |
-| **Banggood** | ✅ Done | Playwright scraper, 7 categories, hot100 + category sort pages |
-| **Lazada** | ✅ Done | Playwright scraper, 8 categories, window.__STORE__ + DOM fallback (Singapore) |
+| **Banggood** | ✅ Done | Playwright scraper, 7 categories — confirmed working locally |
+| **Shein** | ❌ Blocked | Scraper built but Shein redirects to `/risk/challenge` CAPTCHA on headless browsers |
+| **Etsy** | ❌ Blocked | DataDome bot protection — full Cloudflare challenge on headless browsers |
+| **Lazada** | ❌ Blocked | reCAPTCHA `/punish` page on headless browsers |
 | **eBay** | ⏳ Waiting | Official Finding API scraper built; needs `EBAY_APP_ID` env var in Render |
 | **Tesco** | ❌ Blocked | Scraper built but Tesco blocks Render datacenter IPs. Needs residential proxy. |
 | **TikTok** | ❌ Not needed | Removed from scope for now |
