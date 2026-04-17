@@ -406,17 +406,13 @@ const DEFAULT_FILTERS: Filters = {
 
 type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba" | "Tesco"
 
-/** true = has a best-sellers table; false = custom UI (e.g. Alibaba sourcing search) */
-type MarketplaceKind = "bestsellers" | "sourcing"
-
 const MARKETPLACES: {
   id:    MarketplaceId
-  kind:  MarketplaceKind
   flag?: string
   logo:  React.ReactNode
 }[] = [
   {
-    id: "Amazon", kind: "bestsellers", flag: "🇺🇸",
+    id: "Amazon", flag: "🇺🇸",
     logo: (
       <span className="flex flex-col items-start leading-none">
         <span className="font-black text-[14px] tracking-[-0.5px] text-[#232f3e]">amazon</span>
@@ -427,7 +423,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "eBay", kind: "bestsellers", flag: "🇺🇸",
+    id: "eBay", flag: "🇺🇸",
     logo: (
       <span className="flex items-center leading-none font-black text-[15px] tracking-[-1px]">
         <span style={{ color: "#e53238" }}>e</span>
@@ -438,7 +434,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "iHerb", kind: "bestsellers", flag: "🌍",
+    id: "iHerb", flag: "🌍",
     logo: (
       <span className="font-black text-[14px] tracking-[-0.3px]">
         <span style={{ color: "#1B7340" }}>i</span><span style={{ color: "#66A830" }}>Herb</span>
@@ -446,7 +442,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Tesco", kind: "bestsellers", flag: "🇬🇧",
+    id: "Tesco", flag: "🇬🇧",
     logo: (
       <span className="flex items-center gap-0.5 font-black text-[14px] tracking-[-0.3px]">
         <span style={{ color: "#00539F" }}>Tesc</span><span style={{ color: "#EE1C25" }}>o</span>
@@ -454,7 +450,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Alibaba", kind: "sourcing", flag: "🇨🇳",
+    id: "Alibaba", flag: "🇨🇳",
     logo: (
       <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#FF6A00" }}>alibaba</span>
     ),
@@ -468,20 +464,7 @@ const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
   eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
   iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
   Tesco:   ["All", "Food Cupboard", "Drinks", "Dairy & Eggs", "Frozen", "Fresh Food", "Health & Beauty", "Baby & Toddler"],
-  Alibaba: ["All"],
-}
-
-// ─── Alibaba sourcing types ───────────────────────────────────────────────────
-
-interface AlibabaProduct {
-  title:       string
-  image_url:   string | null
-  price_min:   number | null
-  price_max:   number | null
-  currency:    string
-  orders:      number | null
-  seller:      string | null
-  product_url: string
+  Alibaba: ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -503,13 +486,6 @@ export function CreatorIntelContent({ role }: Props) {
   const [search,    setSearch]    = useState("")
   const [sortCol,   setSortCol]   = useState<"product_name" | "rank" | "price" | "rating" | "review_count" | "items_sold" | "revenue">("rank")
   const [sortDir,   setSortDir]   = useState<"asc" | "desc">("asc")
-
-  // ── Alibaba sourcing state ────────────────────────────────────────────────
-  const [aliQuery,   setAliQuery]   = useState("")
-  const [aliLoading, setAliLoading] = useState(false)
-  const [aliResults, setAliResults] = useState<AlibabaProduct[]>([])
-  const [aliSearched, setAliSearched] = useState(false)
-  const [aliError,   setAliError]   = useState<string | null>(null)
 
   const isAdmin = role === "dev" || role === "owner"
 
@@ -561,6 +537,14 @@ export function CreatorIntelContent({ role }: Props) {
           fetch(`${API}/api/creator-intel/tesco-history`,             { headers: { Authorization: `Bearer ${token}` } }),
         ])
         if (tcRes.ok)   { const j = await tcRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
+      } else if (market === "Alibaba") {
+        const [alRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/alibaba-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/alibaba-history`,             { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (alRes.ok)   { const j = await alRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       }
@@ -654,10 +638,11 @@ export function CreatorIntelContent({ role }: Props) {
     setRefreshing(true)
     try {
       const endpoint =
-        activeMarket === "eBay"   ? `${API}/api/creator-intel/scrape-ebay`   :
-        activeMarket === "iHerb"  ? `${API}/api/creator-intel/scrape-iherb`  :
-        activeMarket === "Tesco"  ? `${API}/api/creator-intel/scrape-tesco`  :
-                                    `${API}/api/creator-intel/scrape-amazon`
+        activeMarket === "eBay"    ? `${API}/api/creator-intel/scrape-ebay`    :
+        activeMarket === "iHerb"   ? `${API}/api/creator-intel/scrape-iherb`   :
+        activeMarket === "Tesco"   ? `${API}/api/creator-intel/scrape-tesco`   :
+        activeMarket === "Alibaba" ? `${API}/api/creator-intel/scrape-alibaba` :
+                                     `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -693,21 +678,18 @@ export function CreatorIntelContent({ role }: Props) {
   return (
     <div className="flex flex-col -m-4 sm:-m-6 bg-[#f4f5f7]">
 
-      {/* ── AI suggestion bar — hidden on Alibaba (sourcing tool, not best sellers) */}
-      {activeMarket !== "Alibaba" && (
-        <div className="bg-[#e8f0fe] border-b border-[#c5d5f8] px-5 py-2.5 flex items-start gap-2">
-          <span className="text-[#2563eb] text-lg leading-none mt-0.5">🤖</span>
-          <p className="text-xs text-[#1d4ed8] leading-relaxed">
-            <span className="font-semibold">Based on {activeMarket} product data</span>, select items with substantial sales and rapid growth, indicating market acceptance.
-            Combine Best Sellers data to identify the next potential trending product.
-            Data is for reference only — always validate before purchasing inventory.
-          </p>
-        </div>
-      )}
+      {/* ── AI suggestion bar */}
+      <div className="bg-[#e8f0fe] border-b border-[#c5d5f8] px-5 py-2.5 flex items-start gap-2">
+        <span className="text-[#2563eb] text-lg leading-none mt-0.5">🤖</span>
+        <p className="text-xs text-[#1d4ed8] leading-relaxed">
+          <span className="font-semibold">Based on {activeMarket} product data</span>, select items with substantial sales and rapid growth, indicating market acceptance.
+          Combine Best Sellers data to identify the next potential trending product.
+          Data is for reference only — always validate before purchasing inventory.
+        </p>
+      </div>
 
-      {/* ── Search + refresh row — hidden on Alibaba ────────────────── */}
-      {activeMarket !== "Alibaba" && (
-        <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+      {/* ── Search + refresh row ────────────────── */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
           <div className="flex items-center border border-gray-300 rounded overflow-hidden flex-1 min-w-[200px] max-w-md">
             <input
               type="text"
@@ -741,25 +723,22 @@ export function CreatorIntelContent({ role }: Props) {
               </button>
             )}
           </div>
-        </div>
-      )}
+      </div>
 
-      {/* ── Filtering conditions strip — hidden on Alibaba ──────────── */}
-      {activeMarket !== "Alibaba" && (
-        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-wrap text-xs">
-          <span className="text-gray-500 font-medium shrink-0">Filtering Conditions:</span>
-          <span className="px-2 py-0.5 bg-[#eef2ff] text-[#4b7cf3] rounded font-medium">Dates: {filters.dates}</span>
-          {activeChips.map((chip, i) => (
-            <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#eef2ff] text-[#4b7cf3] rounded font-medium">
-              {chip.label}
-              <button onClick={chip.clear} className="hover:text-red-500 leading-none">×</button>
-            </span>
-          ))}
-          {activeChips.length > 0 && (
-            <button onClick={resetFilters} className="text-[#4b7cf3] hover:underline ml-1">Clear All</button>
-          )}
-        </div>
-      )}
+      {/* ── Filtering conditions strip ──────────────────────────────── */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-wrap text-xs">
+        <span className="text-gray-500 font-medium shrink-0">Filtering Conditions:</span>
+        <span className="px-2 py-0.5 bg-[#eef2ff] text-[#4b7cf3] rounded font-medium">Dates: {filters.dates}</span>
+        {activeChips.map((chip, i) => (
+          <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#eef2ff] text-[#4b7cf3] rounded font-medium">
+            {chip.label}
+            <button onClick={chip.clear} className="hover:text-red-500 leading-none">×</button>
+          </span>
+        ))}
+        {activeChips.length > 0 && (
+          <button onClick={resetFilters} className="text-[#4b7cf3] hover:underline ml-1">Clear All</button>
+        )}
+      </div>
 
       {/* ── Marketplace tab bar ─────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-4 flex items-end gap-1 overflow-x-auto">
@@ -782,134 +761,8 @@ export function CreatorIntelContent({ role }: Props) {
         })}
       </div>
 
-      {/* ── Alibaba sourcing UI ─────────────────────────────────────── */}
-      {activeMarket === "Alibaba" && (
-        <div className="flex-1 px-6 py-8 bg-[#f4f5f7]">
-          {/* Header */}
-          <div className="max-w-2xl mx-auto mb-8 text-center">
-            <div className="text-3xl mb-2">🏭</div>
-            <h2 className="text-xl font-bold text-gray-800 mb-1">Find Suppliers on Alibaba</h2>
-            <p className="text-sm text-gray-500">Type any product to find cheap suppliers — results from AliExpress sorted by total orders</p>
-          </div>
-          {/* Search box */}
-          <div className="max-w-xl mx-auto flex gap-2 mb-8">
-            <input
-              type="text"
-              value={aliQuery}
-              onChange={e => setAliQuery(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter" && aliQuery.trim()) {
-                  setAliLoading(true); setAliSearched(true); setAliError(null); setAliResults([])
-                  getToken().then(token => {
-                    fetch(`${API}/api/creator-intel/source-alibaba`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-                      body: JSON.stringify({ query: aliQuery.trim() }),
-                    })
-                      .then(r => r.json())
-                      .then(j => { if (j.success) setAliResults(j.data ?? []); else setAliError(j.error ?? "Search failed") })
-                      .catch(() => setAliError("Network error — please try again"))
-                      .finally(() => setAliLoading(false))
-                  })
-                }
-              }}
-              placeholder="e.g. LED ring light, yoga mat, phone case..."
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00]/20 bg-white"
-            />
-            <button
-              disabled={!aliQuery.trim() || aliLoading}
-              onClick={() => {
-                if (!aliQuery.trim()) return
-                setAliLoading(true); setAliSearched(true); setAliError(null); setAliResults([])
-                getToken().then(token => {
-                  fetch(`${API}/api/creator-intel/source-alibaba`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
-                    body: JSON.stringify({ query: aliQuery.trim() }),
-                  })
-                    .then(r => r.json())
-                    .then(j => { if (j.success) setAliResults(j.data ?? []); else setAliError(j.error ?? "Search failed") })
-                    .catch(() => setAliError("Network error — please try again"))
-                    .finally(() => setAliLoading(false))
-                })
-              }}
-              className="px-5 py-2.5 rounded-lg text-white text-sm font-bold transition-colors disabled:opacity-40"
-              style={{ background: aliLoading || !aliQuery.trim() ? undefined : "#FF6A00", backgroundColor: aliLoading || !aliQuery.trim() ? "#aaa" : "#FF6A00" }}
-            >
-              {aliLoading ? "Searching…" : "Find Suppliers"}
-            </button>
-          </div>
-
-          {/* Results */}
-          {aliLoading && (
-            <div className="flex flex-col items-center justify-center py-16 gap-3">
-              <RefreshCw className="h-7 w-7 text-[#FF6A00] animate-spin" />
-              <p className="text-sm text-gray-400">Searching AliExpress…</p>
-            </div>
-          )}
-          {!aliLoading && aliError && (
-            <div className="max-w-lg mx-auto text-center py-12">
-              <div className="text-3xl mb-3">⚠️</div>
-              <p className="text-sm font-medium text-gray-700 mb-1">Search unavailable</p>
-              <p className="text-xs text-gray-400">{aliError}</p>
-              <a
-                href={`https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(aliQuery)}&SortType=total_tranRanking_desc`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-4 px-4 py-2 rounded text-sm font-semibold text-white"
-                style={{ background: "#FF6A00" }}
-              >
-                Search directly on AliExpress →
-              </a>
-            </div>
-          )}
-          {!aliLoading && !aliError && aliSearched && aliResults.length === 0 && (
-            <p className="text-center text-sm text-gray-400 py-12">No suppliers found — try a different search term.</p>
-          )}
-          {!aliLoading && aliResults.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-              {aliResults.map((r, i) => (
-                <a
-                  key={i}
-                  href={r.product_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="bg-white rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden flex flex-col"
-                >
-                  <div className="aspect-square bg-gray-50 overflow-hidden">
-                    {r.image_url
-                      ? <img src={r.image_url} alt={r.title} className="w-full h-full object-contain p-2" />
-                      : <div className="w-full h-full flex items-center justify-center text-4xl text-gray-200">📦</div>
-                    }
-                  </div>
-                  <div className="p-2.5 flex flex-col gap-0.5">
-                    <p className="text-xs font-medium text-gray-800 line-clamp-2">{r.title}</p>
-                    <p className="text-sm font-bold mt-1" style={{ color: "#FF6A00" }}>
-                      {r.price_min != null
-                        ? r.price_min === r.price_max || r.price_max == null
-                          ? `$${r.price_min.toFixed(2)}`
-                          : `$${r.price_min.toFixed(2)} – $${r.price_max!.toFixed(2)}`
-                        : "—"}
-                    </p>
-                    {r.orders != null && (
-                      <p className="text-[10px] text-gray-400">{r.orders.toLocaleString()}+ orders</p>
-                    )}
-                    {r.seller && (
-                      <p className="text-[10px] text-gray-500 truncate">{r.seller}</p>
-                    )}
-                  </div>
-                </a>
-              ))}
-            </div>
-          )}
-          {!aliSearched && (
-            <p className="text-center text-xs text-gray-400 mt-4">Results sourced from AliExpress · sorted by total orders · powered by Alibaba Group</p>
-          )}
-        </div>
-      )}
-
-      {/* ── Body: filter panel + table (all best-sellers marketplaces) ── */}
-      {activeMarket !== "Alibaba" && <div className="flex">
+      {/* ── Body: filter panel + table ─────────────────────────────── */}
+      <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
@@ -1201,7 +1054,7 @@ export function CreatorIntelContent({ role }: Props) {
             Data processed by algorithm, for reference only. {activeMarket} Best Sellers · Estimated sales are indicative only.
           </div>
         </div>
-      </div>}
+      </div>
 
     </div>
   )

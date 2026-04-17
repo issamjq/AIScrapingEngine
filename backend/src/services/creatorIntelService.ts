@@ -16,9 +16,8 @@ import { scrapeAmazonBestSellers,
          AmazonProduct }            from "../scraper/amazonBestSellers"
 import { scrapeEbayBestSellers }    from "../scraper/ebayBestSellers"
 import { scrapeIherbBestSellers }   from "../scraper/iherbBestSellers"
-import { scrapeTescoBestSellers }   from "../scraper/tescoBestSellers"
-import { searchAliexpress,
-         AlibabaProduct }           from "../scraper/alibabaSearch"
+import { scrapeTescoBestSellers }    from "../scraper/tescoBestSellers"
+import { scrapeAlibabaBestSellers } from "../scraper/alibabaBestSellers"
 import { logger }                   from "../utils/logger"
 
 // ─── TikTok ──────────────────────────────────────────────────────────────────
@@ -554,11 +553,97 @@ export async function getTescoRankHistory(): Promise<
   return history
 }
 
-// ─── Alibaba / AliExpress sourcing search ────────────────────────────────────
-// On-demand search — results returned directly, no DB storage.
+// ─── Alibaba ──────────────────────────────────────────────────────────────────
+// Alibaba data reuses amazon_trending table with marketplace = "Alibaba".
 
-export async function sourcingSearch(query: string): Promise<AlibabaProduct[]> {
-  return searchAliexpress(query)
+export async function runAlibabaScrape(opts: {
+  category?: string
+  limit?:    number
+}): Promise<{ inserted: number }> {
+  const products = await scrapeAlibabaBestSellers({ category: opts.category, limit: opts.limit })
+  if (products.length === 0) return { inserted: 0 }
+
+  let inserted = 0
+  for (const p of products) {
+    try {
+      await query(
+        `INSERT INTO amazon_trending
+           (asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
+         p.review_count, p.image_url, p.product_url, p.badge, p.brand, "Alibaba"]
+      )
+      inserted++
+    } catch (err: any) {
+      logger.warn("[CreatorIntel] Alibaba insert skip", { asin: p.asin, error: err.message })
+    }
+  }
+
+  logger.info("[CreatorIntel] Alibaba scrape done", { inserted })
+  return { inserted }
 }
 
-export type { AlibabaProduct }
+export async function getAlibabaTrending(opts: {
+  category?: string
+  limit?:    number
+  offset?:   number
+} = {}): Promise<AmazonProduct[]> {
+  const { category, limit = 50, offset = 0 } = opts
+
+  if (category && category !== "All") {
+    const res = await query(
+      `SELECT asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM (
+         SELECT DISTINCT ON (COALESCE(asin, product_name))
+                asin, product_name, category, rank, price, rating, review_count,
+                image_url, product_url, badge, brand, marketplace, scraped_at
+         FROM amazon_trending
+         WHERE marketplace = 'Alibaba' AND category = $1
+         ORDER BY COALESCE(asin, product_name), scraped_at DESC
+       ) latest
+       ORDER BY rank ASC NULLS LAST
+       LIMIT $2 OFFSET $3`,
+      [category, limit, offset]
+    )
+    return res.rows
+  }
+
+  const res = await query(
+    `SELECT asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at
+     FROM (
+       SELECT DISTINCT ON (COALESCE(asin, product_name))
+              asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM amazon_trending
+       WHERE marketplace = 'Alibaba'
+       ORDER BY COALESCE(asin, product_name), scraped_at DESC
+     ) latest
+     ORDER BY rank ASC NULLS LAST
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  )
+  return res.rows
+}
+
+export async function getAlibabaRankHistory(): Promise<
+  Record<string, { rank: number; date: string }[]>
+> {
+  const res = await query(
+    `SELECT asin, rank, scraped_at
+     FROM amazon_trending
+     WHERE marketplace = 'Alibaba' AND asin IS NOT NULL AND rank IS NOT NULL
+     ORDER BY asin, scraped_at ASC`
+  )
+  const history: Record<string, { rank: number; date: string }[]> = {}
+  for (const row of res.rows) {
+    if (!history[row.asin]) history[row.asin] = []
+    history[row.asin].push({ rank: Number(row.rank), date: row.scraped_at })
+  }
+  for (const k of Object.keys(history)) {
+    if (history[k].length < 2) delete history[k]
+  }
+  return history
+}
