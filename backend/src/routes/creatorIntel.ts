@@ -11,6 +11,13 @@ import {
   runEbayScrape,
   getEbayTrending,
   getEbayRankHistory,
+  runIherbScrape,
+  getIherbTrending,
+  getIherbRankHistory,
+  runTescoScrape,
+  getTescoTrending,
+  getTescoRankHistory,
+  sourcingSearch,
   getDataFreshness,
 } from "../services/creatorIntelService"
 import { logger } from "../utils/logger"
@@ -170,6 +177,103 @@ creatorIntelRouter.post("/scrape-ebay", async (req: AuthRequest, res: Response) 
     res.json({ success: true, ...result })
   } catch (err: any) {
     logger.error("[CreatorIntel] POST /scrape-ebay", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/creator-intel/iherb-trending ────────────────────────────────────
+creatorIntelRouter.get("/iherb-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getIherbTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /iherb-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch iHerb trending" })
+  }
+})
+
+// ── GET /api/creator-intel/iherb-history ─────────────────────────────────────
+creatorIntelRouter.get("/iherb-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getIherbRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /iherb-history", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch iHerb rank history" })
+  }
+})
+
+// ── POST /api/creator-intel/scrape-iherb ─────────────────────────────────────
+creatorIntelRouter.post("/scrape-iherb", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] iHerb scrape triggered", { category, limit, by: req.email })
+    const result = await runIherbScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-iherb", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── GET /api/creator-intel/tesco-trending ────────────────────────────────────
+creatorIntelRouter.get("/tesco-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getTescoTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /tesco-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Tesco trending" })
+  }
+})
+
+// ── GET /api/creator-intel/tesco-history ─────────────────────────────────────
+creatorIntelRouter.get("/tesco-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getTescoRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /tesco-history", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Tesco rank history" })
+  }
+})
+
+// ── POST /api/creator-intel/scrape-tesco ─────────────────────────────────────
+creatorIntelRouter.post("/scrape-tesco", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] Tesco scrape triggered", { category, limit, by: req.email })
+    const result = await runTescoScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-tesco", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── POST /api/creator-intel/source-alibaba ───────────────────────────────────
+// On-demand AliExpress sourcing search — no auth restriction (all users can search)
+creatorIntelRouter.post("/source-alibaba", async (req: AuthRequest, res: Response) => {
+  try {
+    const query = String(req.body.query ?? "").trim()
+    if (!query) return res.status(400).json({ success: false, error: "query is required" })
+    logger.info("[CreatorIntel] Alibaba sourcing search", { query, by: req.email })
+    const results = await sourcingSearch(query)
+    res.json({ success: true, data: results, count: results.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /source-alibaba", { error: err.message })
     res.status(500).json({ success: false, error: err.message })
   }
 })

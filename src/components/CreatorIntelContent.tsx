@@ -402,22 +402,21 @@ const DEFAULT_FILTERS: Filters = {
   bsrMin: "", bsrMax: "",
 }
 
-const CATEGORIES = ["All", "Electronics", "Beauty", "Home & Kitchen", "Health",
-  "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"]
-
 // ─── Marketplace tab config ───────────────────────────────────────────────────
 
 type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba" | "Tesco"
 
+/** true = has a best-sellers table; false = custom UI (e.g. Alibaba sourcing search) */
+type MarketplaceKind = "bestsellers" | "sourcing"
+
 const MARKETPLACES: {
-  id:     MarketplaceId
-  live:   boolean
-  logo:   React.ReactNode
-  badge?: string
-  flag?:  string
+  id:    MarketplaceId
+  kind:  MarketplaceKind
+  flag?: string
+  logo:  React.ReactNode
 }[] = [
   {
-    id: "Amazon", live: true, flag: "🇺🇸",
+    id: "Amazon", kind: "bestsellers", flag: "🇺🇸",
     logo: (
       <span className="flex flex-col items-start leading-none">
         <span className="font-black text-[14px] tracking-[-0.5px] text-[#232f3e]">amazon</span>
@@ -428,7 +427,7 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "eBay", live: true, flag: "🇺🇸",
+    id: "eBay", kind: "bestsellers", flag: "🇺🇸",
     logo: (
       <span className="flex items-center leading-none font-black text-[15px] tracking-[-1px]">
         <span style={{ color: "#e53238" }}>e</span>
@@ -439,28 +438,51 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "iHerb", live: false, flag: "🌍",
+    id: "iHerb", kind: "bestsellers", flag: "🌍",
     logo: (
       <span className="font-black text-[14px] tracking-[-0.3px]">
-        <span className="text-[#1B7340]">i</span><span className="text-[#66A830]">Herb</span>
+        <span style={{ color: "#1B7340" }}>i</span><span style={{ color: "#66A830" }}>Herb</span>
       </span>
     ),
   },
   {
-    id: "Alibaba", live: false, flag: "🇨🇳",
-    logo: (
-      <span className="font-black text-[14px] tracking-[-0.3px] text-[#FF6A00]">alibaba</span>
-    ),
-  },
-  {
-    id: "Tesco", live: false, flag: "🇬🇧",
+    id: "Tesco", kind: "bestsellers", flag: "🇬🇧",
     logo: (
       <span className="flex items-center gap-0.5 font-black text-[14px] tracking-[-0.3px]">
-        <span className="text-[#00539F]">Tesc</span><span className="text-[#EE1C25]">o</span>
+        <span style={{ color: "#00539F" }}>Tesc</span><span style={{ color: "#EE1C25" }}>o</span>
       </span>
+    ),
+  },
+  {
+    id: "Alibaba", kind: "sourcing", flag: "🇨🇳",
+    logo: (
+      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#FF6A00" }}>alibaba</span>
     ),
   },
 ]
+
+// ─── Per-marketplace category lists ──────────────────────────────────────────
+
+const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
+  Amazon:  ["All", "Electronics", "Beauty", "Home & Kitchen", "Health", "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"],
+  eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
+  iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
+  Tesco:   ["All", "Food Cupboard", "Drinks", "Dairy & Eggs", "Frozen", "Fresh Food", "Health & Beauty", "Baby & Toddler"],
+  Alibaba: ["All"],
+}
+
+// ─── Alibaba sourcing types ───────────────────────────────────────────────────
+
+interface AlibabaProduct {
+  title:       string
+  image_url:   string | null
+  price_min:   number | null
+  price_max:   number | null
+  currency:    string
+  orders:      number | null
+  seller:      string | null
+  product_url: string
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -481,6 +503,12 @@ export function CreatorIntelContent({ role }: Props) {
   const [search,    setSearch]    = useState("")
   const [sortCol,   setSortCol]   = useState<"product_name" | "rank" | "price" | "rating" | "review_count" | "items_sold" | "revenue">("rank")
   const [sortDir,   setSortDir]   = useState<"asc" | "desc">("asc")
+
+  // ── Alibaba sourcing state ────────────────────────────────────────────────
+  const [aliQuery,   setAliQuery]   = useState("")
+  const [aliLoading, setAliLoading] = useState(false)
+  const [aliResults, setAliResults] = useState<AlibabaProduct[]>([])
+  const [aliSearched, setAliSearched] = useState(false)
 
   const isAdmin = role === "dev" || role === "owner"
 
@@ -505,8 +533,8 @@ export function CreatorIntelContent({ role }: Props) {
       if (market === "Amazon") {
         params.set("marketplace", "US")
         const [amRes, freshRes] = await Promise.all([
-          fetch(`${API}/api/creator-intel/amazon-trending?${params}`,  { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API}/api/creator-intel/freshness`,                   { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/amazon-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/freshness`,                  { headers: { Authorization: `Bearer ${token}` } }),
         ])
         if (amRes.ok)    { const j = await amRes.json();    setAllProducts(j.data ?? []) }
         if (freshRes.ok) { const j = await freshRes.json(); setLastScraped(j.data?.amazon_last_scraped ?? null); setTotalCount(j.data?.amazon_product_count ?? 0) }
@@ -516,6 +544,22 @@ export function CreatorIntelContent({ role }: Props) {
           fetch(`${API}/api/creator-intel/ebay-history`,             { headers: { Authorization: `Bearer ${token}` } }),
         ])
         if (ebRes.ok)   { const j = await ebRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
+      } else if (market === "iHerb") {
+        const [ihRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/iherb-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/iherb-history`,             { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (ihRes.ok)   { const j = await ihRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
+      } else if (market === "Tesco") {
+        const [tcRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/tesco-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/tesco-history`,             { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (tcRes.ok)   { const j = await tcRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       }
@@ -608,9 +652,11 @@ export function CreatorIntelContent({ role }: Props) {
     if (!token) return
     setRefreshing(true)
     try {
-      const endpoint = activeMarket === "eBay"
-        ? `${API}/api/creator-intel/scrape-ebay`
-        : `${API}/api/creator-intel/scrape-amazon`
+      const endpoint =
+        activeMarket === "eBay"   ? `${API}/api/creator-intel/scrape-ebay`   :
+        activeMarket === "iHerb"  ? `${API}/api/creator-intel/scrape-iherb`  :
+        activeMarket === "Tesco"  ? `${API}/api/creator-intel/scrape-tesco`  :
+                                    `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -727,35 +773,124 @@ export function CreatorIntelContent({ role }: Props) {
             >
               {m.logo}
               {m.flag && <span className="text-[11px] leading-none">{m.flag}</span>}
-              {!m.live && (
-                <span className="ml-1 px-1 py-0 text-[8px] font-bold bg-gray-100 text-gray-400 rounded leading-4">
-                  SOON
-                </span>
-              )}
             </button>
           )
         })}
       </div>
 
-      {/* ── Coming Soon overlay for unbuilt marketplaces ────────────── */}
-      {activeMarket !== "Amazon" && activeMarket !== "eBay" && (
-        <div className="flex flex-col items-center justify-center py-28 gap-4 bg-[#f4f5f7]">
-          <div className="text-5xl">🚀</div>
-          <div className="text-xl font-bold text-gray-700">{activeMarket} data is coming soon</div>
-          <div className="text-sm text-gray-400 max-w-xs text-center">
-            We're building the {activeMarket} scraper. Switch back to Amazon to see live Best Sellers data.
+      {/* ── Alibaba sourcing UI ─────────────────────────────────────── */}
+      {activeMarket === "Alibaba" && (
+        <div className="flex-1 px-6 py-8 bg-[#f4f5f7]">
+          {/* Header */}
+          <div className="max-w-2xl mx-auto mb-8 text-center">
+            <div className="text-3xl mb-2">🏭</div>
+            <h2 className="text-xl font-bold text-gray-800 mb-1">Find Suppliers on AliExpress</h2>
+            <p className="text-sm text-gray-500">Type any product to find cheap suppliers — sorted by total orders</p>
           </div>
-          <button
-            onClick={() => setActiveMarket("Amazon")}
-            className="mt-2 px-5 py-2 rounded bg-[#FF9900] text-black text-sm font-bold hover:bg-[#e88800] transition-colors"
-          >
-            Back to Amazon
-          </button>
+          {/* Search box */}
+          <div className="max-w-xl mx-auto flex gap-2 mb-8">
+            <input
+              type="text"
+              value={aliQuery}
+              onChange={e => setAliQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && aliQuery.trim()) {
+                  setAliLoading(true)
+                  setAliSearched(true)
+                  getToken().then(token => {
+                    fetch(`${API}/api/creator-intel/source-alibaba`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+                      body: JSON.stringify({ query: aliQuery.trim() }),
+                    })
+                      .then(r => r.json())
+                      .then(j => setAliResults(j.data ?? []))
+                      .catch(() => {})
+                      .finally(() => setAliLoading(false))
+                  })
+                }
+              }}
+              placeholder="e.g. LED ring light, yoga mat, phone case..."
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#FF6A00] focus:ring-1 focus:ring-[#FF6A00]/20 bg-white"
+            />
+            <button
+              disabled={!aliQuery.trim() || aliLoading}
+              onClick={() => {
+                if (!aliQuery.trim()) return
+                setAliLoading(true)
+                setAliSearched(true)
+                getToken().then(token => {
+                  fetch(`${API}/api/creator-intel/source-alibaba`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token ?? ""}` },
+                    body: JSON.stringify({ query: aliQuery.trim() }),
+                  })
+                    .then(r => r.json())
+                    .then(j => setAliResults(j.data ?? []))
+                    .catch(() => {})
+                    .finally(() => setAliLoading(false))
+                })
+              }}
+              className="px-5 py-2.5 rounded-lg text-white text-sm font-bold transition-colors disabled:opacity-40"
+              style={{ background: aliLoading || !aliQuery.trim() ? undefined : "#FF6A00", backgroundColor: aliLoading || !aliQuery.trim() ? "#aaa" : "#FF6A00" }}
+            >
+              {aliLoading ? "Searching…" : "Find Suppliers"}
+            </button>
+          </div>
+
+          {/* Results */}
+          {aliLoading && (
+            <div className="flex justify-center py-16">
+              <RefreshCw className="h-7 w-7 text-[#FF6A00] animate-spin" />
+            </div>
+          )}
+          {!aliLoading && aliSearched && aliResults.length === 0 && (
+            <p className="text-center text-sm text-gray-400 py-12">No suppliers found — try a different search term.</p>
+          )}
+          {!aliLoading && aliResults.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {aliResults.map((r, i) => (
+                <a
+                  key={i}
+                  href={r.product_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-white rounded-xl border border-gray-200 hover:shadow-md transition-shadow overflow-hidden flex flex-col"
+                >
+                  <div className="aspect-square bg-gray-50 overflow-hidden">
+                    {r.image_url
+                      ? <img src={r.image_url} alt={r.title} className="w-full h-full object-contain p-2" />
+                      : <div className="w-full h-full flex items-center justify-center text-4xl text-gray-200">📦</div>
+                    }
+                  </div>
+                  <div className="p-2.5 flex flex-col gap-0.5">
+                    <p className="text-xs font-medium text-gray-800 line-clamp-2">{r.title}</p>
+                    <p className="text-sm font-bold mt-1" style={{ color: "#FF6A00" }}>
+                      {r.price_min != null
+                        ? r.price_min === r.price_max || r.price_max == null
+                          ? `$${r.price_min.toFixed(2)}`
+                          : `$${r.price_min.toFixed(2)} – $${r.price_max!.toFixed(2)}`
+                        : "—"}
+                    </p>
+                    {r.orders != null && (
+                      <p className="text-[10px] text-gray-400">{r.orders.toLocaleString()}+ orders</p>
+                    )}
+                    {r.seller && (
+                      <p className="text-[10px] text-gray-500 truncate">{r.seller}</p>
+                    )}
+                  </div>
+                </a>
+              ))}
+            </div>
+          )}
+          {!aliSearched && (
+            <p className="text-center text-xs text-gray-400 mt-4">Results sourced from AliExpress · sorted by total orders (popularity)</p>
+          )}
         </div>
       )}
 
-      {/* ── Body: filter panel + table ──────────────────────────────── */}
-      {(activeMarket === "Amazon" || activeMarket === "eBay") && <div className="flex">
+      {/* ── Body: filter panel + table (all best-sellers marketplaces) ── */}
+      {activeMarket !== "Alibaba" && <div className="flex">
 
         {/* ── Left filter panel ────────────────────────────────────── */}
         {/* Single overflow-y-auto container; scrollbar hidden; sticky buttons at bottom */}
@@ -784,7 +919,9 @@ export function CreatorIntelContent({ role }: Props) {
                 onChange={e => setPending(p => ({ ...p, category: e.target.value }))}
                 className="w-full border border-gray-200 rounded px-2 py-1.5 text-xs outline-none focus:border-[#4b7cf3]"
               >
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {(MARKETPLACE_CATEGORIES[activeMarket] ?? MARKETPLACE_CATEGORIES.Amazon).map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
             </FilterGroup>
 
@@ -876,7 +1013,7 @@ export function CreatorIntelContent({ role }: Props) {
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3">
               <RefreshCw className="h-7 w-7 text-[#4b7cf3] animate-spin" />
-              <p className="text-sm text-gray-500">Loading Amazon.com data…</p>
+              <p className="text-sm text-gray-500">Loading {activeMarket} data…</p>
             </div>
           ) : displayed.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 gap-3 text-center">
@@ -1042,7 +1179,7 @@ export function CreatorIntelContent({ role }: Props) {
 
           {/* Footer note */}
           <div className="bg-white border-t border-gray-200 px-4 py-2 text-[10px] text-gray-400 text-right">
-            Data processed by algorithm, for reference only. Amazon.com Best Sellers · Estimated sales are indicative only.
+            Data processed by algorithm, for reference only. {activeMarket} Best Sellers · Estimated sales are indicative only.
           </div>
         </div>
       </div>}
