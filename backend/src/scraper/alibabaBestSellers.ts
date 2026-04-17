@@ -104,43 +104,56 @@ async function scrapeCategoryPage(
   }
 
   // Fallback: DOM extraction for product cards
+  // AliExpress new structure: a[class*='search-card-item'] wraps each product
   const domProducts = await page.evaluate((cat: string) => {
     const results: any[] = []
 
-    const cards = Array.from(document.querySelectorAll(
-      "[data-item-id], [class*='SearchCard'], .search-card-item, [class*='product-item']"
-    )).filter(el => el.querySelector("a[href*='aliexpress.com/item'], a[href*='/item/']"))
+    // Primary: AliExpress "wholesale" new layout uses search-card-item anchor as card
+    let cards: Element[] = Array.from(document.querySelectorAll(
+      "a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]"
+    ))
 
+    // Fallback: any link to an item page → walk up to find its card container
     if (cards.length === 0) {
-      // Ultra fallback: all links to items
-      const links = Array.from(document.querySelectorAll("a[href*='/item/']"))
-        .map(a => a.closest("li, div[class]") ?? a.parentElement ?? a)
+      cards = Array.from(document.querySelectorAll("a[href*='/item/']"))
+        .map(a => a.closest("li, [class*='card'], [class*='item']") ?? a.parentElement ?? a)
         .filter((el, i, arr) => arr.indexOf(el) === i)
-      cards.push(...links)
     }
 
     cards.slice(0, 48).forEach((el, idx) => {
-      const linkEl = el.querySelector("a[href*='/item/']") as HTMLAnchorElement | null
-      const href   = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
+      // Link — the card itself may be the <a>, or contains one
+      const linkEl = (
+        el.tagName === "A" ? el : el.querySelector("a[href*='/item/']")
+      ) as HTMLAnchorElement | null
+      const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
+      if (!href.includes("/item/")) return
       const product_url = href.startsWith("//") ? `https:${href}` : href
       const productId = href.match(/\/item\/(\d+)/)?.[1] ?? null
 
-      const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title']")
-      const product_name = titleEl?.textContent?.trim() ?? ""
-      if (!product_name) return
+      // Title — AliExpress puts it in h3 or a title span
+      const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
+      const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
+      if (!product_name || product_name.length < 3) return
 
+      // Price — text-pattern scan: find leaf nodes matching $X.XX, take min (= sale price)
       let price: number | null = null
-      for (const pe of Array.from(el.querySelectorAll("[class*='price'], [class*='Price']"))) {
-        const raw = pe.textContent?.replace(/[^\d.]/g, "") ?? ""
-        const n   = parseFloat(raw)
-        if (isFinite(n) && n > 0 && n < 50000) { price = n; break }
-      }
+      const leafPrices: number[] = []
+      Array.from(el.querySelectorAll("*")).forEach(node => {
+        if (node.children.length > 0) return
+        const t = node.textContent?.trim() ?? ""
+        if (/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) {
+          const n = parseFloat(t.replace(/[^\d.]/g, ""))
+          if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
+        }
+      })
+      if (leafPrices.length > 0) price = Math.min(...leafPrices)
 
-      const imgEl    = el.querySelector("img")
+      const imgEl     = el.querySelector("img")
       const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
 
-      const tradeEl  = el.querySelector("[class*='trade'], [class*='order'], [class*='sold']")
+      // Orders/sold count
       let review_count: number | null = null
+      const tradeEl = el.querySelector("[class*='trade'], [class*='order'], [class*='sold']")
       if (tradeEl) {
         const m = (tradeEl.textContent ?? "").replace(/,/g, "").match(/(\d+)/)
         if (m) review_count = parseInt(m[1], 10)

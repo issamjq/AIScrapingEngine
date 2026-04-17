@@ -33,7 +33,9 @@ async function scrapeCategoryPage(
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
-    await page.waitForTimeout(3000)
+    // Wait for product links to appear — iHerb lazy-renders cards via JS
+    await page.waitForSelector("a[href*='/pr/']", { timeout: 10_000 }).catch(() => {})
+    await page.waitForTimeout(5000)
   } catch (err: any) {
     logger.warn("[iHerbScraper] Page load failed", { url, error: err.message })
     return []
@@ -42,18 +44,14 @@ async function scrapeCategoryPage(
   const products = await page.evaluate((cat: string) => {
     const results: any[] = []
 
-    // iHerb product cells — try multiple known selector patterns
-    let containers = Array.from(
-      document.querySelectorAll("[data-product-id], .product-cell-container, .product-inner")
-    ).filter(el => el.querySelector("a[href*='/pr/']"))
+    // Build containers from product links — works across www.iherb.com and lb.iherb.com
+    // Filter: product URLs end with a numeric ID (not review anchors)
+    const productLinks = Array.from(document.querySelectorAll("a[href*='/pr/']"))
+      .filter(a => /\/\d+(?:[?#]|$)/.test((a as HTMLAnchorElement).getAttribute("href") ?? ""))
 
-    // Fallback: anchor-based extraction
-    if (containers.length === 0) {
-      containers = Array.from(document.querySelectorAll("a[href*='/pr/']"))
-        .filter(a => (a as HTMLAnchorElement).href.match(/\/\d+$/))
-        .map(a => a.closest("li, .product-cell-container") ?? a.parentElement ?? a)
-        .filter((el, i, arr) => arr.indexOf(el) === i)  // dedup
-    }
+    const containers = productLinks
+      .map(a => a.closest(".product-cell-container, li[class], [data-product-id]") ?? a.parentElement?.parentElement ?? a.parentElement ?? a)
+      .filter((el, i, arr) => arr.indexOf(el) === i) // dedup
 
     containers.slice(0, 50).forEach((el, idx) => {
       const anchor = (

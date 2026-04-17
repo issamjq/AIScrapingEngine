@@ -30,18 +30,21 @@ async function scrapeCategoryPage(
 ): Promise<AmazonProduct[]> {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 })
-    await page.waitForTimeout(2500)
+    await page.waitForTimeout(3000)
   } catch (err: any) {
     logger.warn("[BanggoodScraper] Page load failed", { url, error: err.message })
     return []
   }
 
-  // Scroll to trigger lazy images
+  // Scroll aggressively to trigger lazy-loading of product cards
   try {
-    for (let i = 0; i < 3; i++) {
-      await page.evaluate(() => window.scrollBy(0, 900))
-      await page.waitForTimeout(500)
+    for (let i = 0; i < 8; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1200))
+      await page.waitForTimeout(800)
     }
+    // Scroll back to top so first products are included, then wait for JS price updates
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(2000)
   } catch { /* ignore */ }
 
   const pageTitle = await page.title().catch(() => "")
@@ -87,13 +90,24 @@ async function scrapeCategoryPage(
         titleEl?.textContent?.trim() ?? ""
       if (!product_name || product_name.length < 3) return
 
-      // Price
+      // Price — prefer current sale price; avoid price-old (crossed-out original price)
       let price: number | null = null
-      const priceEl = el.querySelector(".main-price, [class*='main-price'], [class*='price-main'], [class*='price']")
+      const priceEl =
+        el.querySelector(".main-price, [class*='main-price'], [class*='price-main']") ??
+        el.querySelector(".price.wh_cn, .price:not(.price-old)")
       if (priceEl) {
         const raw = priceEl.textContent?.replace(/[^\d.]/g, "") ?? ""
         const n   = parseFloat(raw)
         if (isFinite(n) && n > 0 && n < 50000) price = n
+      }
+      // Fallback: scan all price elements, skip price-old, take first valid
+      if (price === null) {
+        for (const pe of Array.from(el.querySelectorAll("[class*='price']"))) {
+          if (pe.className.includes("old") || pe.className.includes("Old")) continue
+          const raw = pe.textContent?.replace(/[^\d.]/g, "") ?? ""
+          const n   = parseFloat(raw)
+          if (isFinite(n) && n > 0 && n < 50000) { price = n; break }
+        }
       }
 
       // Image
