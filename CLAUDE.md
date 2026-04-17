@@ -568,22 +568,36 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 | Marketplace | Status | Notes |
 |-------------|--------|-------|
 | **Amazon** | ✅ Done | BSR scraper live, sparklines, badges, rank history |
-| **eBay** | ⏳ Waiting | Official Finding API scraper built; blocked on eBay developer account approval |
-| **iHerb** | 🔜 Next to build | Supplements / health products |
-| **Alibaba** | 🔜 Next to build | Sourcing tab — supplier cards, unit price, MOQ |
-| **Tesco** | 🔜 Next to build | UK grocery/retail |
+| **iHerb** | ✅ Done | Playwright scraper live, 8 categories, 25+ rows in DB |
+| **Alibaba** | ✅ Done | Playwright scraper, window.runParams extraction, 8 categories, best-sellers table |
+| **eBay** | ⏳ Waiting | Official Finding API scraper built; blocked on eBay developer account approval — needs `EBAY_APP_ID` |
+| **Tesco** | ❌ Blocked | Playwright scraper built (`tescoBestSellers.ts`, routes, service all exist) but Tesco blocks Render datacenter IPs ("Access Denied" on all categories). Needs residential proxy to work. Removed from frontend tab bar. |
 | **TikTok** | ❌ Not needed | Removed from scope for now |
 | **Walmart** | ❌ Not needed | Blocked by Akamai Bot Manager on all approaches; removed from scope |
+
+---
+
+### Candidate Marketplaces to Add Next
+
+| Marketplace | Difficulty | Notes |
+|-------------|------------|-------|
+| **Shein** | 🟢 Easy | No bot protection; trending fashion products; huge for content creators |
+| **Noon.com** | 🟢 Easy | UAE/KSA marketplace — very relevant for B2B audience; public API available |
+| **Etsy** | 🟢 Easy | Trending handmade/unique products; public API with no key needed for basic search |
+| **Banggood** | 🟡 Medium | Electronics/gadgets; some bot protection but Playwright works |
+| **Lazada** | 🟡 Medium | Southeast Asia trending; scraper-friendly |
+| **Shopee** | 🔴 Hard | SPA with heavy anti-bot; may need headless tricks |
+| **Target** | 🔴 Hard | Similar to Walmart — Akamai protection |
 
 ---
 
 ### What is NOT YET BUILT ❌
 
 **New features to build next (in order):**
-1. **iHerb tab** — scrape iHerb.com best sellers (supplements, health, beauty). No bot protection on iHerb.
-2. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
-3. **Tesco tab** — scrape Tesco.com best sellers (UK grocery/retail)
-4. **eBay tab (unblock)** — App ID pending approval; scraper already built in `ebayBestSellers.ts`, just needs `EBAY_APP_ID` env var set
+1. **eBay tab (unblock)** — App ID pending approval; scraper already built in `ebayBestSellers.ts`, just needs `EBAY_APP_ID` env var set in Render
+2. **Shein tab** — trending fashion best sellers; no bot protection; easy win
+3. **Noon.com tab** — UAE/KSA marketplace; most relevant for B2B audience
+4. **Etsy tab** — trending unique/handmade products; public API
 5. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically
 6. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN
 7. **Unified product modal** — click any Amazon product → see Alibaba sourcing in one modal

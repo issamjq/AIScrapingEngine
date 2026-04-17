@@ -404,7 +404,7 @@ const DEFAULT_FILTERS: Filters = {
 
 // ─── Marketplace tab config ───────────────────────────────────────────────────
 
-type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba" | "Tesco"
+type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba"
 
 const MARKETPLACES: {
   id:    MarketplaceId
@@ -442,14 +442,6 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Tesco", flag: "🇬🇧",
-    logo: (
-      <span className="flex items-center gap-0.5 font-black text-[14px] tracking-[-0.3px]">
-        <span style={{ color: "#00539F" }}>Tesc</span><span style={{ color: "#EE1C25" }}>o</span>
-      </span>
-    ),
-  },
-  {
     id: "Alibaba", flag: "🇨🇳",
     logo: (
       <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#FF6A00" }}>alibaba</span>
@@ -463,7 +455,6 @@ const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
   Amazon:  ["All", "Electronics", "Beauty", "Home & Kitchen", "Health", "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"],
   eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
   iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
-  Tesco:   ["All", "Food Cupboard", "Drinks", "Dairy & Eggs", "Frozen", "Fresh Food", "Health & Beauty", "Baby & Toddler"],
   Alibaba: ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
 }
 
@@ -529,14 +520,6 @@ export function CreatorIntelContent({ role }: Props) {
           fetch(`${API}/api/creator-intel/iherb-history`,             { headers: { Authorization: `Bearer ${token}` } }),
         ])
         if (ihRes.ok)   { const j = await ihRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
-        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
-        setLastScraped(null)
-      } else if (market === "Tesco") {
-        const [tcRes, histRes] = await Promise.all([
-          fetch(`${API}/api/creator-intel/tesco-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API}/api/creator-intel/tesco-history`,             { headers: { Authorization: `Bearer ${token}` } }),
-        ])
-        if (tcRes.ok)   { const j = await tcRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       } else if (market === "Alibaba") {
@@ -640,7 +623,6 @@ export function CreatorIntelContent({ role }: Props) {
       const endpoint =
         activeMarket === "eBay"    ? `${API}/api/creator-intel/scrape-ebay`    :
         activeMarket === "iHerb"   ? `${API}/api/creator-intel/scrape-iherb`   :
-        activeMarket === "Tesco"   ? `${API}/api/creator-intel/scrape-tesco`   :
         activeMarket === "Alibaba" ? `${API}/api/creator-intel/scrape-alibaba` :
                                      `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
