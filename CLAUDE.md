@@ -563,15 +563,30 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 ---
 
+### Marketplace Tab Status
+
+| Marketplace | Status | Notes |
+|-------------|--------|-------|
+| **Amazon** | ✅ Done | BSR scraper live, sparklines, badges, rank history |
+| **eBay** | ⏳ Waiting | Official Finding API scraper built; blocked on eBay developer account approval |
+| **iHerb** | 🔜 Next to build | Supplements / health products |
+| **Alibaba** | 🔜 Next to build | Sourcing tab — supplier cards, unit price, MOQ |
+| **Tesco** | 🔜 Next to build | UK grocery/retail |
+| **TikTok** | ❌ Not needed | Removed from scope for now |
+| **Walmart** | ❌ Not needed | Blocked by Akamai Bot Manager on all approaches; removed from scope |
+
+---
+
 ### What is NOT YET BUILT ❌
 
 **New features to build next (in order):**
-1. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically. Deferred — doing manual testing first.
-2. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN. Needs `getAmazonRankHistory` already built.
-3. **TikTok tab** — currently hidden/removed from Creator Intel. Will re-add once Amazon data is validated.
-4. **Top Creators tab** — new `tiktok_creators` DB table, scrape creator profiles, show followers/GMV/niche grid
-5. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
-6. **Unified product modal** — click any Amazon product → see TikTok match + Alibaba sourcing in one modal
+1. **iHerb tab** — scrape iHerb.com best sellers (supplements, health, beauty). No bot protection on iHerb.
+2. **Alibaba/Sourcing tab** — search any product → AliExpress/Alibaba supplier cards (unit price, MOQ, rating, shipping days to UAE)
+3. **Tesco tab** — scrape Tesco.com best sellers (UK grocery/retail)
+4. **eBay tab (unblock)** — App ID pending approval; scraper already built in `ebayBestSellers.ts`, just needs `EBAY_APP_ID` env var set
+5. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically
+6. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN
+7. **Unified product modal** — click any Amazon product → see Alibaba sourcing in one modal
 
 **Planned DB tables (not yet created):**
 ```sql
