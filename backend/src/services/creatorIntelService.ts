@@ -18,6 +18,10 @@ import { scrapeEbayBestSellers }    from "../scraper/ebayBestSellers"
 import { scrapeIherbBestSellers }   from "../scraper/iherbBestSellers"
 import { scrapeTescoBestSellers }    from "../scraper/tescoBestSellers"
 import { scrapeAlibabaBestSellers } from "../scraper/alibabaBestSellers"
+import { scrapeSheinBestSellers }   from "../scraper/sheinBestSellers"
+import { scrapeEtsyBestSellers }    from "../scraper/etsyBestSellers"
+import { scrapeBanggoodBestSellers } from "../scraper/banggoodBestSellers"
+import { scrapeLazadaBestSellers }  from "../scraper/lazadaBestSellers"
 import { logger }                   from "../utils/logger"
 
 // ─── TikTok ──────────────────────────────────────────────────────────────────
@@ -631,11 +635,88 @@ export async function getAlibabaTrending(opts: {
 export async function getAlibabaRankHistory(): Promise<
   Record<string, { rank: number; date: string }[]>
 > {
+  return getMarketplaceRankHistory("Alibaba")
+}
+
+// ─── Generic helpers (shared by Shein / Etsy / Banggood / Lazada) ────────────
+
+async function insertMarketplaceProducts(
+  products: AmazonProduct[],
+  marketplace: string,
+  tag: string
+): Promise<{ inserted: number }> {
+  let inserted = 0
+  for (const p of products) {
+    try {
+      await query(
+        `INSERT INTO amazon_trending
+           (asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
+         p.review_count, p.image_url, p.product_url, p.badge, p.brand, marketplace]
+      )
+      inserted++
+    } catch (err: any) {
+      logger.warn(`[CreatorIntel] ${tag} insert skip`, { asin: p.asin, error: err.message })
+    }
+  }
+  logger.info(`[CreatorIntel] ${tag} scrape done`, { inserted })
+  return { inserted }
+}
+
+async function getMarketplaceTrending(
+  marketplace: string,
+  opts: { category?: string; limit?: number; offset?: number }
+): Promise<AmazonProduct[]> {
+  const { category, limit = 50, offset = 0 } = opts
+
+  if (category && category !== "All") {
+    const res = await query(
+      `SELECT asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM (
+         SELECT DISTINCT ON (COALESCE(asin, product_name))
+                asin, product_name, category, rank, price, rating, review_count,
+                image_url, product_url, badge, brand, marketplace, scraped_at
+         FROM amazon_trending
+         WHERE marketplace = $1 AND category = $2
+         ORDER BY COALESCE(asin, product_name), scraped_at DESC
+       ) latest
+       ORDER BY rank ASC NULLS LAST
+       LIMIT $3 OFFSET $4`,
+      [marketplace, category, limit, offset]
+    )
+    return res.rows
+  }
+
+  const res = await query(
+    `SELECT asin, product_name, category, rank, price, rating, review_count,
+            image_url, product_url, badge, brand, marketplace, scraped_at
+     FROM (
+       SELECT DISTINCT ON (COALESCE(asin, product_name))
+              asin, product_name, category, rank, price, rating, review_count,
+              image_url, product_url, badge, brand, marketplace, scraped_at
+       FROM amazon_trending
+       WHERE marketplace = $1
+       ORDER BY COALESCE(asin, product_name), scraped_at DESC
+     ) latest
+     ORDER BY rank ASC NULLS LAST
+     LIMIT $2 OFFSET $3`,
+    [marketplace, limit, offset]
+  )
+  return res.rows
+}
+
+async function getMarketplaceRankHistory(
+  marketplace: string
+): Promise<Record<string, { rank: number; date: string }[]>> {
   const res = await query(
     `SELECT asin, rank, scraped_at
      FROM amazon_trending
-     WHERE marketplace = 'Alibaba' AND asin IS NOT NULL AND rank IS NOT NULL
-     ORDER BY asin, scraped_at ASC`
+     WHERE marketplace = $1 AND asin IS NOT NULL AND rank IS NOT NULL
+     ORDER BY asin, scraped_at ASC`,
+    [marketplace]
   )
   const history: Record<string, { rank: number; date: string }[]> = {}
   for (const row of res.rows) {
@@ -647,3 +728,47 @@ export async function getAlibabaRankHistory(): Promise<
   }
   return history
 }
+
+// ─── Shein ────────────────────────────────────────────────────────────────────
+
+export async function runSheinScrape(opts: { category?: string; limit?: number }): Promise<{ inserted: number }> {
+  const products = await scrapeSheinBestSellers(opts)
+  return insertMarketplaceProducts(products, "Shein", "Shein")
+}
+export async function getSheinTrending(opts: { category?: string; limit?: number; offset?: number } = {}) {
+  return getMarketplaceTrending("Shein", opts)
+}
+export async function getSheinRankHistory() { return getMarketplaceRankHistory("Shein") }
+
+// ─── Etsy ─────────────────────────────────────────────────────────────────────
+
+export async function runEtsyScrape(opts: { category?: string; limit?: number }): Promise<{ inserted: number }> {
+  const products = await scrapeEtsyBestSellers(opts)
+  return insertMarketplaceProducts(products, "Etsy", "Etsy")
+}
+export async function getEtsyTrending(opts: { category?: string; limit?: number; offset?: number } = {}) {
+  return getMarketplaceTrending("Etsy", opts)
+}
+export async function getEtsyRankHistory() { return getMarketplaceRankHistory("Etsy") }
+
+// ─── Banggood ─────────────────────────────────────────────────────────────────
+
+export async function runBanggoodScrape(opts: { category?: string; limit?: number }): Promise<{ inserted: number }> {
+  const products = await scrapeBanggoodBestSellers(opts)
+  return insertMarketplaceProducts(products, "Banggood", "Banggood")
+}
+export async function getBanggoodTrending(opts: { category?: string; limit?: number; offset?: number } = {}) {
+  return getMarketplaceTrending("Banggood", opts)
+}
+export async function getBanggoodRankHistory() { return getMarketplaceRankHistory("Banggood") }
+
+// ─── Lazada ───────────────────────────────────────────────────────────────────
+
+export async function runLazadaScrape(opts: { category?: string; limit?: number }): Promise<{ inserted: number }> {
+  const products = await scrapeLazadaBestSellers(opts)
+  return insertMarketplaceProducts(products, "Lazada", "Lazada")
+}
+export async function getLazadaTrending(opts: { category?: string; limit?: number; offset?: number } = {}) {
+  return getMarketplaceTrending("Lazada", opts)
+}
+export async function getLazadaRankHistory() { return getMarketplaceRankHistory("Lazada") }

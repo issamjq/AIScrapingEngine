@@ -568,12 +568,16 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 | Marketplace | Status | Notes |
 |-------------|--------|-------|
 | **Amazon** | ✅ Done | BSR scraper live, sparklines, badges, rank history |
-| **iHerb** | ✅ Done | Playwright scraper live, 8 categories, 25+ rows in DB |
-| **Alibaba** | ✅ Done | Playwright scraper, window.runParams extraction, 8 categories, best-sellers table |
-| **eBay** | ⏳ Waiting | Official Finding API scraper built; blocked on eBay developer account approval — needs `EBAY_APP_ID` |
-| **Tesco** | ❌ Blocked | Playwright scraper built (`tescoBestSellers.ts`, routes, service all exist) but Tesco blocks Render datacenter IPs ("Access Denied" on all categories). Needs residential proxy to work. Removed from frontend tab bar. |
+| **iHerb** | ✅ Done | Playwright scraper live, 8 categories |
+| **Alibaba** | ✅ Done | Playwright scraper, window.runParams extraction, 8 categories |
+| **Shein** | ✅ Done | Playwright scraper, 6 categories (Women/Men/Shoes/Bags/Beauty/Home) |
+| **Etsy** | ✅ Done | Playwright scraper, 8 categories, JSON-in-script + DOM fallback |
+| **Banggood** | ✅ Done | Playwright scraper, 7 categories, hot100 + category sort pages |
+| **Lazada** | ✅ Done | Playwright scraper, 8 categories, window.__STORE__ + DOM fallback (Singapore) |
+| **eBay** | ⏳ Waiting | Official Finding API scraper built; needs `EBAY_APP_ID` env var in Render |
+| **Tesco** | ❌ Blocked | Scraper built but Tesco blocks Render datacenter IPs. Needs residential proxy. |
 | **TikTok** | ❌ Not needed | Removed from scope for now |
-| **Walmart** | ❌ Not needed | Blocked by Akamai Bot Manager on all approaches; removed from scope |
+| **Walmart** | ❌ Not needed | Blocked by Akamai Bot Manager on all approaches |
 
 ---
 
@@ -581,11 +585,7 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 | Marketplace | Difficulty | Notes |
 |-------------|------------|-------|
-| **Shein** | 🟢 Easy | No bot protection; trending fashion products; huge for content creators |
 | **Noon.com** | 🟢 Easy | UAE/KSA marketplace — very relevant for B2B audience; public API available |
-| **Etsy** | 🟢 Easy | Trending handmade/unique products; public API with no key needed for basic search |
-| **Banggood** | 🟡 Medium | Electronics/gadgets; some bot protection but Playwright works |
-| **Lazada** | 🟡 Medium | Southeast Asia trending; scraper-friendly |
 | **Shopee** | 🔴 Hard | SPA with heavy anti-bot; may need headless tricks |
 | **Target** | 🔴 Hard | Similar to Walmart — Akamai protection |
 

@@ -20,6 +20,18 @@ import {
   runAlibabaScrape,
   getAlibabaTrending,
   getAlibabaRankHistory,
+  runSheinScrape,
+  getSheinTrending,
+  getSheinRankHistory,
+  runEtsyScrape,
+  getEtsyTrending,
+  getEtsyRankHistory,
+  runBanggoodScrape,
+  getBanggoodTrending,
+  getBanggoodRankHistory,
+  runLazadaScrape,
+  getLazadaTrending,
+  getLazadaRankHistory,
   getDataFreshness,
 } from "../services/creatorIntelService"
 import { logger } from "../utils/logger"
@@ -302,6 +314,158 @@ creatorIntelRouter.post("/scrape-alibaba", async (req: AuthRequest, res: Respons
     res.json({ success: true, ...result })
   } catch (err: any) {
     logger.error("[CreatorIntel] POST /scrape-alibaba", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── Shein ─────────────────────────────────────────────────────────────────────
+
+creatorIntelRouter.get("/shein-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getSheinTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /shein-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Shein trending" })
+  }
+})
+
+creatorIntelRouter.get("/shein-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getSheinRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: "Failed to fetch Shein rank history" })
+  }
+})
+
+creatorIntelRouter.post("/scrape-shein", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] Shein scrape triggered", { category, limit, by: req.email })
+    const result = await runSheinScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-shein", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── Etsy ──────────────────────────────────────────────────────────────────────
+
+creatorIntelRouter.get("/etsy-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getEtsyTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /etsy-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Etsy trending" })
+  }
+})
+
+creatorIntelRouter.get("/etsy-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getEtsyRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: "Failed to fetch Etsy rank history" })
+  }
+})
+
+creatorIntelRouter.post("/scrape-etsy", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] Etsy scrape triggered", { category, limit, by: req.email })
+    const result = await runEtsyScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-etsy", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── Banggood ──────────────────────────────────────────────────────────────────
+
+creatorIntelRouter.get("/banggood-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getBanggoodTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /banggood-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Banggood trending" })
+  }
+})
+
+creatorIntelRouter.get("/banggood-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getBanggoodRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: "Failed to fetch Banggood rank history" })
+  }
+})
+
+creatorIntelRouter.post("/scrape-banggood", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] Banggood scrape triggered", { category, limit, by: req.email })
+    const result = await runBanggoodScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-banggood", { error: err.message })
+    res.status(500).json({ success: false, error: err.message })
+  }
+})
+
+// ── Lazada ────────────────────────────────────────────────────────────────────
+
+creatorIntelRouter.get("/lazada-trending", async (req: AuthRequest, res: Response) => {
+  try {
+    const category = String(req.query.category ?? "All")
+    const limit    = Math.min(Number(req.query.limit ?? 50), 100)
+    const offset   = Number(req.query.offset ?? 0)
+    const products = await getLazadaTrending({ category, limit, offset })
+    res.json({ success: true, data: products, count: products.length })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] GET /lazada-trending", { error: err.message })
+    res.status(500).json({ success: false, error: "Failed to fetch Lazada trending" })
+  }
+})
+
+creatorIntelRouter.get("/lazada-history", async (_req: AuthRequest, res: Response) => {
+  try {
+    const history = await getLazadaRankHistory()
+    res.json({ success: true, data: history })
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: "Failed to fetch Lazada rank history" })
+  }
+})
+
+creatorIntelRouter.post("/scrape-lazada", async (req: AuthRequest, res: Response) => {
+  const admin = await isAdmin(req.email!).catch(() => false)
+  if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
+  try {
+    const { category = "All", limit = 100 } = req.body
+    logger.info("[CreatorIntel] Lazada scrape triggered", { category, limit, by: req.email })
+    const result = await runLazadaScrape({ category, limit })
+    res.json({ success: true, ...result })
+  } catch (err: any) {
+    logger.error("[CreatorIntel] POST /scrape-lazada", { error: err.message })
     res.status(500).json({ success: false, error: err.message })
   }
 })
