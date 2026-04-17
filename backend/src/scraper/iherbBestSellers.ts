@@ -81,12 +81,17 @@ async function scrapeCategoryPage(
         el.querySelector("[class*='brand']")
       const brand = brandEl?.textContent?.trim().replace(/^by\s+/i, "") || null
 
-      // Price — try all price-like elements
+      // Price — use specific iHerb price classes to avoid bundle/promo prices
       let price: number | null = null
-      for (const pe of Array.from(el.querySelectorAll("[class*='price'], [class*='Price']"))) {
-        const raw = pe.textContent?.replace(/[^\d.]/g, "") ?? ""
+      const priceEl =
+        el.querySelector(".product-price.text-nowrap") ??
+        el.querySelector(".product-price-top")         ??
+        el.querySelector("span.price")                 ??
+        el.querySelector("[class*='product-price']")
+      if (priceEl) {
+        const raw = priceEl.textContent?.replace(/[^\d.]/g, "") ?? ""
         const n   = parseFloat(raw)
-        if (isFinite(n) && n > 0 && n < 5000) { price = n; break }
+        if (isFinite(n) && n > 0 && n < 5000) price = n
       }
 
       // Rating (1–5)

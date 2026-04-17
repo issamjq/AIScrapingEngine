@@ -25,77 +25,6 @@ const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
 
 // ─── Extract products from window.runParams (AliExpress embeds all data here) ─
 
-function parseRunParams(runParams: any, category: string, baseIdx: number): AmazonProduct[] {
-  const results: AmazonProduct[] = []
-
-  const mods: any =
-    runParams?.data?.result?.mods ??
-    runParams?.mods               ??
-    {}
-
-  const items: any[] =
-    mods?.itemList?.content      ??
-    mods?.list?.content          ??
-    runParams?.data?.searchResult?.resultList ??
-    []
-
-  items.slice(0, 48).forEach((item: any, idx: number) => {
-    const title: string = item.title ?? item.subject ?? item.name ?? ""
-    if (!title || title.length < 3) return
-
-    // Price
-    const priceInfo = item.prices?.salePrice ?? item.price ?? item.salePrice ?? {}
-    const rawPrice  = priceInfo.minAmount ?? priceInfo.price ?? priceInfo.value ?? null
-    const price: number | null = rawPrice != null ? parseFloat(String(rawPrice)) || null : null
-
-    // Image
-    const imgRaw: string = item.image?.imgUrl ?? item.imageUrl ?? item.image ?? ""
-    const image_url = imgRaw
-      ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw.startsWith("http") ? imgRaw : null)
-      : null
-
-    // Orders / sold count
-    let review_count: number | null = null
-    const tradeStr: string = item.trade?.realTradeDesc ?? item.trade?.tradeDesc ?? item.tradeDesc ?? ""
-    const tm = tradeStr.replace(/[,+]/g, "").match(/(\d+)/)
-    if (tm) review_count = parseInt(tm[1], 10)
-
-    // Seller
-    const brand: string | null =
-      item.storeInfo?.storeName  ??
-      item.store?.storeName      ??
-      item.sellerInfo?.storeName ??
-      null
-
-    // URL + product ID
-    const urlRaw: string = item.productDetailUrl ?? item.detailUrl ?? item.productUrl ?? ""
-    const product_url = urlRaw.startsWith("//")
-      ? `https:${urlRaw}`
-      : urlRaw.startsWith("http")
-        ? urlRaw
-        : `https://www.aliexpress.com/item/${item.productId ?? item.id}.html`
-
-    const productId = String(item.productId ?? item.id ?? "").trim() || null
-
-    results.push({
-      asin:         productId,
-      product_name: title,
-      category,
-      rank:         baseIdx + idx + 1,
-      price,
-      rating:       item.evaluation?.starRating != null ? parseFloat(item.evaluation.starRating) : null,
-      review_count,
-      image_url,
-      product_url,
-      badge:        review_count && review_count >= 1000 ? "Best Seller" : null,
-      brand,
-      marketplace:  "Alibaba",
-    })
-  })
-
-  return results
-}
-
 // ─── Scrape one category page ─────────────────────────────────────────────────
 
 async function scrapeCategoryPage(
@@ -104,6 +33,7 @@ async function scrapeCategoryPage(
   page:     import("playwright").Page
 ): Promise<AmazonProduct[]> {
   const encoded = encodeURIComponent(query)
+  // Cookies force global English — www.aliexpress.com now serves the correct version
   const url = `https://www.aliexpress.com/wholesale?SearchText=${encoded}&SortType=total_tranRanking_desc&page=1`
 
   try {
@@ -256,6 +186,11 @@ export async function scrapeAlibabaBestSellers(opts: {
     locale:           "en-US",
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
+  // Force global English / USD — without this, AliExpress redirects to regional Arabic/local version
+  await context.addCookies([
+    { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
+    { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
+  ])
   const page = await context.newPage()
 
   const allProducts: AmazonProduct[] = []

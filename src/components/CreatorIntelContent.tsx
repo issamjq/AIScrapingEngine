@@ -442,9 +442,9 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "Alibaba", flag: "🇨🇳",
+    id: "Alibaba", flag: "🌐",
     logo: (
-      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#FF6A00" }}>alibaba</span>
+      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#E62D2D" }}>AliExpress</span>
     ),
   },
   {
