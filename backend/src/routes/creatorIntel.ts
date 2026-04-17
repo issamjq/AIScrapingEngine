@@ -267,13 +267,25 @@ creatorIntelRouter.post("/scrape-tesco", async (req: AuthRequest, res: Response)
 // On-demand AliExpress sourcing search — no auth restriction (all users can search)
 creatorIntelRouter.post("/source-alibaba", async (req: AuthRequest, res: Response) => {
   try {
-    const query = String(req.body.query ?? "").trim()
-    if (!query) return res.status(400).json({ success: false, error: "query is required" })
-    logger.info("[CreatorIntel] Alibaba sourcing search", { query, by: req.email })
-    const results = await sourcingSearch(query)
+    const q = String(req.body.query ?? "").trim()
+    if (!q) return res.status(400).json({ success: false, error: "query is required" })
+    logger.info("[CreatorIntel] Alibaba sourcing search", { query: q, by: req.email })
+
+    // Hard cap at 18 s — AliExpress blocks cloud IPs and hangs indefinitely otherwise
+    const timeout = new Promise<never>((_, rej) =>
+      setTimeout(() => rej(new Error("TIMEOUT")), 18_000)
+    )
+    const results = await Promise.race([sourcingSearch(q), timeout])
     res.json({ success: true, data: results, count: results.length })
   } catch (err: any) {
-    logger.error("[CreatorIntel] POST /source-alibaba", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
+    const blocked = err.message === "TIMEOUT" || /blocked|captcha|403/i.test(err.message)
+    logger.warn("[CreatorIntel] POST /source-alibaba", { error: err.message })
+    res.status(blocked ? 503 : 500).json({
+      success: false,
+      blocked,
+      error: blocked
+        ? "AliExpress is blocking requests from our servers. Try again later or search directly on aliexpress.com."
+        : err.message,
+    })
   }
 })

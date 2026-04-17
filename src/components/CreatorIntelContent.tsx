@@ -509,6 +509,7 @@ export function CreatorIntelContent({ role }: Props) {
   const [aliLoading, setAliLoading] = useState(false)
   const [aliResults, setAliResults] = useState<AlibabaProduct[]>([])
   const [aliSearched, setAliSearched] = useState(false)
+  const [aliError,   setAliError]   = useState<string | null>(null)
 
   const isAdmin = role === "dev" || role === "owner"
 
@@ -692,56 +693,59 @@ export function CreatorIntelContent({ role }: Props) {
   return (
     <div className="flex flex-col -m-4 sm:-m-6 bg-[#f4f5f7]">
 
-      {/* ── AI suggestion bar ──────────────────────────────────────── */}
-      <div className="bg-[#e8f0fe] border-b border-[#c5d5f8] px-5 py-2.5 flex items-start gap-2">
-        <span className="text-[#2563eb] text-lg leading-none mt-0.5">🤖</span>
-        <p className="text-xs text-[#1d4ed8] leading-relaxed">
-          <span className="font-semibold">Based on Amazon product data</span>, select items with substantial sales and rapid growth, indicating market acceptance.
-          Combine Amazon Best Sellers data to identify the next potential trending product.
-          Data is for reference only — always validate before purchasing inventory.
-        </p>
-      </div>
-
-      {/* ── Search + refresh row ────────────────────────────────────── */}
-      <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
-        {/* Search bar */}
-        <div className="flex items-center border border-gray-300 rounded overflow-hidden flex-1 min-w-[200px] max-w-md">
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search Product Name"
-            className="flex-1 px-3 py-1.5 text-sm outline-none bg-white"
-          />
-          <button className="h-full px-3 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors border-l border-gray-300">
-            <Search className="h-4 w-4 text-gray-500" />
-          </button>
+      {/* ── AI suggestion bar — hidden on Alibaba (sourcing tool, not best sellers) */}
+      {activeMarket !== "Alibaba" && (
+        <div className="bg-[#e8f0fe] border-b border-[#c5d5f8] px-5 py-2.5 flex items-start gap-2">
+          <span className="text-[#2563eb] text-lg leading-none mt-0.5">🤖</span>
+          <p className="text-xs text-[#1d4ed8] leading-relaxed">
+            <span className="font-semibold">Based on {activeMarket} product data</span>, select items with substantial sales and rapid growth, indicating market acceptance.
+            Combine Best Sellers data to identify the next potential trending product.
+            Data is for reference only — always validate before purchasing inventory.
+          </p>
         </div>
+      )}
 
-        <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500">
-          {lastScraped && <span>Updated: <span className="font-medium text-gray-700">{fmtRelative(lastScraped)}</span></span>}
-          <span className="text-gray-300">|</span>
-          <span><span className="font-medium text-gray-700">{displayed.length}</span> results</span>
-          <span className="text-gray-300">|</span>
-          <span><span className="font-medium text-gray-700">{totalCount}</span> in DB</span>
-        </div>
-
-        <div className="ml-auto flex items-center gap-2">
-          {isAdmin && (
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#FF9900] text-black text-xs font-bold hover:bg-[#e88800] transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-              {refreshing ? "Scraping…" : "Refresh Data"}
+      {/* ── Search + refresh row — hidden on Alibaba ────────────────── */}
+      {activeMarket !== "Alibaba" && (
+        <div className="bg-white border-b border-gray-200 px-4 py-2.5 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center border border-gray-300 rounded overflow-hidden flex-1 min-w-[200px] max-w-md">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search Product Name"
+              className="flex-1 px-3 py-1.5 text-sm outline-none bg-white"
+            />
+            <button className="h-full px-3 bg-white hover:bg-gray-50 flex items-center justify-center transition-colors border-l border-gray-300">
+              <Search className="h-4 w-4 text-gray-500" />
             </button>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* ── Filtering conditions strip ──────────────────────────────── */}
-      {(activeChips.length > 0 || true) && (
+          <div className="flex items-center gap-2 flex-wrap text-xs text-gray-500">
+            {lastScraped && <span>Updated: <span className="font-medium text-gray-700">{fmtRelative(lastScraped)}</span></span>}
+            <span className="text-gray-300">|</span>
+            <span><span className="font-medium text-gray-700">{displayed.length}</span> results</span>
+            <span className="text-gray-300">|</span>
+            <span><span className="font-medium text-gray-700">{totalCount}</span> in DB</span>
+          </div>
+
+          <div className="ml-auto flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-[#FF9900] text-black text-xs font-bold hover:bg-[#e88800] transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                {refreshing ? "Scraping…" : "Refresh Data"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Filtering conditions strip — hidden on Alibaba ──────────── */}
+      {activeMarket !== "Alibaba" && (
         <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 flex-wrap text-xs">
           <span className="text-gray-500 font-medium shrink-0">Filtering Conditions:</span>
           <span className="px-2 py-0.5 bg-[#eef2ff] text-[#4b7cf3] rounded font-medium">Dates: {filters.dates}</span>
@@ -784,8 +788,8 @@ export function CreatorIntelContent({ role }: Props) {
           {/* Header */}
           <div className="max-w-2xl mx-auto mb-8 text-center">
             <div className="text-3xl mb-2">🏭</div>
-            <h2 className="text-xl font-bold text-gray-800 mb-1">Find Suppliers on AliExpress</h2>
-            <p className="text-sm text-gray-500">Type any product to find cheap suppliers — sorted by total orders</p>
+            <h2 className="text-xl font-bold text-gray-800 mb-1">Find Suppliers on Alibaba</h2>
+            <p className="text-sm text-gray-500">Type any product to find cheap suppliers — results from AliExpress sorted by total orders</p>
           </div>
           {/* Search box */}
           <div className="max-w-xl mx-auto flex gap-2 mb-8">
@@ -795,8 +799,7 @@ export function CreatorIntelContent({ role }: Props) {
               onChange={e => setAliQuery(e.target.value)}
               onKeyDown={e => {
                 if (e.key === "Enter" && aliQuery.trim()) {
-                  setAliLoading(true)
-                  setAliSearched(true)
+                  setAliLoading(true); setAliSearched(true); setAliError(null); setAliResults([])
                   getToken().then(token => {
                     fetch(`${API}/api/creator-intel/source-alibaba`, {
                       method: "POST",
@@ -804,8 +807,8 @@ export function CreatorIntelContent({ role }: Props) {
                       body: JSON.stringify({ query: aliQuery.trim() }),
                     })
                       .then(r => r.json())
-                      .then(j => setAliResults(j.data ?? []))
-                      .catch(() => {})
+                      .then(j => { if (j.success) setAliResults(j.data ?? []); else setAliError(j.error ?? "Search failed") })
+                      .catch(() => setAliError("Network error — please try again"))
                       .finally(() => setAliLoading(false))
                   })
                 }
@@ -817,8 +820,7 @@ export function CreatorIntelContent({ role }: Props) {
               disabled={!aliQuery.trim() || aliLoading}
               onClick={() => {
                 if (!aliQuery.trim()) return
-                setAliLoading(true)
-                setAliSearched(true)
+                setAliLoading(true); setAliSearched(true); setAliError(null); setAliResults([])
                 getToken().then(token => {
                   fetch(`${API}/api/creator-intel/source-alibaba`, {
                     method: "POST",
@@ -826,8 +828,8 @@ export function CreatorIntelContent({ role }: Props) {
                     body: JSON.stringify({ query: aliQuery.trim() }),
                   })
                     .then(r => r.json())
-                    .then(j => setAliResults(j.data ?? []))
-                    .catch(() => {})
+                    .then(j => { if (j.success) setAliResults(j.data ?? []); else setAliError(j.error ?? "Search failed") })
+                    .catch(() => setAliError("Network error — please try again"))
                     .finally(() => setAliLoading(false))
                 })
               }}
@@ -840,11 +842,28 @@ export function CreatorIntelContent({ role }: Props) {
 
           {/* Results */}
           {aliLoading && (
-            <div className="flex justify-center py-16">
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
               <RefreshCw className="h-7 w-7 text-[#FF6A00] animate-spin" />
+              <p className="text-sm text-gray-400">Searching AliExpress…</p>
             </div>
           )}
-          {!aliLoading && aliSearched && aliResults.length === 0 && (
+          {!aliLoading && aliError && (
+            <div className="max-w-lg mx-auto text-center py-12">
+              <div className="text-3xl mb-3">⚠️</div>
+              <p className="text-sm font-medium text-gray-700 mb-1">Search unavailable</p>
+              <p className="text-xs text-gray-400">{aliError}</p>
+              <a
+                href={`https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(aliQuery)}&SortType=total_tranRanking_desc`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block mt-4 px-4 py-2 rounded text-sm font-semibold text-white"
+                style={{ background: "#FF6A00" }}
+              >
+                Search directly on AliExpress →
+              </a>
+            </div>
+          )}
+          {!aliLoading && !aliError && aliSearched && aliResults.length === 0 && (
             <p className="text-center text-sm text-gray-400 py-12">No suppliers found — try a different search term.</p>
           )}
           {!aliLoading && aliResults.length > 0 && (
@@ -884,7 +903,7 @@ export function CreatorIntelContent({ role }: Props) {
             </div>
           )}
           {!aliSearched && (
-            <p className="text-center text-xs text-gray-400 mt-4">Results sourced from AliExpress · sorted by total orders (popularity)</p>
+            <p className="text-center text-xs text-gray-400 mt-4">Results sourced from AliExpress · sorted by total orders · powered by Alibaba Group</p>
           )}
         </div>
       )}

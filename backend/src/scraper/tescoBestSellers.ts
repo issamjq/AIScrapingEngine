@@ -32,35 +32,66 @@ async function scrapeCategoryPage(
   const url = `https://www.tesco.com/groceries/en-GB/shop/${slug}/all?sortBy=Favourites`
 
   try {
-    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
-    await page.waitForTimeout(3500)
+    // networkidle waits for all XHR to settle — important for Tesco's React app
+    await page.goto(url, { waitUntil: "networkidle", timeout: 45_000 })
+    await page.waitForTimeout(2000)
   } catch (err: any) {
     logger.warn("[TescoScraper] Page load failed", { url, error: err.message })
     return []
   }
 
-  // Dismiss any cookie banner so it doesn't cover products
+  // Dismiss cookie / age-gate banners
+  for (const sel of [
+    "#onetrust-accept-btn-handler",
+    "button:has-text('Accept all')",
+    "button:has-text('Accept All')",
+    "[data-auto='cookie-banner-accept']",
+  ]) {
+    try {
+      const btn = page.locator(sel)
+      if (await btn.count() > 0) { await btn.first().click(); await page.waitForTimeout(600) }
+    } catch { /* ignore */ }
+  }
+
+  // Scroll down to trigger lazy-loaded product cards
   try {
-    const acceptBtn = page.locator("button:has-text('Accept all'), #onetrust-accept-btn-handler")
-    if (await acceptBtn.count() > 0) {
-      await acceptBtn.first().click()
-      await page.waitForTimeout(800)
-    }
+    await page.evaluate(() => window.scrollBy(0, 800))
+    await page.waitForTimeout(1500)
+    await page.evaluate(() => window.scrollBy(0, 800))
+    await page.waitForTimeout(1000)
   } catch { /* ignore */ }
+
+  // Log what we can see for debugging
+  const pageTitle = await page.title().catch(() => "")
+  const html = await page.content().catch(() => "")
+  logger.info("[TescoScraper] Page loaded", {
+    slug,
+    title: pageTitle,
+    hasProductLinks: html.includes("/groceries/en-GB/products/"),
+    hasDataAuto: html.includes("data-auto"),
+    htmlLen: html.length,
+  })
 
   const products = await page.evaluate((cat: string) => {
     const results: any[] = []
 
-    // Tesco product tiles
+    // Tesco product tiles — try every known selector pattern
     let tiles = Array.from(
-      document.querySelectorAll("[data-auto='product-tile'], li.product-list--list-item")
+      document.querySelectorAll(
+        "[data-auto='product-tile'], li.product-list--list-item, [class*='product-list'] li, ul[class*='product'] li"
+      )
     )
 
-    // Fallback: any list item containing a product link
+    // Fallback 1: any element containing a Tesco product link
     if (tiles.length === 0) {
       tiles = Array.from(document.querySelectorAll("a[href*='/groceries/en-GB/products/']"))
-        .map(a => a.closest("li") ?? a.closest("[class*='product']") ?? a.parentElement ?? a)
-        .filter((el, i, arr) => arr.indexOf(el) === i)  // dedup
+        .map(a => a.closest("li, article, [class*='product'], [class*='tile']") ?? a.parentElement ?? a)
+        .filter((el, i, arr) => arr.indexOf(el) === i)
+    }
+
+    // Fallback 2: grab all product anchor tags directly
+    if (tiles.length === 0) {
+      tiles = Array.from(document.querySelectorAll("a[href*='/groceries/en-GB/products/']"))
     }
 
     tiles.slice(0, 50).forEach((el, idx) => {
