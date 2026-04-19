@@ -455,6 +455,20 @@ const MARKETPLACES: {
   },
 ]
 
+// ─── Marketplace-aware product link helper ────────────────────────────────────
+function productLink(p: { product_url: string | null; asin: string | null; product_name: string; marketplace: string }): string {
+  if (p.product_url) return p.product_url
+  const q = encodeURIComponent(p.product_name)
+  switch (p.marketplace) {
+    case "Amazon":     return p.asin ? `https://www.amazon.com/dp/${p.asin}` : `https://www.amazon.com/s?k=${q}`
+    case "iHerb":      return `https://www.iherb.com/search?q=${q}`
+    case "Alibaba":    return `https://www.aliexpress.com/wholesale?SearchText=${q}`
+    case "Banggood":   return `https://www.banggood.com/search/${q}.html`
+    case "eBay":       return `https://www.ebay.com/sch/i.html?_nkw=${q}`
+    default:           return `https://www.google.com/search?q=${q}`
+  }
+}
+
 // ─── Per-marketplace category lists ──────────────────────────────────────────
 
 const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
@@ -920,7 +934,7 @@ export function CreatorIntelContent({ role }: Props) {
                           <div className="min-w-0 flex-1">
                             {/* Product name + link */}
                             <a
-                              href={p.product_url ?? `https://www.amazon.com/dp/${p.asin}`}
+                              href={productLink(p)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="font-medium text-[#0f1111] hover:text-[#4b7cf3] leading-snug line-clamp-2 max-w-[260px] block"
@@ -961,7 +975,7 @@ export function CreatorIntelContent({ role }: Props) {
                             </div>
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                               <a
-                                href={p.product_url ?? `https://www.amazon.com/dp/${p.asin}`}
+                                href={productLink(p)}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-0.5 text-[10px] px-2 py-1 rounded border border-[#4b7cf3]/40 text-[#4b7cf3] hover:bg-[#4b7cf3]/10 transition-colors"
