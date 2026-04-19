@@ -1,14 +1,15 @@
-import rateLimit from "express-rate-limit"
+import rateLimit, { ipKeyGenerator } from "express-rate-limit"
 import { AuthRequest } from "./auth"
 import { Request } from "express"
 
 /**
  * Key by authenticated user email when available, fall back to IP.
  * This ensures limits are per-user, not per-IP (which breaks NAT/shared offices).
+ * ipKeyGenerator is required by express-rate-limit v7+ for IPv6-safe IP keying.
  */
 const keyByUser = (req: Request): string => {
   const email = (req as AuthRequest).email
-  return email ?? req.ip ?? "unknown"
+  return email ?? ipKeyGenerator(req.ip ?? "unknown")
 }
 
 /**
@@ -57,7 +58,7 @@ export const unlockLimiter = rateLimit({
 export const signupLimiter = rateLimit({
   windowMs:        10 * 60 * 1000,  // 10 minutes
   limit:           5,
-  keyGenerator:    (req) => req.ip ?? "unknown",  // IP-based (no auth yet at signup)
+  keyGenerator:    (req) => ipKeyGenerator(req.ip ?? "unknown"),  // IP-based (no auth yet at signup)
   standardHeaders: "draft-7",
   legacyHeaders:   false,
   message:         { success: false, error: { message: "Too many signup attempts — try again later.", code: "RATE_LIMITED" } },
