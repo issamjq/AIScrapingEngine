@@ -79,17 +79,19 @@ async function scrapeCategoryPage(
         el.querySelector("[class*='brand']")
       const brand = brandEl?.textContent?.trim().replace(/^by\s+/i, "") || null
 
-      // Price — use specific iHerb price classes to avoid bundle/promo prices
+      // Price — scan leaf text nodes for exact $XX.XX pattern.
+      // Using textContent on a container concatenates ALL nested spans (per-serving, discount,
+      // review counts, etc.) and parseFloat picks up garbage numbers. Leaf-node scanning
+      // only reads visually displayed price text and takes the FIRST match in DOM order,
+      // which is the main sale price (not per-unit / per-serving smaller text below it).
       let price: number | null = null
-      const priceEl =
-        el.querySelector(".product-price.text-nowrap") ??
-        el.querySelector(".product-price-top")         ??
-        el.querySelector("span.price")                 ??
-        el.querySelector("[class*='product-price']")
-      if (priceEl) {
-        const raw = priceEl.textContent?.replace(/[^\d.]/g, "") ?? ""
-        const n   = parseFloat(raw)
-        if (isFinite(n) && n > 0 && n < 5000) price = n
+      for (const node of Array.from(el.querySelectorAll("*"))) {
+        if (node.children.length > 0) continue          // leaf nodes only
+        const t = (node.textContent ?? "").trim()
+        // Match "$14.95" or "US$14.95" — exact price token, not a fragment
+        if (!/^\$[\d,]+\.?\d{0,2}$/.test(t) && !/^US\$[\d,]+\.?\d{0,2}$/.test(t)) continue
+        const n = parseFloat(t.replace(/[^\d.]/g, ""))
+        if (isFinite(n) && n > 0 && n < 5000) { price = n; break }
       }
 
       // Rating (1–5)
