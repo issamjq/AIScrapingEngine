@@ -177,38 +177,33 @@ export async function scrapeIherbBestSellers(opts: {
     headless: true,
     args: [
       "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
-      // Basic anti-detection — reduces Cloudflare fingerprint score
       "--disable-blink-features=AutomationControlled",
     ],
   })
-  // Single context for all categories — lets session cookies/trust build up
-  // across requests instead of triggering a fresh Cloudflare challenge every time.
-  const context = await browser.newContext({
-    userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale:           "en-US",
-    viewport:         { width: 1280, height: 1400 },
-    extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
-  })
-  // Override navigator.webdriver so Cloudflare JS checks don't see automation flag
-  await context.addInitScript(() => {
-    Object.defineProperty(navigator, "webdriver", { get: () => undefined })
-  })
-  const page = await context.newPage()
-
-  // Warm up — visit iHerb homepage first to establish a session before hitting category pages
-  try {
-    await page.goto("https://www.iherb.com/", { waitUntil: "domcontentloaded", timeout: 20_000 })
-    await page.waitForTimeout(2000)
-  } catch { /* ignore warm-up failure */ }
 
   const allProducts: AmazonProduct[] = []
 
   try {
     for (const target of targets) {
-      const products = await scrapeCategoryPage(target.slug, target.label, page)
-      allProducts.push(...products)
-      // Polite delay between categories
-      await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000))
+      // Fresh context per category — avoids carrying a Cloudflare-flagged session
+      // from one category into the next (which gave 0 for all with single context).
+      const context = await browser.newContext({
+        userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        locale:           "en-US",
+        viewport:         { width: 1280, height: 1400 },
+        extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+      })
+      await context.addInitScript(() => {
+        Object.defineProperty(navigator, "webdriver", { get: () => undefined })
+      })
+      const page = await context.newPage()
+      try {
+        const products = await scrapeCategoryPage(target.slug, target.label, page)
+        allProducts.push(...products)
+      } finally {
+        await context.close()
+      }
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 800))
     }
   } finally {
     await browser.close()
