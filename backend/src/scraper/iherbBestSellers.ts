@@ -1,19 +1,25 @@
 /**
- * iHerb Best Sellers — Playwright scraper.
+ * iHerb Best Sellers — Playwright + Claude Vision scraper.
  *
- * Scrapes iherb.com category pages sorted by top-sellers.
+ * Navigates iherb.com category pages, takes a viewport screenshot after
+ * lazy-load scrolling, then uses Claude Vision (haiku) to extract up to 10
+ * best-selling products per category. Vision is immune to HTML structure
+ * changes, per-serving price fragments, and element class renames.
+ *
  * Data stored in amazon_trending with marketplace = "iHerb".
  */
 
-import { chromium } from "playwright"
-import { logger }   from "../utils/logger"
-import { AmazonProduct } from "./amazonBestSellers"
+import { chromium }       from "playwright"
+import { logger }         from "../utils/logger"
+import { AmazonProduct }  from "./amazonBestSellers"
+
+const CLAUDE_API = "https://api.anthropic.com/v1/messages"
 
 // ─── iHerb category slugs ─────────────────────────────────────────────────────
 
 const IHERB_CATEGORIES: { label: string; slug: string }[] = [
   { label: "Vitamins",         slug: "vitamins" },
-  { label: "Sports Nutrition", slug: "sports" },
+  { label: "Sports Nutrition", slug: "sports-nutrition" },
   { label: "Beauty",           slug: "beauty" },
   { label: "Grocery",          slug: "grocery" },
   { label: "Baby & Kids",      slug: "baby-kids" },
@@ -22,140 +28,128 @@ const IHERB_CATEGORIES: { label: string; slug: string }[] = [
   { label: "Herbs",            slug: "herbs-homeopathy" },
 ]
 
+// ─── Claude Vision extraction ─────────────────────────────────────────────────
+
+async function extractWithVision(
+  screenshot: Buffer,
+  category:   string,
+): Promise<AmazonProduct[]> {
+  const base64 = screenshot.toString("base64")
+
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    logger.warn("[iHerbScraper] No ANTHROPIC_API_KEY — skipping Vision extraction")
+    return []
+  }
+
+  let text = "[]"
+  try {
+    const resp = await fetch(CLAUDE_API, {
+      method:  "POST",
+      headers: {
+        "x-api-key":         apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+      },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 1500,
+        messages: [{
+          role:    "user",
+          content: [
+            {
+              type:   "image",
+              source: { type: "base64", media_type: "image/jpeg", data: base64 },
+            },
+            {
+              type: "text",
+              text: `This is a screenshot of an iHerb best-sellers category page (${category}).
+Extract the TOP 10 best-selling products clearly visible on screen.
+Return ONLY a valid JSON array — no markdown fences, no explanation:
+[{"product_name":"...","brand":"...","price":14.95,"rating":4.7,"review_count":12500}]
+
+Rules:
+- Only include products with a clearly visible USD price (e.g. $14.95)
+- price must be a number, not a string
+- rating must be 1.0–5.0 or null
+- review_count is the integer number of reviews or null
+- If the page shows a CAPTCHA, error message, or no products, return []`,
+            },
+          ],
+        }],
+      }),
+    })
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "")
+      throw new Error(`Claude API ${resp.status}: ${errText}`)
+    }
+
+    const json = await resp.json()
+    text = json.content?.[0]?.text?.trim() ?? "[]"
+    // Strip accidental markdown fences
+    text = text.replace(/^```[a-z]*\n?/i, "").replace(/\n?```$/i, "").trim()
+  } catch (err: any) {
+    logger.warn("[iHerbScraper] Claude Vision API error", { category, error: err.message })
+    return []
+  }
+
+  try {
+    const arr = JSON.parse(text)
+    if (!Array.isArray(arr)) return []
+
+    return arr.slice(0, 10).map((p: any, idx: number) => ({
+      asin:         null,
+      product_name: String(p.product_name ?? "").trim(),
+      category,
+      rank:         idx + 1,
+      price:        typeof p.price === "number" && p.price > 0 && p.price < 5000 ? p.price : null,
+      rating:       typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
+      review_count: typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
+      image_url:    null,
+      product_url:  null,
+      badge:        "Best Seller",
+      brand:        p.brand ? String(p.brand).trim() || null : null,
+      marketplace:  "iHerb",
+    })).filter(p => p.product_name.length >= 3)
+  } catch (err: any) {
+    logger.warn("[iHerbScraper] Vision JSON parse failed", { category, raw: text.slice(0, 200), error: err.message })
+    return []
+  }
+}
+
 // ─── Scrape one category page ─────────────────────────────────────────────────
 
 async function scrapeCategoryPage(
   slug:     string,
   category: string,
-  page:     import("playwright").Page
+  page:     import("playwright").Page,
 ): Promise<AmazonProduct[]> {
-  const url = `https://www.iherb.com/c/${slug}?sort=top-sellers&psize=48`
+  // psize=10 requests only 10 products → smaller page, faster load
+  const url = `https://www.iherb.com/c/${slug}?sort=top-sellers&psize=10`
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
     await page.waitForTimeout(2000)
-    // Scroll aggressively to trigger lazy-loaded product cards (iHerb renders below fold)
-    for (let i = 0; i < 6; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1200))
-      await page.waitForTimeout(600)
+
+    // Scroll to trigger lazy-loaded product cards, then return to top
+    for (let i = 0; i < 5; i++) {
+      await page.evaluate(() => window.scrollBy(0, 900))
+      await page.waitForTimeout(500)
     }
     await page.evaluate(() => window.scrollTo(0, 0))
     await page.waitForTimeout(1500)
-    // Final gate: wait for at least one product link to confirm page rendered
-    await page.waitForSelector("a[href*='/pr/']", { timeout: 8_000 }).catch(() => {})
   } catch (err: any) {
     logger.warn("[iHerbScraper] Page load failed", { url, error: err.message })
     return []
   }
 
-  const products = await page.evaluate((cat: string) => {
-    const results: any[] = []
-
-    // Build containers from product links — works across www.iherb.com and lb.iherb.com
-    // Filter: product URLs end with a numeric ID (not review anchors)
-    const productLinks = Array.from(document.querySelectorAll("a[href*='/pr/']"))
-      .filter(a => /\/\d+(?:[?#]|$)/.test((a as HTMLAnchorElement).getAttribute("href") ?? ""))
-
-    const containers = productLinks
-      .map(a => a.closest(".product-cell-container, li[class], [data-product-id]") ?? a.parentElement?.parentElement ?? a.parentElement ?? a)
-      .filter((el, i, arr) => arr.indexOf(el) === i) // dedup
-
-    containers.slice(0, 50).forEach((el, idx) => {
-      const anchor = (
-        el.tagName === "A" ? el : el.querySelector("a[href*='/pr/']")
-      ) as HTMLAnchorElement | null
-      const href = anchor?.getAttribute("href") ?? ""
-      if (!href.includes("/pr/")) return
-
-      const productId = href.match(/\/(\d+)(?:[?#]|$)/)?.[1] ?? null
-      const product_url = href.startsWith("http") ? href : `https://www.iherb.com${href}`
-
-      // Product name
-      const nameEl =
-        el.querySelector(".product-title")          ??
-        el.querySelector("[class*='product-title']") ??
-        el.querySelector("h2, h3, h4")              ??
-        anchor
-      const product_name = nameEl?.textContent?.trim() ?? ""
-      if (!product_name || product_name.length < 3) return
-
-      // Brand
-      const brandEl =
-        el.querySelector(".product-brand-section a") ??
-        el.querySelector("[class*='brand'] a")       ??
-        el.querySelector("[class*='brand']")
-      const brand = brandEl?.textContent?.trim().replace(/^by\s+/i, "") || null
-
-      // Price — scan leaf text nodes for exact $XX.XX pattern.
-      // Using textContent on a container concatenates ALL nested spans (per-serving, discount,
-      // review counts, etc.) and parseFloat picks up garbage numbers. Leaf-node scanning
-      // only reads visually displayed price text and takes the FIRST match in DOM order,
-      // which is the main sale price (not per-unit / per-serving smaller text below it).
-      let price: number | null = null
-      for (const node of Array.from(el.querySelectorAll("*"))) {
-        if (node.children.length > 0) continue          // leaf nodes only
-        const t = (node.textContent ?? "").trim()
-        // Match "$14.95" or "US$14.95" — exact price token, not a fragment
-        if (!/^\$[\d,]+\.?\d{0,2}$/.test(t) && !/^US\$[\d,]+\.?\d{0,2}$/.test(t)) continue
-        const n = parseFloat(t.replace(/[^\d.]/g, ""))
-        if (isFinite(n) && n > 0 && n < 5000) { price = n; break }
-      }
-
-      // Rating (1–5)
-      let rating: number | null = null
-      const ratingEl =
-        el.querySelector(".rating")              ??
-        el.querySelector("[itemprop='ratingValue']") ??
-        el.querySelector("[class*='rating']")
-      if (ratingEl) {
-        const raw = ratingEl.getAttribute("content") ?? ratingEl.textContent ?? ""
-        const m   = raw.match(/(\d[\d.]*)/)
-        if (m) {
-          const r = parseFloat(m[1])
-          if (r >= 1 && r <= 5) rating = r
-        }
-      }
-
-      // Review count
-      let review_count: number | null = null
-      const reviewEl =
-        el.querySelector(".rating-count")            ??
-        el.querySelector("[class*='rating-count']")   ??
-        el.querySelector("[itemprop='ratingCount']")
-      if (reviewEl) {
-        const raw = reviewEl.textContent?.replace(/[^\d]/g, "") ?? ""
-        const n   = parseInt(raw, 10)
-        if (!isNaN(n) && n > 0) review_count = n
-      }
-
-      // Image
-      const imgEl = el.querySelector("img")
-      const image_url =
-        imgEl?.getAttribute("src")               ??
-        imgEl?.getAttribute("data-src")          ??
-        imgEl?.getAttribute("data-original-src") ??
-        null
-
-      results.push({
-        asin:         productId,
-        product_name,
-        category:     cat,
-        rank:         idx + 1,
-        price,
-        rating,
-        review_count,
-        image_url,
-        product_url,
-        badge:        "Best Seller",
-        brand,
-      })
-    })
-
-    return results
-  }, category)
+  // Take a JPEG viewport screenshot (1280×1400 set on context) and send to Claude
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
+  const products   = await extractWithVision(screenshot, category)
 
   logger.info("[iHerbScraper] Category done", { category, count: products.length })
-  return products.map(p => ({ ...p, marketplace: "iHerb" }))
+  return products
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -164,7 +158,7 @@ export async function scrapeIherbBestSellers(opts: {
   category?: string
   limit?:    number
 }): Promise<AmazonProduct[]> {
-  const { category = "All", limit = 100 } = opts
+  const { category = "All", limit = 80 } = opts
 
   const targets = category === "All"
     ? IHERB_CATEGORIES
@@ -175,26 +169,35 @@ export async function scrapeIherbBestSellers(opts: {
     return []
   }
 
-  logger.info("[iHerbScraper] Starting scrape", { categories: targets.map(t => t.label) })
+  logger.info("[iHerbScraper] Starting scrape (Vision mode)", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args:     ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
-  const context = await browser.newContext({
-    userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale:           "en-US",
-    extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
-  })
-  const page = await context.newPage()
 
   const allProducts: AmazonProduct[] = []
 
   try {
     for (const target of targets) {
-      const products = await scrapeCategoryPage(target.slug, target.label, page)
-      allProducts.push(...products)
-      await new Promise(r => setTimeout(r, 1000 + Math.random() * 600))
+      // Fresh context per category — prevents bot-score state from leaking between pages
+      const context = await browser.newContext({
+        userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        locale:           "en-US",
+        viewport:         { width: 1280, height: 1400 },
+        extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+      })
+      const page = await context.newPage()
+
+      try {
+        const products = await scrapeCategoryPage(target.slug, target.label, page)
+        allProducts.push(...products)
+      } finally {
+        await context.close()
+      }
+
+      // Polite delay between categories
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 800))
     }
   } finally {
     await browser.close()
@@ -202,7 +205,7 @@ export async function scrapeIherbBestSellers(opts: {
 
   const seen  = new Set<string>()
   const dedup = allProducts.filter(p => {
-    const key = p.asin ?? p.product_name
+    const key = p.product_name
     if (seen.has(key)) return false
     seen.add(key)
     return true
