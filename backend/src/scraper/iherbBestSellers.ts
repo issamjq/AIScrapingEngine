@@ -33,9 +33,16 @@ async function scrapeCategoryPage(
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 })
-    // Wait for product links to appear — iHerb lazy-renders cards via JS
-    await page.waitForSelector("a[href*='/pr/']", { timeout: 10_000 }).catch(() => {})
-    await page.waitForTimeout(5000)
+    await page.waitForTimeout(2000)
+    // Scroll aggressively to trigger lazy-loaded product cards (iHerb renders below fold)
+    for (let i = 0; i < 6; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1200))
+      await page.waitForTimeout(600)
+    }
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(1500)
+    // Final gate: wait for at least one product link to confirm page rendered
+    await page.waitForSelector("a[href*='/pr/']", { timeout: 8_000 }).catch(() => {})
   } catch (err: any) {
     logger.warn("[iHerbScraper] Page load failed", { url, error: err.message })
     return []
