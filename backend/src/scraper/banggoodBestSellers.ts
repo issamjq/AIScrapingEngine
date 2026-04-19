@@ -42,9 +42,10 @@ async function scrapeCategoryPage(
       await page.evaluate(() => window.scrollBy(0, 1200))
       await page.waitForTimeout(800)
     }
-    // Scroll back to top so first products are included, then wait for JS price updates
+    // Scroll back to top so first products are included, then wait for JS price updates.
+    // Flash sale prices on Banggood update ~1s after page load — 5s gives them time to settle.
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(2000)
+    await page.waitForTimeout(5000)
   } catch { /* ignore */ }
 
   const pageTitle = await page.title().catch(() => "")
@@ -90,25 +91,22 @@ async function scrapeCategoryPage(
         titleEl?.textContent?.trim() ?? ""
       if (!product_name || product_name.length < 3) return
 
-      // Price — prefer current sale price; avoid price-old (crossed-out original price)
+      // Price — scan all leaf nodes for exact $XX.XX tokens, skip crossed-out (price-old)
+      // elements, then take the MINIMUM. When both regular ($30.49) and flash ($26.49)
+      // prices are in the DOM, Math.min automatically picks the flash/sale price.
       let price: number | null = null
-      const priceEl =
-        el.querySelector(".main-price, [class*='main-price'], [class*='price-main']") ??
-        el.querySelector(".price.wh_cn, .price:not(.price-old)")
-      if (priceEl) {
-        const raw = priceEl.textContent?.replace(/[^\d.]/g, "") ?? ""
-        const n   = parseFloat(raw)
-        if (isFinite(n) && n > 0 && n < 50000) price = n
+      const leafPrices: number[] = []
+      for (const node of Array.from(el.querySelectorAll("*"))) {
+        if (node.children.length > 0) continue  // leaf nodes only
+        // Skip crossed-out original price elements
+        const cls = (node as Element).className ?? ""
+        if (typeof cls === "string" && (cls.includes("old") || cls.includes("Old"))) continue
+        const t = (node.textContent ?? "").trim()
+        if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
+        const n = parseFloat(t.replace(/[^\d.]/g, ""))
+        if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
       }
-      // Fallback: scan all price elements, skip price-old, take first valid
-      if (price === null) {
-        for (const pe of Array.from(el.querySelectorAll("[class*='price']"))) {
-          if (pe.className.includes("old") || pe.className.includes("Old")) continue
-          const raw = pe.textContent?.replace(/[^\d.]/g, "") ?? ""
-          const n   = parseFloat(raw)
-          if (isFinite(n) && n > 0 && n < 50000) { price = n; break }
-        }
-      }
+      if (leafPrices.length > 0) price = Math.min(...leafPrices)
 
       // Image
       const imgEl = el.querySelector("img.img-origin, img[class*='goods-img'], img")
