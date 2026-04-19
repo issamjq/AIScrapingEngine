@@ -1,32 +1,130 @@
 /**
- * Banggood Best Sellers — Playwright scraper.
+ * Banggood Best Sellers — Playwright + Claude Vision scraper.
  *
- * Scrapes banggood.com hot/popular product pages.
+ * Navigates Banggood category pages, scrolls to load products and trigger
+ * flash-sale price JS updates, then takes a viewport screenshot and sends
+ * it to Claude Vision (haiku) for extraction. Vision reads the final
+ * displayed price — always the flash/sale price after JS settles.
+ *
  * Data stored in amazon_trending with marketplace = "Banggood".
  */
 
-import { chromium } from "playwright"
-import { logger }   from "../utils/logger"
-import { AmazonProduct } from "./amazonBestSellers"
+import { chromium }       from "playwright"
+import { logger }         from "../utils/logger"
+import { AmazonProduct }  from "./amazonBestSellers"
+
+const CLAUDE_API = "https://api.anthropic.com/v1/messages"
 
 // ─── Banggood category pages ──────────────────────────────────────────────────
+// pageSize=10 — request only 10 products per page (faster load, cleaner viewport)
 
 const BANGGOOD_CATEGORIES: { label: string; url: string }[] = [
   { label: "Electronics",       url: "https://www.banggood.com/promotion-hot100.html" },
-  { label: "Phone & Gadgets",   url: "https://www.banggood.com/Cellphones--Telecommunications-ons-1543.html?sortType=p_sales_14d&pageSize=48" },
-  { label: "Computers",         url: "https://www.banggood.com/Computer--Office-ons-102.html?sortType=p_sales_14d&pageSize=48" },
-  { label: "Home & Garden",     url: "https://www.banggood.com/Home-Garden-ons-5261.html?sortType=p_sales_14d&pageSize=48" },
-  { label: "Sports & Outdoors", url: "https://www.banggood.com/Sports--Outdoor-ons-182.html?sortType=p_sales_14d&pageSize=48" },
-  { label: "Toys & Hobbies",    url: "https://www.banggood.com/Toys--Hobbies-ons-107.html?sortType=p_sales_14d&pageSize=48" },
-  { label: "Beauty & Health",   url: "https://www.banggood.com/Beauty--Health-ons-6267.html?sortType=p_sales_14d&pageSize=48" },
+  { label: "Phone & Gadgets",   url: "https://www.banggood.com/Cellphones--Telecommunications-ons-1543.html?sortType=p_sales_14d&pageSize=10" },
+  { label: "Computers",         url: "https://www.banggood.com/Computer--Office-ons-102.html?sortType=p_sales_14d&pageSize=10" },
+  { label: "Home & Garden",     url: "https://www.banggood.com/Home-Garden-ons-5261.html?sortType=p_sales_14d&pageSize=10" },
+  { label: "Sports & Outdoors", url: "https://www.banggood.com/Sports--Outdoor-ons-182.html?sortType=p_sales_14d&pageSize=10" },
+  { label: "Toys & Hobbies",    url: "https://www.banggood.com/Toys--Hobbies-ons-107.html?sortType=p_sales_14d&pageSize=10" },
+  { label: "Beauty & Health",   url: "https://www.banggood.com/Beauty--Health-ons-6267.html?sortType=p_sales_14d&pageSize=10" },
 ]
+
+// ─── Claude Vision extraction ─────────────────────────────────────────────────
+
+async function extractWithVision(
+  screenshot: Buffer,
+  category:   string,
+): Promise<AmazonProduct[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    logger.warn("[BanggoodScraper] No ANTHROPIC_API_KEY — skipping Vision extraction")
+    return []
+  }
+
+  const base64 = screenshot.toString("base64")
+  let text = "[]"
+
+  try {
+    const resp = await fetch(CLAUDE_API, {
+      method:  "POST",
+      headers: {
+        "x-api-key":         apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+      },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 1500,
+        messages: [{
+          role:    "user",
+          content: [
+            {
+              type:   "image",
+              source: { type: "base64", media_type: "image/jpeg", data: base64 },
+            },
+            {
+              type: "text",
+              text: `This is a Banggood best-sellers category page (${category}).
+Extract the TOP 10 best-selling products clearly visible on screen.
+Return ONLY a valid JSON array — no markdown fences, no explanation:
+[{"product_name":"...","brand":"...","price":26.49,"rating":4.7,"review_count":491}]
+
+Rules:
+- When TWO prices are shown (e.g. flash sale: $26.49, original: $30.49), use the LOWER price
+- price must be a number, not a string
+- rating must be 1.0–5.0 or null
+- review_count is the number of reviews/orders (integer) or null
+- If the page shows a CAPTCHA, error message, or no products, return []`,
+            },
+          ],
+        }],
+      }),
+    })
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "")
+      throw new Error(`Claude API ${resp.status}: ${errText}`)
+    }
+
+    const json = await resp.json()
+    const raw  = json.content?.[0]?.text?.trim() ?? "[]"
+    // Extract the first JSON array from the response (Claude may append explanations)
+    const match = raw.match(/\[[\s\S]*?\]/)
+    text = match ? match[0] : "[]"
+  } catch (err: any) {
+    logger.warn("[BanggoodScraper] Claude Vision API error", { category, error: err.message })
+    return []
+  }
+
+  try {
+    const arr = JSON.parse(text)
+    if (!Array.isArray(arr)) return []
+
+    return arr.slice(0, 10).map((p: any, idx: number) => ({
+      asin:         null,
+      product_name: String(p.product_name ?? "").trim(),
+      category,
+      rank:         idx + 1,
+      price:        typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null,
+      rating:       typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
+      review_count: typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
+      image_url:    null,
+      product_url:  null,
+      badge:        "Best Seller",
+      brand:        p.brand ? String(p.brand).trim() || null : null,
+      marketplace:  "Banggood",
+    })).filter(p => p.product_name.length >= 3)
+  } catch (err: any) {
+    logger.warn("[BanggoodScraper] Vision JSON parse failed", { category, raw: text.slice(0, 200), error: err.message })
+    return []
+  }
+}
 
 // ─── Scrape one Banggood page ────────────────────────────────────────────────
 
 async function scrapeCategoryPage(
   url:      string,
   category: string,
-  page:     import("playwright").Page
+  page:     import("playwright").Page,
 ): Promise<AmazonProduct[]> {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 })
@@ -36,123 +134,27 @@ async function scrapeCategoryPage(
     return []
   }
 
-  // Scroll aggressively to trigger lazy-loading of product cards
-  try {
-    for (let i = 0; i < 8; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1200))
-      await page.waitForTimeout(800)
-    }
-    // Scroll back to top so first products are included, then wait for JS price updates.
-    // Flash sale prices on Banggood update ~1s after page load — 5s gives them time to settle.
-    await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(5000)
-  } catch { /* ignore */ }
-
   const pageTitle = await page.title().catch(() => "")
   if (/captcha|robot|access.denied|verify/i.test(pageTitle)) {
     logger.warn("[BanggoodScraper] Bot challenge", { category })
     return []
   }
 
-  const products = await page.evaluate((cat: string) => {
-    const results: any[] = []
-
-    // Banggood card selectors
-    let cards: Element[] = Array.from(document.querySelectorAll(
-      ".card-item, .goods-item, [class*='product-item'], [class*='goodsItem']"
-    ))
-
-    // Fallback: any link to a product page
-    if (cards.length === 0) {
-      const links = Array.from(document.querySelectorAll("a[href*='.html'][href*='-p-']"))
-        .map(a => a.closest("li, div[class]") ?? a.parentElement ?? a)
-        .filter((el, i, arr) => arr.indexOf(el) === i)
-      cards.push(...links)
+  // Scroll to trigger lazy-loaded product cards, then return to top
+  try {
+    for (let i = 0; i < 6; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1200))
+      await page.waitForTimeout(700)
     }
+    await page.evaluate(() => window.scrollTo(0, 0))
+    // 5s wait: flash sale JS on Banggood fires ~1s after page load — this ensures
+    // all prices have updated before we take the screenshot
+    await page.waitForTimeout(5000)
+  } catch { /* ignore */ }
 
-    cards.slice(0, 48).forEach((el, idx) => {
-      // Link + product ID
-      const linkEl = (
-        el.querySelector("a.goods-title-link, a[class*='title'], a[href*='-p-']") ??
-        el.querySelector("a[href*='.html']")
-      ) as HTMLAnchorElement | null
-
-      const href = linkEl?.getAttribute("href") ?? ""
-      const product_url = href.startsWith("http") ? href
-        : href ? `https://www.banggood.com${href}` : null
-
-      const productId = href.match(/-p-(\d+)\.html/)?.[1] ?? null
-
-      // Title
-      const titleEl =
-        el.querySelector(".goods-title-link, [class*='goods-title'], [class*='product-title'], [class*='title']") ??
-        linkEl
-      const product_name = titleEl?.getAttribute("title") ??
-        titleEl?.textContent?.trim() ?? ""
-      if (!product_name || product_name.length < 3) return
-
-      // Price — scan all leaf nodes for exact $XX.XX tokens, skip crossed-out (price-old)
-      // elements, then take the MINIMUM. When both regular ($30.49) and flash ($26.49)
-      // prices are in the DOM, Math.min automatically picks the flash/sale price.
-      let price: number | null = null
-      const leafPrices: number[] = []
-      for (const node of Array.from(el.querySelectorAll("*"))) {
-        if (node.children.length > 0) continue  // leaf nodes only
-        // Skip crossed-out original price elements
-        const cls = (node as Element).className ?? ""
-        if (typeof cls === "string" && (cls.includes("old") || cls.includes("Old"))) continue
-        const t = (node.textContent ?? "").trim()
-        if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
-        const n = parseFloat(t.replace(/[^\d.]/g, ""))
-        if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
-      }
-      if (leafPrices.length > 0) price = Math.min(...leafPrices)
-
-      // Image
-      const imgEl = el.querySelector("img.img-origin, img[class*='goods-img'], img")
-      const image_url =
-        imgEl?.getAttribute("data-src")  ??
-        imgEl?.getAttribute("src")       ??
-        null
-
-      // Sold / orders count
-      let review_count: number | null = null
-      const soldEl = el.querySelector("[class*='sold'], [class*='orders'], [class*='review']")
-      if (soldEl) {
-        const m = (soldEl.textContent ?? "").replace(/,/g, "").match(/(\d+)/)
-        if (m) review_count = parseInt(m[1], 10)
-      }
-
-      // Rating
-      let rating: number | null = null
-      const ratingEl = el.querySelector("[class*='star'], [class*='rate'], [class*='rating']")
-      if (ratingEl) {
-        const m = (ratingEl.getAttribute("style") ?? ratingEl.textContent ?? "").match(/(\d+\.?\d*)/)
-        if (m) { const v = parseFloat(m[1]); if (v > 0 && v <= 5) rating = v }
-      }
-
-      // Brand
-      const brandEl = el.querySelector("[class*='brand'], [class*='Brand']")
-      const brand   = brandEl?.textContent?.trim() || null
-
-      results.push({
-        asin:         productId,
-        product_name,
-        category:     cat,
-        rank:         idx + 1,
-        price,
-        rating,
-        review_count,
-        image_url:    image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
-        product_url,
-        badge:        "Best Seller",
-        brand,
-        marketplace:  "Banggood",
-      })
-    })
-
-    return results
-  }, category)
+  // Take a JPEG viewport screenshot and send to Claude Vision
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
+  const products   = await extractWithVision(screenshot, category)
 
   logger.info("[BanggoodScraper] Category done", { category, count: products.length })
   return products
@@ -164,7 +166,7 @@ export async function scrapeBanggoodBestSellers(opts: {
   category?: string
   limit?:    number
 }): Promise<AmazonProduct[]> {
-  const { category = "All", limit = 100 } = opts
+  const { category = "All", limit = 70 } = opts
 
   const targets = category === "All"
     ? BANGGOOD_CATEGORIES
@@ -175,15 +177,16 @@ export async function scrapeBanggoodBestSellers(opts: {
     return []
   }
 
-  logger.info("[BanggoodScraper] Starting scrape", { categories: targets.map(t => t.label) })
+  logger.info("[BanggoodScraper] Starting scrape (Vision mode)", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args:     ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
   const context = await browser.newContext({
-    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale:    "en-US",
+    userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    locale:           "en-US",
+    viewport:         { width: 1440, height: 900 },
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
   const page = await context.newPage()
@@ -194,7 +197,7 @@ export async function scrapeBanggoodBestSellers(opts: {
     for (const target of targets) {
       const products = await scrapeCategoryPage(target.url, target.label, page)
       allProducts.push(...products)
-      await new Promise(r => setTimeout(r, 1200 + Math.random() * 600))
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 700))
     }
   } finally {
     await browser.close()
@@ -202,7 +205,7 @@ export async function scrapeBanggoodBestSellers(opts: {
 
   const seen  = new Set<string>()
   const dedup = allProducts.filter(p => {
-    const key = p.asin ?? p.product_name
+    const key = p.product_name
     if (seen.has(key)) return false
     seen.add(key)
     return true
