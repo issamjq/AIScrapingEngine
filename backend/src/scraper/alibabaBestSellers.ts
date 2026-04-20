@@ -28,7 +28,7 @@ const CLAUDE_API      = "https://api.anthropic.com/v1/messages"
 // ─── Claude Vision price extraction ──────────────────────────────────────────
 
 async function extractWithVision(
-  screenshot: Buffer,
+  screenshots: Buffer[],
 ): Promise<Array<{
   product_name:   string
   price:          number | null
@@ -42,7 +42,12 @@ async function extractWithVision(
     return []
   }
 
-  const base64 = screenshot.toString("base64")
+  // Build content blocks: one image block per screenshot + one text instruction
+  const imageBlocks = screenshots.map(buf => ({
+    type:   "image",
+    source: { type: "base64", media_type: "image/jpeg", data: buf.toString("base64") },
+  }))
+
   let text = "[]"
 
   try {
@@ -55,30 +60,27 @@ async function extractWithVision(
       },
       body: JSON.stringify({
         model:      "claude-haiku-4-5-20251001",
-        max_tokens: 2500,
+        max_tokens: 4000,
         messages: [{
           role:    "user",
           content: [
-            {
-              type:   "image",
-              source: { type: "base64", media_type: "image/jpeg", data: base64 },
-            },
+            ...imageBlocks,
             {
               type: "text",
-              text: `This is the AliExpress Super Deals page showing discounted products.
-Extract ALL visible products in order (top-left → bottom-right).
+              text: `These are ${screenshots.length} screenshots of the AliExpress Super Deals / Recommended section scrolled through.
+Extract ALL visible products across ALL screenshots (skip duplicates).
 Return ONLY a valid JSON array — no markdown fences, no explanation:
-[{"product_name":"...","price":2.80,"original_price":3.57,"rating":4.6,"review_count":5000}]
+[{"product_name":"...","price":2.80,"original_price":3.57,"rating":null,"review_count":null}]
 
 Rules:
-- price = the main current sale price shown on the card (bold, prominent)
-- original_price = the crossed-out / strikethrough price — null if none shown
+- price = the current sale price shown on the card
+- original_price = the crossed-out / strikethrough price — null if none
 - original_price MUST be higher than price, otherwise null
-- IGNORE any "Welcome deal" special price (usually a very low price like $0.99 shown in a banner) — use the regular sale price instead
 - Both prices are numbers not strings
+- Skip any product that appears in multiple screenshots (no duplicates)
 - rating: 1.0–5.0 or null
-- review_count: integer (e.g. 5000 for "5,000+ sold") or null
-- If page shows CAPTCHA or no products, return []`,
+- review_count: integer or null
+- If no products visible return []`,
             },
           ],
         }],
@@ -208,33 +210,41 @@ async function scrapeDealsPage(
 
   logger.info("[AlibabaScraper] DOM cards found", { count: domCards.length })
 
-  // ── Vision: take full-page screenshot → Claude extracts names + prices ─────
-  // Viewport only (NOT fullPage) — fullPage makes an 11,000px tall image where
-  // products are tiny thumbnails. Viewport captures the first fold cleanly.
-  const screenshot   = await page.screenshot({ type: "jpeg", quality: 85, fullPage: false })
+  // ── Vision: scroll through Recommended section, take 3 viewport screenshots ─
+  // Today's deals = horizontal carousel (only 6 products, arrow not clickable).
+  // Recommended section below = grid layout with 12 products per viewport.
+  // 3 screenshots × 12 products = ~30 products sent to Claude in one API call.
+  const screenshots: Buffer[] = []
 
-  // Save snapshot locally so you can inspect what Claude is seeing
-  const fs   = await import("fs")
-  const path = await import("path")
-  const snapPath = path.join(process.cwd(), "aliexpress-snapshot.jpg")
-  fs.writeFileSync(snapPath, screenshot)
-  logger.info("[AlibabaScraper] Snapshot saved", { path: snapPath })
+  // Scroll past carousel + category tabs into the Recommended product grid
+  await page.evaluate(() => window.scrollTo(0, 700))
+  await page.waitForTimeout(1200)
+  screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
 
-  const visionResult = await extractWithVision(screenshot)
+  await page.evaluate(() => window.scrollBy(0, 900))
+  await page.waitForTimeout(1000)
+  screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
+
+  await page.evaluate(() => window.scrollBy(0, 900))
+  await page.waitForTimeout(1000)
+  screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
+
+  logger.info("[AlibabaScraper] Screenshots taken", { count: screenshots.length })
+
+  const visionResult = await extractWithVision(screenshots)
 
   logger.info("[AlibabaScraper] Vision extracted", { count: visionResult.length })
 
-  // ── Merge by index: DOM[i] supplies URL/image, Vision[i] supplies name/price ─
-  const count    = Math.min(domCards.length, visionResult.length)
+  // ── Vision results are from Recommended section (scrolled), DOM cards from
+  // the initial page load. Index alignment is unreliable — use Vision as primary
+  // source and assign DOM cards by index for URL/image where available.
   const products: AmazonProduct[] = []
 
-  for (let i = 0; i < count; i++) {
-    const dom = domCards[i]
-    const vis = visionResult[i]
-    if (!vis.product_name || vis.product_name.length < 3) continue
-
+  visionResult.forEach((vis, i) => {
+    if (!vis.product_name || vis.product_name.length < 3) return
+    const dom = domCards[i] ?? null
     products.push({
-      asin:           dom.asin,
+      asin:           dom?.asin ?? null,
       product_name:   vis.product_name,
       category:       "Super Deals",
       rank:           i + 1,
@@ -242,13 +252,13 @@ async function scrapeDealsPage(
       original_price: vis.original_price,
       rating:         vis.rating,
       review_count:   vis.review_count,
-      image_url:      dom.image_url,
-      product_url:    dom.product_url,
+      image_url:      dom?.image_url ?? null,
+      product_url:    dom?.product_url ?? null,
       badge:          "Best Seller",
-      brand:          dom.brand,
+      brand:          dom?.brand ?? null,
       marketplace:    "Alibaba",
     })
-  }
+  })
 
   const pricesFound = products.filter(p => p.price !== null).length
   logger.info("[AlibabaScraper] Merge done", { total: products.length, pricesFound })
