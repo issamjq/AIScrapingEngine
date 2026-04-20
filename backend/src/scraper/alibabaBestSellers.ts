@@ -1,17 +1,23 @@
 /**
- * AliExpress Best Sellers — Playwright scraper.
+ * AliExpress Best Sellers — Playwright (DOM) + Claude Vision (prices only).
  *
- * Scrapes aliexpress.com category pages sorted by total orders (best selling).
- * Extracts product data from window.runParams embedded in the page.
+ * Hybrid approach:
+ *  1. DOM  → extracts product name, URL, image, reviews, rank (all correct)
+ *  2. Vision → reads prices from the screenshot (sale + crossed-out original)
+ *  3. Merge  → prices injected into DOM products by position index
+ *
+ * This avoids price extraction bugs (wrong class names, CSS not rendered)
+ * while keeping Vision usage minimal (1 call per category = 8 calls total).
+ *
+ * Runs via local home-PC server (LOCAL_SCRAPER_URL) — AliExpress blocks Render IPs.
  * Data stored in amazon_trending with marketplace = "Alibaba".
- *
- * If LOCAL_SCRAPER_URL env var is set, delegates to the local home-PC server
- * (residential IP) instead of running Playwright on Render (datacenter IP blocked).
  */
 
 import { chromium } from "playwright"
 import { logger }   from "../utils/logger"
 import { AmazonProduct } from "./amazonBestSellers"
+
+const CLAUDE_API = "https://api.anthropic.com/v1/messages"
 
 // ─── AliExpress category search queries ──────────────────────────────────────
 
@@ -25,6 +31,77 @@ const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
   { label: "Sports & Outdoor",  query: "sports outdoor fitness" },
   { label: "Computer & Office", query: "computer office accessories" },
 ]
+
+// ─── Vision: extract prices only from screenshot ─────────────────────────────
+
+async function extractPricesWithVision(
+  screenshot: Buffer,
+  count: number,
+): Promise<{ price: number | null; original_price: number | null }[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) return []
+
+  const base64 = screenshot.toString("base64")
+
+  try {
+    const resp = await fetch(CLAUDE_API, {
+      method:  "POST",
+      headers: {
+        "x-api-key":         apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+      },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 800,
+        messages: [{
+          role:    "user",
+          content: [
+            {
+              type:   "image",
+              source: { type: "base64", media_type: "image/jpeg", data: base64 },
+            },
+            {
+              type: "text",
+              text: `This is an AliExpress search results page. Extract the prices for the first ${count} product cards visible, in order from top-left to bottom-right.
+
+Return ONLY a JSON array with exactly ${count} entries (use null if a product's price is not visible):
+[{"price": 3.45, "original_price": 5.99}, {"price": 12.01, "original_price": null}, ...]
+
+Rules:
+- "price" = the current sale price (bold, colored — what the customer pays)
+- "original_price" = the crossed-out original price (gray, strikethrough line through it) — null if no sale
+- Both must be numbers (USD), not strings
+- original_price must always be higher than price, otherwise set it to null`,
+            },
+          ],
+        }],
+      }),
+    })
+
+    if (!resp.ok) throw new Error(`Claude API ${resp.status}`)
+    const json = await resp.json()
+    const raw  = json.content?.[0]?.text?.trim() ?? "[]"
+    const match = raw.match(/\[[\s\S]*\]/)
+    if (!match) return []
+
+    const arr = JSON.parse(match[0])
+    if (!Array.isArray(arr)) return []
+
+    return arr.map((p: any) => {
+      const price          = typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null
+      const original_price = typeof p.original_price === "number" && p.original_price > 0 && p.original_price < 50000
+        ? p.original_price : null
+      return {
+        price,
+        original_price: original_price && price && original_price > price ? original_price : null,
+      }
+    })
+  } catch (err: any) {
+    logger.warn("[AlibabaScraper] Vision price extraction failed", { error: err.message })
+    return []
+  }
+}
 
 // ─── Scrape one category page ─────────────────────────────────────────────────
 
@@ -61,64 +138,7 @@ async function scrapeCategoryPage(
     await page.waitForTimeout(2000)
   } catch { /* ignore */ }
 
-  // Try window.runParams first (AliExpress embeds all product data here)
-  const products = await page.evaluate((cat: string) => {
-    const rp = (window as any).runParams
-    if (!rp) return null
-
-    const mods: any = rp?.data?.result?.mods ?? rp?.mods ?? {}
-    const items: any[] = mods?.itemList?.content ?? mods?.list?.content ?? []
-    if (items.length === 0) return null
-
-    return items.slice(0, 48).map((item: any, idx: number) => {
-      const title: string = item.title ?? item.subject ?? ""
-      if (!title) return null
-
-      const saleInfo     = item.prices?.salePrice ?? item.price ?? {}
-      const originalInfo = item.prices?.originalPrice ?? {}
-      const rawPrice     = saleInfo.minAmount ?? saleInfo.price ?? null
-      const rawOriginal  = originalInfo.minAmount ?? originalInfo.price ?? null
-      const price: number | null          = rawPrice    != null ? parseFloat(String(rawPrice))    || null : null
-      const origPrice: number | null      = rawOriginal != null ? parseFloat(String(rawOriginal)) || null : null
-      const original_price: number | null = origPrice && price && origPrice > price ? origPrice : null
-
-      const imgRaw: string = item.image?.imgUrl ?? item.imageUrl ?? ""
-      const image_url = imgRaw ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw) : null
-
-      const tradeStr: string = item.trade?.realTradeDesc ?? item.trade?.tradeDesc ?? ""
-      const tm = tradeStr.replace(/[,+]/g, "").match(/(\d+)/)
-      const review_count: number | null = tm ? parseInt(tm[1], 10) : null
-
-      const brand: string | null = item.storeInfo?.storeName ?? item.store?.storeName ?? null
-
-      const urlRaw: string = item.productDetailUrl ?? item.detailUrl ?? ""
-      const product_url = urlRaw.startsWith("//") ? `https:${urlRaw}` : urlRaw.startsWith("http") ? urlRaw
-        : `https://www.aliexpress.com/item/${item.productId ?? ""}.html`
-
-      return {
-        asin:           String(item.productId ?? item.id ?? "").trim() || null,
-        product_name:   title,
-        category:       cat,
-        rank:           idx + 1,
-        price,
-        original_price,
-        rating:         item.evaluation?.starRating != null ? parseFloat(item.evaluation.starRating) : null,
-        review_count,
-        image_url,
-        product_url,
-        badge:          review_count && review_count >= 1000 ? "Best Seller" : null,
-        brand,
-        marketplace:    "Alibaba",
-      }
-    }).filter(Boolean)
-  }, category) as AmazonProduct[] | null
-
-  if (products && products.length > 0) {
-    logger.info("[AlibabaScraper] runParams hit", { query: category, count: products.length })
-    return products
-  }
-
-  // Fallback: DOM extraction for product cards
+  // ── Step 1: DOM extraction (everything except price) ──────────────────────
   const domProducts = await page.evaluate((cat: string) => {
     const results: any[] = []
 
@@ -132,57 +152,18 @@ async function scrapeCategoryPage(
         .filter((el, i, arr) => arr.indexOf(el) === i)
     }
 
-    cards.slice(0, 48).forEach((el, idx) => {
+    cards.slice(0, 24).forEach((el, idx) => {
       const linkEl = (
         el.tagName === "A" ? el : el.querySelector("a[href*='/item/']")
       ) as HTMLAnchorElement | null
       const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
       if (!href.includes("/item/")) return
       const product_url = href.startsWith("//") ? `https:${href}` : href
-      const productId = href.match(/\/item\/(\d+)/)?.[1] ?? null
+      const productId   = href.match(/\/item\/(\d+)/)?.[1] ?? null
 
-      const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
+      const titleEl      = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
       const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
       if (!product_name || product_name.length < 3) return
-
-      // AliExpress class convention: [component]--current--[hash] = sale price
-      //                               [component]--del--[hash] or --origin = crossed-out original
-      const parsePrice = (el: Element | null): number | null => {
-        if (!el) return null
-        const t = (el.textContent ?? "").replace(/[^\d.]/g, "")
-        const n = parseFloat(t)
-        return isFinite(n) && n > 0.01 && n < 50000 ? n : null
-      }
-
-      const currentEl   = el.querySelector("[class*='--current--'], [class*='price-current'], [class*='sale-price']")
-      const originalEl  = el.querySelector("[class*='--del--'], [class*='--origin'], [class*='price-origin'], [class*='price-del'], [class*='old-price'], del")
-
-      let price: number | null          = parsePrice(currentEl)
-      let original_price: number | null = parsePrice(originalEl)
-
-      // Fallback: CSS strikethrough detection if class selectors found nothing
-      if (price === null) {
-        const salePrices: number[] = []
-        const strikePrices: number[] = []
-        for (const node of Array.from(el.querySelectorAll("*"))) {
-          if (node.children.length > 0) continue
-          const t = (node.textContent ?? "").trim()
-          if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
-          const n = parseFloat(t.replace(/[^\d.]/g, ""))
-          if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
-          const style = window.getComputedStyle(node as Element)
-          const isStrike = style.textDecoration.includes("line-through") ||
-                           style.textDecorationLine.includes("line-through")
-          if (isStrike) strikePrices.push(n); else salePrices.push(n)
-        }
-        price          = salePrices.length > 0 ? Math.min(...salePrices)
-                       : strikePrices.length > 0 ? Math.min(...strikePrices) : null
-        original_price = strikePrices.length > 0 && salePrices.length > 0
-                       ? Math.max(...strikePrices) : null
-      }
-
-      // Sanity check — original must be higher than sale
-      if (original_price !== null && price !== null && original_price <= price) original_price = null
 
       const imgEl     = el.querySelector("img")
       const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
@@ -198,26 +179,47 @@ async function scrapeCategoryPage(
       const brand   = brandEl?.textContent?.trim() || null
 
       results.push({
-        asin:           productId,
+        asin:         productId,
         product_name,
-        category:       cat,
-        rank:           idx + 1,
-        price,
-        original_price,
-        rating:         null,
-        review_count,
-        image_url,
+        category:     cat,
+        rank:         idx + 1,
+        image_url:    image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
         product_url,
-        badge:          null,
+        review_count,
         brand,
-        marketplace:    "Alibaba",
       })
     })
     return results
   }, category)
 
-  logger.info("[AlibabaScraper] DOM fallback", { query: category, count: domProducts.length })
-  return domProducts
+  if (domProducts.length === 0) {
+    logger.info("[AlibabaScraper] DOM found no products", { category })
+    return []
+  }
+
+  // ── Step 2: Vision extracts prices from screenshot ────────────────────────
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
+  const prices     = await extractPricesWithVision(screenshot, domProducts.length)
+
+  // ── Step 3: Merge prices into DOM products ────────────────────────────────
+  const merged: AmazonProduct[] = domProducts.map((p, idx) => ({
+    asin:           p.asin,
+    product_name:   p.product_name,
+    category,
+    rank:           idx + 1,
+    price:          prices[idx]?.price          ?? null,
+    original_price: prices[idx]?.original_price ?? null,
+    rating:         null,
+    review_count:   p.review_count,
+    image_url:      p.image_url,
+    product_url:    p.product_url,
+    badge:          p.review_count && p.review_count >= 1000 ? "Best Seller" : null,
+    brand:          p.brand,
+    marketplace:    "Alibaba",
+  }))
+
+  logger.info("[AlibabaScraper] Category done", { category, products: merged.length, pricesFound: prices.filter(p => p.price !== null).length })
+  return merged
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -235,7 +237,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     try {
       const resp = await fetch(
         `${localUrl}/scrape-aliexpress?category=${encodeURIComponent(category)}&limit=${limit}`,
-        { method: "POST", signal: AbortSignal.timeout(300_000) }  // 5 min timeout
+        { method: "POST", signal: AbortSignal.timeout(300_000) }
       )
       if (!resp.ok) throw new Error(`Local scraper responded ${resp.status}`)
       const data = await resp.json() as { products: AmazonProduct[] }
@@ -243,7 +245,6 @@ export async function scrapeAlibabaBestSellers(opts: {
       return data.products
     } catch (err: any) {
       logger.error("[AlibabaScraper] Local scraper failed, falling back", { error: err.message })
-      // Falls through to Playwright below
     }
   }
 
@@ -256,7 +257,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     return []
   }
 
-  logger.info("[AlibabaScraper] Starting scrape", { categories: targets.map(t => t.label) })
+  logger.info("[AlibabaScraper] Starting scrape (DOM+Vision hybrid)", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
@@ -265,6 +266,7 @@ export async function scrapeAlibabaBestSellers(opts: {
   const context = await browser.newContext({
     userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     locale:           "en-US",
+    viewport:         { width: 1440, height: 900 },
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
   await context.addCookies([
