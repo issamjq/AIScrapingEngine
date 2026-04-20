@@ -1,9 +1,10 @@
 /**
  * AliExpress Best Sellers — Playwright + Claude Vision scraper.
  *
- * Same pattern as Banggood: navigate, scroll, screenshot, send to Claude Vision.
- * Vision prompt explicitly asks for sale price vs crossed-out original price.
- * DOM-based extraction returns 0 on Render (datacenter IPs blocked by AliExpress).
+ * Navigates AliExpress search pages sorted by total orders, scrolls to load
+ * products, then takes a viewport screenshot and sends it to Claude Vision
+ * (haiku) for extraction. Vision reads the actual displayed sale price —
+ * immune to window.runParams field changes and DOM structure renames.
  *
  * Data stored in amazon_trending with marketplace = "Alibaba".
  */
@@ -14,7 +15,7 @@ import { AmazonProduct }  from "./amazonBestSellers"
 
 const CLAUDE_API = "https://api.anthropic.com/v1/messages"
 
-// ─── AliExpress category search URLs ─────────────────────────────────────────
+// ─── AliExpress category search queries ──────────────────────────────────────
 
 const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
   { label: "Electronics",       query: "electronics gadgets" },
@@ -52,7 +53,7 @@ async function extractWithVision(
       },
       body: JSON.stringify({
         model:      "claude-haiku-4-5-20251001",
-        max_tokens: 2000,
+        max_tokens: 1500,
         messages: [{
           role:    "user",
           content: [
@@ -62,21 +63,16 @@ async function extractWithVision(
             },
             {
               type: "text",
-              text: `This is an AliExpress search results page (category: ${category}).
+              text: `This is an AliExpress search results page (category: ${category}) sorted by most orders.
 Extract the TOP 10 best-selling products clearly visible on screen.
 Return ONLY a valid JSON array — no markdown fences, no explanation:
-[{"product_name":"...","brand":"...","price":26.49,"original_price":34.99,"rating":4.7,"review_count":4912}]
+[{"product_name":"...","brand":"...","price":62.02,"rating":4.6,"review_count":72}]
 
-PRICE RULES (very important):
-- AliExpress shows TWO prices on sale items: a SALE price (lower, often in red/orange) and an ORIGINAL price (higher, crossed out with a line through it)
-- "price" = the SALE price (the lower number — the one customers actually pay)
-- "original_price" = the CROSSED-OUT price (the higher number with a strikethrough line)
-- If only ONE price is shown, put it in "price" and set "original_price" to null
-- Both must be numbers, not strings
-
-Other rules:
+Rules:
+- Use the SALE price (the bold/highlighted price, not the crossed-out original)
+- price must be a number (USD), not a string
 - rating must be 1.0–5.0 or null
-- review_count is orders/reviews count (integer) or null
+- review_count is orders sold count (integer) or null
 - If the page shows a CAPTCHA, error, or no products, return []`,
             },
           ],
@@ -102,27 +98,21 @@ Other rules:
     const arr = JSON.parse(text)
     if (!Array.isArray(arr)) return []
 
-    return arr.slice(0, 10).map((p: any, idx: number) => {
-      const price         = typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null
-      const original_price = typeof p.original_price === "number" && p.original_price > 0 && p.original_price < 50000
-        ? p.original_price : null
-
-      return {
-        asin:           null,
-        product_name:   String(p.product_name ?? "").trim(),
-        category,
-        rank:           idx + 1,
-        price,
-        original_price: original_price && price && original_price > price ? original_price : null,
-        rating:         typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
-        review_count:   typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
-        image_url:      null,
-        product_url:    null,
-        badge:          "Best Seller",
-        brand:          p.brand ? String(p.brand).trim() || null : null,
-        marketplace:    "Alibaba",
-      }
-    }).filter((p: AmazonProduct) => p.product_name.length >= 3)
+    return arr.slice(0, 10).map((p: any, idx: number) => ({
+      asin:           null,
+      product_name:   String(p.product_name ?? "").trim(),
+      category,
+      rank:           idx + 1,
+      price:          typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null,
+      original_price: null,
+      rating:         typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
+      review_count:   typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
+      image_url:      null,
+      product_url:    null,
+      badge:          null,
+      brand:          p.brand ? String(p.brand).trim() || null : null,
+      marketplace:    "Alibaba",
+    })).filter((p: AmazonProduct) => p.product_name.length >= 3)
   } catch (err: any) {
     logger.warn("[AlibabaScraper] Vision JSON parse failed", { category, raw: text.slice(0, 200), error: err.message })
     return []
@@ -147,17 +137,24 @@ async function scrapeCategoryPage(
     return []
   }
 
+  // Check for bot challenge
+  const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) ?? "").catch(() => "")
+  if (/captcha|robot|access.denied|verify you/i.test(bodyText)) {
+    logger.warn("[AlibabaScraper] Bot challenge detected", { query })
+    return []
+  }
+
   // Scroll to trigger lazy-loaded product cards, then return to top
   try {
-    for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1200))
-      await page.waitForTimeout(700)
+    for (let i = 0; i < 4; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1000))
+      await page.waitForTimeout(600)
     }
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(2000)
   } catch { /* ignore */ }
 
-  // Take a JPEG screenshot and send to Claude Vision
+  // Take a JPEG viewport screenshot and send to Claude Vision
   const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
   const products   = await extractWithVision(screenshot, category)
 
@@ -171,7 +168,7 @@ export async function scrapeAlibabaBestSellers(opts: {
   category?: string
   limit?:    number
 }): Promise<AmazonProduct[]> {
-  const { category = "All", limit = 100 } = opts
+  const { category = "All", limit = 80 } = opts
 
   const targets = category === "All"
     ? ALIBABA_CATEGORIES
@@ -186,7 +183,7 @@ export async function scrapeAlibabaBestSellers(opts: {
 
   const browser = await chromium.launch({
     headless: true,
-    args:     ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
   const context = await browser.newContext({
     userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -194,7 +191,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     viewport:         { width: 1440, height: 900 },
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
-  // Force global English / USD — prevents Arabic redirect on non-US IPs
+  // Force global English / USD
   await context.addCookies([
     { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
     { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
@@ -207,7 +204,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     for (const target of targets) {
       const products = await scrapeCategoryPage(target.query, target.label, page)
       allProducts.push(...products)
-      await new Promise(r => setTimeout(r, 1500 + Math.random() * 700))
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 500))
     }
   } finally {
     await browser.close()
