@@ -461,7 +461,7 @@ function productLink(p: { product_url: string | null; asin: string | null; produ
   switch (p.marketplace) {
     case "Amazon":     return p.asin ? `https://www.amazon.com/dp/${p.asin}` : `https://www.amazon.com/s?k=${q}`
     case "iHerb":      return `https://www.iherb.com/search?q=${q}`
-    case "Alibaba":    return `https://www.aliexpress.com/wholesale?SearchText=${q}`
+    case "Alibaba":    return p.product_url ?? `https://www.aliexpress.us/p/deal/superDeals.html`
     case "Banggood":   return `https://www.banggood.com/search/${q}.html`
     case "eBay":       return `https://www.ebay.com/sch/i.html?_nkw=${q}`
     default:           return `https://www.google.com/search?q=${q}`
@@ -473,7 +473,7 @@ function productLink(p: { product_url: string | null; asin: string | null; produ
 const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
   Amazon:  ["All", "Electronics", "Beauty", "Home & Kitchen", "Health", "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"],
   eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
-  Alibaba: ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
+  Alibaba: ["Super Deals"],
   iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
   Banggood: ["All", "Electronics", "Phone & Gadgets", "Computers", "Home & Garden", "Sports & Outdoors", "Toys & Hobbies", "Beauty & Health"],
 }
