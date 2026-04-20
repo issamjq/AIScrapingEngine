@@ -163,8 +163,8 @@ async function scrapeCategoryPage(
   // Check for bot challenge
   const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) ?? "").catch(() => "")
   logger.info("[AlibabaScraper] Page body preview", { category, text: bodyText.slice(0, 150) })
-  if (/captcha|robot|access.denied|verify you/i.test(bodyText)) {
-    logger.warn("[AlibabaScraper] Bot challenge detected", { query })
+  if (/captcha|robot|access.denied|verify you|unusual traffic|slide to verify/i.test(bodyText)) {
+    logger.warn("[AlibabaScraper] Bot challenge detected — IP flagged, wait 20-30 min", { query })
     return []
   }
 
