@@ -159,7 +159,21 @@ async function scrapeCategoryPage(
     return []
   }
 
+  // Debug: if no prices found, log the actual class names of price-like elements in the first card
   const pricesFound = domProducts.filter((p: any) => p.price !== null).length
+  if (pricesFound === 0) {
+    const priceDebug = await page.evaluate(() => {
+      const card = document.querySelector("a[href*='/item/']")?.closest("[class*='card'], [class*='item'], li") ?? document.querySelector("a[href*='/item/']")?.parentElement
+      if (!card) return "no card found"
+      // Find all elements that contain a dollar sign or price-like text
+      const priceEls = Array.from(card.querySelectorAll("*")).filter(el =>
+        /\$[\d]|US \$|\d+\.\d{2}/.test(el.textContent ?? "") && !el.children.length
+      )
+      return priceEls.map(el => ({ class: el.className, text: el.textContent?.trim().slice(0, 30) })).slice(0, 5)
+    }).catch(() => "eval error")
+    logger.info("[AlibabaScraper] Price element debug", { category, priceEls: priceDebug })
+  }
+
   logger.info("[AlibabaScraper] Category done", { category, products: domProducts.length, pricesFound })
 
   return domProducts.map((p: any) => ({
