@@ -64,9 +64,13 @@ async function scrapeCategoryPage(
       const title: string = item.title ?? item.subject ?? ""
       if (!title) return null
 
-      const priceInfo = item.prices?.salePrice ?? item.price ?? {}
-      const rawPrice  = priceInfo.minAmount ?? priceInfo.price ?? null
-      const price: number | null = rawPrice != null ? parseFloat(String(rawPrice)) || null : null
+      const saleInfo     = item.prices?.salePrice ?? item.price ?? {}
+      const originalInfo = item.prices?.originalPrice ?? {}
+      const rawPrice     = saleInfo.minAmount ?? saleInfo.price ?? null
+      const rawOriginal  = originalInfo.minAmount ?? originalInfo.price ?? null
+      const price: number | null          = rawPrice    != null ? parseFloat(String(rawPrice))    || null : null
+      const origPrice: number | null      = rawOriginal != null ? parseFloat(String(rawOriginal)) || null : null
+      const original_price: number | null = origPrice && price && origPrice > price ? origPrice : null
 
       const imgRaw: string = item.image?.imgUrl ?? item.imageUrl ?? ""
       const image_url = imgRaw ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw) : null
@@ -87,7 +91,7 @@ async function scrapeCategoryPage(
         category:       cat,
         rank:           idx + 1,
         price,
-        original_price: null,
+        original_price,
         rating:         item.evaluation?.starRating != null ? parseFloat(item.evaluation.starRating) : null,
         review_count,
         image_url,
