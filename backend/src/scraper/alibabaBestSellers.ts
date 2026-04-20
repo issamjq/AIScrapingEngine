@@ -162,6 +162,7 @@ async function scrapeCategoryPage(
 
   // Check for bot challenge
   const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) ?? "").catch(() => "")
+  logger.info("[AlibabaScraper] Page body preview", { category, text: bodyText.slice(0, 150) })
   if (/captcha|robot|access.denied|verify you/i.test(bodyText)) {
     logger.warn("[AlibabaScraper] Bot challenge detected", { query })
     return []
@@ -171,12 +172,22 @@ async function scrapeCategoryPage(
   try {
     for (let i = 0; i < 5; i++) {
       await page.evaluate(() => window.scrollBy(0, 1200))
-      await page.waitForTimeout(400)
+      await page.waitForTimeout(500)
     }
-    await page.waitForTimeout(800)
+    await page.waitForTimeout(1000)
   } catch { /* ignore */ }
 
   // ── Step 1: DOM extraction (everything except price) ──────────────────────
+  // Debug: log how many cards each strategy finds
+  const selectorDebug = await page.evaluate(() => {
+    const s1 = document.querySelectorAll("a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]").length
+    const s2 = document.querySelectorAll("a[href*='/item/']").length
+    const s3 = Array.from(document.querySelectorAll("li, article")).filter(el => el.querySelector("a[href*='/item/']")).length
+    const allLinks = Array.from(document.querySelectorAll("a[href]")).map(a => (a as HTMLAnchorElement).href).filter(h => h.includes("aliexpress")).slice(0, 5)
+    return { s1, s2, s3, allLinks }
+  }).catch(() => ({ s1: 0, s2: 0, s3: 0, allLinks: [] }))
+  logger.info("[AlibabaScraper] Selector debug", { category, ...selectorDebug })
+
   const domProducts = await page.evaluate((cat: string) => {
     const results: any[] = []
 
@@ -329,32 +340,30 @@ export async function scrapeAlibabaBestSellers(opts: {
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
 
-  // Run up to 4 categories in parallel — cuts ~2.5 min → ~40s (under Cloudflare 100s timeout)
-  const CONCURRENCY = 4
+  // Sequential with fresh context per category — parallel was triggering AliExpress bot detection
   const allProducts: AmazonProduct[] = []
 
   try {
-    for (let i = 0; i < targets.length; i += CONCURRENCY) {
-      const batch = targets.slice(i, i + CONCURRENCY)
-      const batchResults = await Promise.all(batch.map(async target => {
-        const ctx = await browser.newContext({
-          userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          locale:           "en-US",
-          viewport:         { width: 1440, height: 900 },
-          extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
-        })
-        await ctx.addCookies([
-          { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
-          { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
-        ])
-        const pg = await ctx.newPage()
-        try {
-          return await scrapeCategoryPage(target.query, target.label, pg)
-        } finally {
-          await ctx.close()
-        }
-      }))
-      for (const products of batchResults) allProducts.push(...products)
+    for (const target of targets) {
+      const ctx = await browser.newContext({
+        userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        locale:           "en-US",
+        viewport:         { width: 1440, height: 900 },
+        extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+      })
+      await ctx.addCookies([
+        { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
+        { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
+      ])
+      const pg = await ctx.newPage()
+      try {
+        const products = await scrapeCategoryPage(target.query, target.label, pg)
+        allProducts.push(...products)
+      } finally {
+        await ctx.close()
+      }
+      // Small delay between categories
+      await new Promise(r => setTimeout(r, 800 + Math.random() * 400))
     }
   } finally {
     await browser.close()
