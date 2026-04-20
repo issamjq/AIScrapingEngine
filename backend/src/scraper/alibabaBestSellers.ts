@@ -91,18 +91,29 @@ async function scrapeCategoryPage(
       const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
       if (!product_name || product_name.length < 3) return
 
-      // Price — leaf-node scan, collect all $X.XX values, take MINIMUM.
-      // The sale/flash price is always lower than the crossed-out original price,
-      // so Math.min() naturally picks the correct current price.
-      const leafPrices: number[] = []
+      // Price — leaf-node scan with strikethrough detection.
+      // Elements with CSS text-decoration: line-through are the crossed-out original price.
+      // Elements without are the sale/current price.
+      // If both exist → sale price = non-strikethrough, original = strikethrough.
+      // If only one type → use whatever is available.
+      const salePrices: number[] = []
+      const strikePrices: number[] = []
       for (const node of Array.from(el.querySelectorAll("*"))) {
         if (node.children.length > 0) continue
         const t = (node.textContent ?? "").trim()
         if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
         const n = parseFloat(t.replace(/[^\d.]/g, ""))
-        if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
+        if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
+        const style = window.getComputedStyle(node as Element)
+        const isStrike = style.textDecoration.includes("line-through") ||
+                         style.textDecorationLine.includes("line-through")
+        if (isStrike) strikePrices.push(n); else salePrices.push(n)
       }
-      const price: number | null = leafPrices.length > 0 ? Math.min(...leafPrices) : null
+      const price: number | null = salePrices.length > 0
+        ? Math.min(...salePrices)
+        : strikePrices.length > 0 ? Math.min(...strikePrices) : null
+      const original_price: number | null = strikePrices.length > 0 && salePrices.length > 0
+        ? Math.max(...strikePrices) : null
 
       // Image
       const imgEl     = el.querySelector("img")
@@ -128,18 +139,19 @@ async function scrapeCategoryPage(
       const brand   = brandEl?.textContent?.trim() || null
 
       results.push({
-        asin:         productId,
+        asin:           productId,
         product_name,
-        category:     cat,
-        rank:         idx + 1,
+        category:       cat,
+        rank:           idx + 1,
         price,
+        original_price,
         rating,
         review_count,
-        image_url:    image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
+        image_url:      image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
         product_url,
-        badge:        review_count && review_count >= 1000 ? "Best Seller" : null,
+        badge:          review_count && review_count >= 1000 ? "Best Seller" : null,
         brand,
-        marketplace:  "Alibaba",
+        marketplace:    "Alibaba",
       })
     })
 

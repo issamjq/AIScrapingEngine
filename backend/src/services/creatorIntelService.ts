@@ -153,11 +153,11 @@ export async function runAmazonScrape(opts: {
     try {
       await query(
         `INSERT INTO amazon_trending
-           (asin, product_name, category, rank, price, rating, review_count,
+           (asin, product_name, category, rank, price, original_price, rating, review_count,
             image_url, product_url, badge, brand, marketplace, scraped_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
-        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
-         p.review_count, p.image_url, (p as any).product_url,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, (p as any).original_price ?? null,
+         p.rating, p.review_count, p.image_url, (p as any).product_url,
          (p as any).badge, (p as any).brand, p.marketplace]
       )
       inserted++
@@ -185,7 +185,7 @@ export async function getAmazonTrending(opts: {
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = $1 AND category = $2
@@ -203,7 +203,7 @@ export async function getAmazonTrending(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = $1
@@ -294,7 +294,7 @@ export async function getEbayTrending(opts: {
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = 'eBay' AND category = $1
@@ -312,7 +312,7 @@ export async function getEbayTrending(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = 'eBay'
@@ -411,7 +411,7 @@ export async function getIherbTrending(opts: {
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = 'iHerb' AND category = $1
@@ -429,7 +429,7 @@ export async function getIherbTrending(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = 'iHerb'
@@ -506,7 +506,7 @@ export async function getTescoTrending(opts: {
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = 'Tesco' AND category = $1
@@ -524,7 +524,7 @@ export async function getTescoTrending(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = 'Tesco'
@@ -572,11 +572,11 @@ export async function runAlibabaScrape(opts: {
     try {
       await query(
         `INSERT INTO amazon_trending
-           (asin, product_name, category, rank, price, rating, review_count,
+           (asin, product_name, category, rank, price, original_price, rating, review_count,
             image_url, product_url, badge, brand, marketplace, scraped_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
-        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
-         p.review_count, p.image_url, p.product_url, p.badge, p.brand, "Alibaba"]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, p.original_price ?? null,
+         p.rating, p.review_count, p.image_url, p.product_url, p.badge, p.brand, "Alibaba"]
       )
       inserted++
     } catch (err: any) {
@@ -601,7 +601,7 @@ export async function getAlibabaTrending(opts: {
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = 'Alibaba' AND category = $1
@@ -619,7 +619,7 @@ export async function getAlibabaTrending(opts: {
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = 'Alibaba'
@@ -650,11 +650,11 @@ async function insertMarketplaceProducts(
     try {
       await query(
         `INSERT INTO amazon_trending
-           (asin, product_name, category, rank, price, rating, review_count,
+           (asin, product_name, category, rank, price, original_price, rating, review_count,
             image_url, product_url, badge, brand, marketplace, scraped_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12, NOW())`,
-        [p.asin, p.product_name, p.category, p.rank, p.price, p.rating,
-         p.review_count, p.image_url, p.product_url, p.badge, p.brand, marketplace]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, NOW())`,
+        [p.asin, p.product_name, p.category, p.rank, p.price, p.original_price ?? null,
+         p.rating, p.review_count, p.image_url, p.product_url, p.badge, p.brand, marketplace]
       )
       inserted++
     } catch (err: any) {
@@ -677,7 +677,7 @@ async function getMarketplaceTrending(
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM (
          SELECT DISTINCT ON (COALESCE(asin, product_name))
-                asin, product_name, category, rank, price, rating, review_count,
+                asin, product_name, category, rank, price, original_price, rating, review_count,
                 image_url, product_url, badge, brand, marketplace, scraped_at
          FROM amazon_trending
          WHERE marketplace = $1 AND category = $2
@@ -695,7 +695,7 @@ async function getMarketplaceTrending(
             image_url, product_url, badge, brand, marketplace, scraped_at
      FROM (
        SELECT DISTINCT ON (COALESCE(asin, product_name))
-              asin, product_name, category, rank, price, rating, review_count,
+              asin, product_name, category, rank, price, original_price, rating, review_count,
               image_url, product_url, badge, brand, marketplace, scraped_at
        FROM amazon_trending
        WHERE marketplace = $1

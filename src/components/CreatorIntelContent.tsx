@@ -9,18 +9,19 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface AmazonProduct {
-  asin:         string | null
-  product_name: string
-  category:     string | null
-  rank:         number | null
-  price:        string | number | null
-  rating:       string | number | null
-  review_count: string | number | null
-  image_url:    string | null
-  product_url:  string | null
-  badge:        string | null
-  brand:        string | null
-  marketplace:  string
+  asin:           string | null
+  product_name:   string
+  category:       string | null
+  rank:           number | null
+  price:          string | number | null
+  original_price: string | number | null
+  rating:         string | number | null
+  review_count:   string | number | null
+  image_url:      string | null
+  product_url:    string | null
+  badge:          string | null
+  brand:          string | null
+  marketplace:    string
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -926,7 +927,12 @@ export function CreatorIntelContent({ role }: Props) {
                               {p.brand && (
                                 <div><span className="text-gray-400">Brand: </span><span className="text-gray-700">{p.brand}</span></div>
                               )}
-                              <div className="font-semibold text-[#0f1111]">{fmtUSD(p.price)}</div>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-semibold text-[#0f1111]">{fmtUSD(p.price)}</span>
+                                {n(p.original_price) != null && n(p.price) != null && n(p.original_price)! > n(p.price)! && (
+                                  <span className="text-xs text-gray-400 line-through">{fmtUSD(p.original_price)}</span>
+                                )}
+                              </div>
                             </div>
 
                             {/* Badges — use scraped badge; fall back to rank-1=Best Seller while awaiting rescrape */}
