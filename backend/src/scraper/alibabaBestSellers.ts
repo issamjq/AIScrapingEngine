@@ -154,7 +154,7 @@ async function scrapeCategoryPage(
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 })
-    await page.waitForTimeout(4000)
+    await page.waitForTimeout(3000)
   } catch (err: any) {
     logger.warn("[AlibabaScraper] Page load failed", { query, error: err.message })
     return []
@@ -167,55 +167,74 @@ async function scrapeCategoryPage(
     return []
   }
 
-  // Scroll to trigger lazy-loaded product cards, then return to top
+  // Scroll to trigger lazy-loaded product cards
   try {
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 5; i++) {
       await page.evaluate(() => window.scrollBy(0, 1200))
-      await page.waitForTimeout(600)
+      await page.waitForTimeout(400)
     }
-    // Do NOT scroll back to top — fullPage screenshot captures entire page
-    // regardless of scroll position, so order is always top-to-bottom
-    await page.waitForTimeout(1000)
+    await page.waitForTimeout(800)
   } catch { /* ignore */ }
 
   // ── Step 1: DOM extraction (everything except price) ──────────────────────
   const domProducts = await page.evaluate((cat: string) => {
     const results: any[] = []
 
-    let cards: Element[] = Array.from(document.querySelectorAll(
+    // Try multiple selector strategies in order
+    let cards: Element[] = []
+
+    // Strategy 1: known AliExpress card class patterns
+    cards = Array.from(document.querySelectorAll(
       "a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]"
     ))
 
-    if (cards.length === 0) {
-      cards = Array.from(document.querySelectorAll("a[href*='/item/']"))
-        .map(a => a.closest("li, [class*='card'], [class*='item']") ?? a.parentElement ?? a)
-        .filter((el, i, arr) => arr.indexOf(el) === i)
+    // Strategy 2: any element containing a /item/ link (broad fallback)
+    if (cards.length < 3) {
+      const seen = new Set<Element>()
+      document.querySelectorAll("a[href*='/item/']").forEach(a => {
+        const card = a.closest("[class*='card'], [class*='item'], [class*='product'], li") ?? a.parentElement ?? a
+        if (!seen.has(card)) { seen.add(card); cards.push(card) }
+      })
+    }
+
+    // Strategy 3: list items that contain item links
+    if (cards.length < 3) {
+      cards = Array.from(document.querySelectorAll("li, article"))
+        .filter(el => el.querySelector("a[href*='/item/']"))
     }
 
     cards.slice(0, 24).forEach((el, idx) => {
       const linkEl = (
-        el.tagName === "A" ? el : el.querySelector("a[href*='/item/']")
+        el.tagName === "A" && (el as HTMLAnchorElement).href?.includes("/item/")
+          ? el
+          : el.querySelector("a[href*='/item/']")
       ) as HTMLAnchorElement | null
       const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
       if (!href.includes("/item/")) return
       const product_url = href.startsWith("//") ? `https:${href}` : href
       const productId   = href.match(/\/item\/(\d+)/)?.[1] ?? null
 
-      const titleEl      = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
-      const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
+      // Title: try multiple selectors
+      const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name'], [class*='Name']")
+      const product_name = (
+        titleEl?.textContent ??
+        linkEl?.getAttribute("title") ??
+        linkEl?.textContent ??
+        ""
+      ).trim().replace(/\s+/g, " ")
       if (!product_name || product_name.length < 3) return
 
       const imgEl     = el.querySelector("img")
       const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
 
       let review_count: number | null = null
-      const tradeEl = el.querySelector("[class*='trade'], [class*='order'], [class*='sold']")
+      const tradeEl = el.querySelector("[class*='trade'], [class*='order'], [class*='sold'], [class*='Sale']")
       if (tradeEl) {
         const m = (tradeEl.textContent ?? "").replace(/,/g, "").match(/(\d+)/)
         if (m) review_count = parseInt(m[1], 10)
       }
 
-      const brandEl = el.querySelector("[class*='store'], [class*='shop']")
+      const brandEl = el.querySelector("[class*='store'], [class*='shop'], [class*='Store']")
       const brand   = brandEl?.textContent?.trim() || null
 
       results.push({
@@ -303,31 +322,39 @@ export async function scrapeAlibabaBestSellers(opts: {
     return []
   }
 
-  logger.info("[AlibabaScraper] Starting scrape (DOM+Vision hybrid)", { categories: targets.map(t => t.label) })
+  logger.info("[AlibabaScraper] Starting scrape (DOM+Vision hybrid, parallel)", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
-  const context = await browser.newContext({
-    userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    locale:           "en-US",
-    viewport:         { width: 1440, height: 900 },
-    extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
-  })
-  await context.addCookies([
-    { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
-    { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
-  ])
-  const page = await context.newPage()
 
+  // Run up to 4 categories in parallel — cuts ~2.5 min → ~40s (under Cloudflare 100s timeout)
+  const CONCURRENCY = 4
   const allProducts: AmazonProduct[] = []
 
   try {
-    for (const target of targets) {
-      const products = await scrapeCategoryPage(target.query, target.label, page)
-      allProducts.push(...products)
-      await new Promise(r => setTimeout(r, 1500 + Math.random() * 500))
+    for (let i = 0; i < targets.length; i += CONCURRENCY) {
+      const batch = targets.slice(i, i + CONCURRENCY)
+      const batchResults = await Promise.all(batch.map(async target => {
+        const ctx = await browser.newContext({
+          userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          locale:           "en-US",
+          viewport:         { width: 1440, height: 900 },
+          extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
+        })
+        await ctx.addCookies([
+          { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
+          { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
+        ])
+        const pg = await ctx.newPage()
+        try {
+          return await scrapeCategoryPage(target.query, target.label, pg)
+        } finally {
+          await ctx.close()
+        }
+      }))
+      for (const products of batchResults) allProducts.push(...products)
     }
   } finally {
     await browser.close()
