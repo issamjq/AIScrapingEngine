@@ -209,7 +209,17 @@ async function scrapeDealsPage(
   logger.info("[AlibabaScraper] DOM cards found", { count: domCards.length })
 
   // ── Vision: take full-page screenshot → Claude extracts names + prices ─────
-  const screenshot   = await page.screenshot({ type: "jpeg", quality: 80, fullPage: true })
+  // Viewport only (NOT fullPage) — fullPage makes an 11,000px tall image where
+  // products are tiny thumbnails. Viewport captures the first fold cleanly.
+  const screenshot   = await page.screenshot({ type: "jpeg", quality: 85, fullPage: false })
+
+  // Save snapshot locally so you can inspect what Claude is seeing
+  const fs   = await import("fs")
+  const path = await import("path")
+  const snapPath = path.join(process.cwd(), "aliexpress-snapshot.jpg")
+  fs.writeFileSync(snapPath, screenshot)
+  logger.info("[AlibabaScraper] Snapshot saved", { path: snapPath })
+
   const visionResult = await extractWithVision(screenshot)
 
   logger.info("[AlibabaScraper] Vision extracted", { count: visionResult.length })
