@@ -145,25 +145,44 @@ async function scrapeCategoryPage(
       const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
       if (!product_name || product_name.length < 3) return
 
-      // CSS strikethrough detection — separates sale price from crossed-out original
-      const salePrices: number[] = []
-      const strikePrices: number[] = []
-      for (const node of Array.from(el.querySelectorAll("*"))) {
-        if (node.children.length > 0) continue
-        const t = (node.textContent ?? "").trim()
-        if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
-        const n = parseFloat(t.replace(/[^\d.]/g, ""))
-        if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
-        const style = window.getComputedStyle(node as Element)
-        const isStrike = style.textDecoration.includes("line-through") ||
-                         style.textDecorationLine.includes("line-through")
-        if (isStrike) strikePrices.push(n); else salePrices.push(n)
+      // AliExpress class convention: [component]--current--[hash] = sale price
+      //                               [component]--del--[hash] or --origin = crossed-out original
+      const parsePrice = (el: Element | null): number | null => {
+        if (!el) return null
+        const t = (el.textContent ?? "").replace(/[^\d.]/g, "")
+        const n = parseFloat(t)
+        return isFinite(n) && n > 0.01 && n < 50000 ? n : null
       }
-      const price: number | null = salePrices.length > 0
-        ? Math.min(...salePrices)
-        : strikePrices.length > 0 ? Math.min(...strikePrices) : null
-      const original_price: number | null = strikePrices.length > 0 && salePrices.length > 0
-        ? Math.max(...strikePrices) : null
+
+      const currentEl   = el.querySelector("[class*='--current--'], [class*='price-current'], [class*='sale-price']")
+      const originalEl  = el.querySelector("[class*='--del--'], [class*='--origin'], [class*='price-origin'], [class*='price-del'], [class*='old-price'], del")
+
+      let price: number | null          = parsePrice(currentEl)
+      let original_price: number | null = parsePrice(originalEl)
+
+      // Fallback: CSS strikethrough detection if class selectors found nothing
+      if (price === null) {
+        const salePrices: number[] = []
+        const strikePrices: number[] = []
+        for (const node of Array.from(el.querySelectorAll("*"))) {
+          if (node.children.length > 0) continue
+          const t = (node.textContent ?? "").trim()
+          if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
+          const n = parseFloat(t.replace(/[^\d.]/g, ""))
+          if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
+          const style = window.getComputedStyle(node as Element)
+          const isStrike = style.textDecoration.includes("line-through") ||
+                           style.textDecorationLine.includes("line-through")
+          if (isStrike) strikePrices.push(n); else salePrices.push(n)
+        }
+        price          = salePrices.length > 0 ? Math.min(...salePrices)
+                       : strikePrices.length > 0 ? Math.min(...strikePrices) : null
+        original_price = strikePrices.length > 0 && salePrices.length > 0
+                       ? Math.max(...strikePrices) : null
+      }
+
+      // Sanity check — original must be higher than sale
+      if (original_price !== null && price !== null && original_price <= price) original_price = null
 
       const imgEl     = el.querySelector("img")
       const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
