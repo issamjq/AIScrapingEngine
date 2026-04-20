@@ -81,6 +81,7 @@ function mapItem(item: any, category: string, idx: number): AmazonProduct | null
     category,
     rank:         idx + 1,
     price,
+    original_price: null,
     rating:       null,   // eBay has no per-product rating
     review_count: null,
     image_url,

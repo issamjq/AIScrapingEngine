@@ -107,6 +107,7 @@ Rules:
       price:        typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null,
       rating:       typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
       review_count: typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
+      original_price: null,
       image_url:    null,
       product_url:  null,
       badge:        "Best Seller",
