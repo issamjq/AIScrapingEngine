@@ -106,29 +106,21 @@ Rules:
       })
     }
 
-    // Match each DOM product to the best Vision entry by name overlap
+    // Match each DOM product to the best Vision entry by shared words
     const result = new Map<string, { price: number | null; original_price: number | null }>()
     for (const dom of domProducts) {
-      const domNorm = dom.product_name.toLowerCase().replace(/\s+/g, " ").trim()
+      const domWords = new Set(
+        dom.product_name.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2)
+      )
       let bestKey   = ""
       let bestScore = 0
       for (const [vKey] of visionMap) {
-        // Score = length of longest common prefix (after normalizing)
-        const shorter = vKey.length < domNorm.length ? vKey : domNorm.slice(0, vKey.length)
-        let score = 0
-        for (let i = 0; i < Math.min(shorter.length, vKey.length); i++) {
-          if (domNorm[i] === vKey[i]) score++
-          else break
-        }
-        // Fallback: count shared words
-        if (score < 5) {
-          const domWords = new Set(domNorm.split(" ").slice(0, 8))
-          const shared   = vKey.split(" ").filter(w => domWords.has(w)).length
-          if (shared > score) score = shared
-        }
-        if (score > bestScore) { bestScore = score; bestKey = vKey }
+        const vWords  = vKey.replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(w => w.length > 2)
+        const shared  = vWords.filter(w => domWords.has(w)).length
+        if (shared > bestScore) { bestScore = shared; bestKey = vKey }
       }
-      if (bestScore >= 3 && bestKey) {
+      // Require at least 2 shared meaningful words
+      if (bestScore >= 2 && bestKey) {
         result.set(dom.product_name, visionMap.get(bestKey)!)
       } else {
         result.set(dom.product_name, { price: null, original_price: null })
@@ -362,8 +354,8 @@ export async function scrapeAlibabaBestSellers(opts: {
       } finally {
         await ctx.close()
       }
-      // Small delay between categories
-      await new Promise(r => setTimeout(r, 800 + Math.random() * 400))
+      // Longer delay between categories — prevents AliExpress from re-flagging the IP
+      await new Promise(r => setTimeout(r, 4000 + Math.random() * 2000))
     }
   } finally {
     await browser.close()
