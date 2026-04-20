@@ -405,7 +405,7 @@ const DEFAULT_FILTERS: Filters = {
 
 // ─── Marketplace tab config ───────────────────────────────────────────────────
 
-type MarketplaceId = "Amazon" | "eBay" | "Alibaba"
+type MarketplaceId = "Amazon" | "eBay" | "Alibaba" | "iHerb" | "Banggood"
 
 const MARKETPLACES: {
   id:    MarketplaceId
@@ -440,8 +440,18 @@ const MARKETPLACES: {
       <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#E62D2D" }}>AliExpress</span>
     ),
   },
-  // iHerb — hidden: Cloudflare blocks Render IPs; revisit with residential proxy or Apify
-  // Banggood — hidden: revisit with Vision improvements or alternative data source
+  {
+    id: "iHerb", flag: "🌿",
+    logo: (
+      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#6aab1e" }}>iHerb</span>
+    ),
+  },
+  {
+    id: "Banggood", flag: "🛒",
+    logo: (
+      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#e4393c" }}>Banggood</span>
+    ),
+  },
 ]
 
 // ─── Marketplace-aware product link helper ────────────────────────────────────
@@ -464,6 +474,8 @@ const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
   Amazon:  ["All", "Electronics", "Beauty", "Home & Kitchen", "Health", "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"],
   eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
   Alibaba: ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
+  iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
+  Banggood: ["All", "Electronics", "Phone & Gadgets", "Computers", "Home & Garden", "Sports & Outdoors", "Toys & Hobbies", "Beauty & Health"],
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -528,6 +540,22 @@ export function CreatorIntelContent({ role }: Props) {
           fetch(`${API}/api/creator-intel/alibaba-history`,             { headers: { Authorization: `Bearer ${token}` } }),
         ])
         if (alRes.ok)   { const j = await alRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
+      } else if (market === "iHerb") {
+        const [ihRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/iherb-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/iherb-history`,             { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (ihRes.ok)   { const j = await ihRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
+        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
+        setLastScraped(null)
+      } else if (market === "Banggood") {
+        const [bgRes, histRes] = await Promise.all([
+          fetch(`${API}/api/creator-intel/banggood-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`${API}/api/creator-intel/banggood-history`,             { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        if (bgRes.ok)   { const j = await bgRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       }
@@ -621,9 +649,11 @@ export function CreatorIntelContent({ role }: Props) {
     setRefreshing(true)
     try {
       const endpoint =
-        activeMarket === "eBay"    ? `${API}/api/creator-intel/scrape-ebay`    :
-        activeMarket === "Alibaba" ? `${API}/api/creator-intel/scrape-alibaba` :
-                                     `${API}/api/creator-intel/scrape-amazon`
+        activeMarket === "eBay"     ? `${API}/api/creator-intel/scrape-ebay`     :
+        activeMarket === "Alibaba"  ? `${API}/api/creator-intel/scrape-alibaba`  :
+        activeMarket === "iHerb"    ? `${API}/api/creator-intel/scrape-iherb`    :
+        activeMarket === "Banggood" ? `${API}/api/creator-intel/scrape-banggood` :
+                                      `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },

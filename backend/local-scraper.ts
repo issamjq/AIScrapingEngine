@@ -13,7 +13,9 @@
 
 import "dotenv/config"
 import express       from "express"
-import { scrapeAlibabaBestSellers } from "./src/scraper/alibabaBestSellers"
+import { scrapeAlibabaBestSellers }  from "./src/scraper/alibabaBestSellers"
+import { scrapeIherbBestSellers }    from "./src/scraper/iherbBestSellers"
+import { scrapeBanggoodBestSellers } from "./src/scraper/banggoodBestSellers"
 import { logger }    from "./src/utils/logger"
 
 const app  = express()
@@ -39,6 +41,40 @@ app.post("/scrape-aliexpress", async (req, res) => {
     res.json({ products })
   } catch (err: any) {
     logger.error("[LocalScraper] AliExpress scrape failed", { error: err.message })
+    res.status(500).json({ error: err.message, products: [] })
+  }
+})
+
+// ─── iHerb scrape endpoint ────────────────────────────────────────────────────
+app.post("/scrape-iherb", async (req, res) => {
+  const category = (req.query.category as string) ?? "All"
+  const limit    = parseInt((req.query.limit as string) ?? "80", 10)
+
+  logger.info("[LocalScraper] iHerb scrape requested", { category, limit })
+
+  try {
+    const products = await scrapeIherbBestSellers({ category, limit })
+    logger.info("[LocalScraper] iHerb scrape complete", { count: products.length })
+    res.json({ products })
+  } catch (err: any) {
+    logger.error("[LocalScraper] iHerb scrape failed", { error: err.message })
+    res.status(500).json({ error: err.message, products: [] })
+  }
+})
+
+// ─── Banggood scrape endpoint ─────────────────────────────────────────────────
+app.post("/scrape-banggood", async (req, res) => {
+  const category = (req.query.category as string) ?? "All"
+  const limit    = parseInt((req.query.limit as string) ?? "70", 10)
+
+  logger.info("[LocalScraper] Banggood scrape requested", { category, limit })
+
+  try {
+    const products = await scrapeBanggoodBestSellers({ category, limit })
+    logger.info("[LocalScraper] Banggood scrape complete", { count: products.length })
+    res.json({ products })
+  } catch (err: any) {
+    logger.error("[LocalScraper] Banggood scrape failed", { error: err.message })
     res.status(500).json({ error: err.message, products: [] })
   }
 })

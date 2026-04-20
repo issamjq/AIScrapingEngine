@@ -66,11 +66,13 @@ async function extractWithVision(
               text: `This is a screenshot of an iHerb best-sellers category page (${category}).
 Extract the TOP 10 best-selling products clearly visible on screen.
 Return ONLY a valid JSON array — no markdown fences, no explanation:
-[{"product_name":"...","brand":"...","price":14.95,"rating":4.7,"review_count":12500}]
+[{"product_name":"...","brand":"...","price":14.95,"original_price":18.99,"rating":4.7,"review_count":12500}]
 
 Rules:
 - Only include products with a clearly visible USD price (e.g. $14.95)
-- price must be a number, not a string
+- price must be a number (the current sale price — what the customer pays)
+- original_price = the crossed-out or "was" price shown next to the sale price — null if no discount
+- original_price must always be higher than price, otherwise set it to null
 - rating must be 1.0–5.0 or null
 - review_count is the integer number of reviews or null
 - If the page shows a CAPTCHA, error message, or no products, return []`,
@@ -106,9 +108,13 @@ Rules:
       category,
       rank:         idx + 1,
       price:        typeof p.price === "number" && p.price > 0 && p.price < 5000 ? p.price : null,
+      original_price: (() => {
+        const op = typeof p.original_price === "number" && p.original_price > 0 && p.original_price < 5000 ? p.original_price : null
+        const sp = typeof p.price === "number" && p.price > 0 ? p.price : null
+        return op && sp && op > sp ? op : null
+      })(),
       rating:       typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
       review_count: typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
-      original_price: null,
       image_url:    null,
       product_url:  null,
       badge:        "Best Seller",
@@ -162,6 +168,24 @@ export async function scrapeIherbBestSellers(opts: {
   limit?:    number
 }): Promise<AmazonProduct[]> {
   const { category = "All", limit = 80 } = opts
+
+  // ── Delegate to local home-PC scraper if URL is configured ──────────────────
+  const localUrl = process.env.LOCAL_SCRAPER_URL
+  if (localUrl) {
+    logger.info("[iHerbScraper] Delegating to local scraper", { localUrl })
+    try {
+      const resp = await fetch(
+        `${localUrl}/scrape-iherb?category=${encodeURIComponent(category)}&limit=${limit}`,
+        { method: "POST", signal: AbortSignal.timeout(300_000) }
+      )
+      if (!resp.ok) throw new Error(`Local scraper responded ${resp.status}`)
+      const data = await resp.json() as { products: AmazonProduct[] }
+      logger.info("[iHerbScraper] Local scraper returned", { count: data.products.length })
+      return data.products
+    } catch (err: any) {
+      logger.error("[iHerbScraper] Local scraper failed, falling back", { error: err.message })
+    }
+  }
 
   const targets = category === "All"
     ? IHERB_CATEGORIES

@@ -69,8 +69,13 @@ Return ONLY a JSON array with exactly ${count} entries (use null if a product's 
 [{"price": 3.45, "original_price": 5.99}, {"price": 12.01, "original_price": null}, ...]
 
 Rules:
-- "price" = the current sale price (bold, colored — what the customer pays)
-- "original_price" = the crossed-out original price (gray, strikethrough line through it) — null if no sale
+- "price" = the current sale price (bold, colored — what the customer pays now)
+- "original_price" = the old/original price shown near the sale price in any of these forms:
+  • crossed-out / strikethrough text (e.g. ~~$20.69~~)
+  • smaller gray text below or beside the sale price (e.g. "$20.69" in gray)
+  • "Welcome deal" banner: the price shown below the large sale price in smaller gray text
+  • any "was $X" or "RRP $X" style label
+  Set to null if there is no secondary/original price shown
 - Both must be numbers (USD), not strings
 - original_price must always be higher than price, otherwise set it to null`,
             },
