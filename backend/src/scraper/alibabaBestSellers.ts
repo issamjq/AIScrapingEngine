@@ -139,8 +139,9 @@ async function scrapeCategoryPage(
       await page.evaluate(() => window.scrollBy(0, 1200))
       await page.waitForTimeout(600)
     }
-    await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(2000)
+    // Do NOT scroll back to top — fullPage screenshot captures entire page
+    // regardless of scroll position, so order is always top-to-bottom
+    await page.waitForTimeout(1000)
   } catch { /* ignore */ }
 
   // ── Step 1: DOM extraction (everything except price) ──────────────────────
@@ -202,8 +203,10 @@ async function scrapeCategoryPage(
     return []
   }
 
-  // ── Step 2: Vision extracts prices from screenshot ────────────────────────
-  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
+  // ── Step 2: Vision extracts prices from full-page screenshot ─────────────
+  // fullPage: true captures all products (including below the fold).
+  // Viewport-only screenshot only shows ~5 cards → prices wrong for 6+.
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 75, fullPage: true })
   const prices     = await extractPricesWithVision(screenshot, domProducts.length)
 
   // ── Step 3: Merge prices into DOM products ────────────────────────────────
