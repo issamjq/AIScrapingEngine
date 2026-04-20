@@ -34,12 +34,14 @@ const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
 
 // ─── Vision: extract prices only from screenshot ─────────────────────────────
 
+// Vision returns {name, price, original_price} per card — matched back to DOM by name.
+// Name-based matching avoids cascade errors from positional counting on tall pages.
 async function extractPricesWithVision(
-  screenshot: Buffer,
-  count: number,
-): Promise<{ price: number | null; original_price: number | null }[]> {
+  screenshot:   Buffer,
+  domProducts:  { product_name: string }[],
+): Promise<Map<string, { price: number | null; original_price: number | null }>> {
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) return []
+  if (!apiKey) return new Map()
 
   const base64 = screenshot.toString("base64")
 
@@ -53,7 +55,7 @@ async function extractPricesWithVision(
       },
       body: JSON.stringify({
         model:      "claude-haiku-4-5-20251001",
-        max_tokens: 800,
+        max_tokens: 1500,
         messages: [{
           role:    "user",
           content: [
@@ -63,21 +65,18 @@ async function extractPricesWithVision(
             },
             {
               type: "text",
-              text: `This is an AliExpress search results page. Extract the prices for the first ${count} product cards visible, in order from top-left to bottom-right.
+              text: `This is an AliExpress search results page. For each product card visible, extract the product name (first 6 words only) and its prices.
 
-Return ONLY a JSON array with exactly ${count} entries (use null if a product's price is not visible):
-[{"price": 3.45, "original_price": 5.99}, {"price": 12.01, "original_price": null}, ...]
+Return ONLY a JSON array — no markdown, no explanation:
+[{"name": "Silicone Suction Phone Case", "price": 0.16, "original_price": 0.34}, ...]
 
 Rules:
-- "price" = the current sale price (bold, colored — what the customer pays now)
-- "original_price" = the old/original price shown near the sale price in any of these forms:
-  • crossed-out / strikethrough text (e.g. ~~$20.69~~)
-  • smaller gray text below or beside the sale price (e.g. "$20.69" in gray)
-  • "Welcome deal" banner: the price shown below the large sale price in smaller gray text
-  • any "was $X" or "RRP $X" style label
-  Set to null if there is no secondary/original price shown
-- Both must be numbers (USD), not strings
-- original_price must always be higher than price, otherwise set it to null`,
+- "name" = first 6 words of the product title as shown on the card
+- "price" = the current sale price (bold/colored — what the customer pays)
+- "original_price" = the crossed-out or gray secondary price shown near the sale price (Welcome deal original, strikethrough, "was $X") — null if none
+- Both prices must be numbers (USD), not strings
+- original_price must be higher than price, otherwise null
+- Include ALL product cards visible on the page`,
             },
           ],
         }],
@@ -88,23 +87,58 @@ Rules:
     const json = await resp.json()
     const raw  = json.content?.[0]?.text?.trim() ?? "[]"
     const match = raw.match(/\[[\s\S]*\]/)
-    if (!match) return []
+    if (!match) return new Map()
 
     const arr = JSON.parse(match[0])
-    if (!Array.isArray(arr)) return []
+    if (!Array.isArray(arr)) return new Map()
 
-    return arr.map((p: any) => {
+    // Build lookup: normalize name → {price, original_price}
+    const visionMap = new Map<string, { price: number | null; original_price: number | null }>()
+    for (const p of arr) {
+      const nameKey = String(p.name ?? "").toLowerCase().replace(/\s+/g, " ").trim().slice(0, 40)
+      if (!nameKey) continue
       const price          = typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null
       const original_price = typeof p.original_price === "number" && p.original_price > 0 && p.original_price < 50000
         ? p.original_price : null
-      return {
+      visionMap.set(nameKey, {
         price,
         original_price: original_price && price && original_price > price ? original_price : null,
+      })
+    }
+
+    // Match each DOM product to the best Vision entry by name overlap
+    const result = new Map<string, { price: number | null; original_price: number | null }>()
+    for (const dom of domProducts) {
+      const domNorm = dom.product_name.toLowerCase().replace(/\s+/g, " ").trim()
+      let bestKey   = ""
+      let bestScore = 0
+      for (const [vKey] of visionMap) {
+        // Score = length of longest common prefix (after normalizing)
+        const shorter = vKey.length < domNorm.length ? vKey : domNorm.slice(0, vKey.length)
+        let score = 0
+        for (let i = 0; i < Math.min(shorter.length, vKey.length); i++) {
+          if (domNorm[i] === vKey[i]) score++
+          else break
+        }
+        // Fallback: count shared words
+        if (score < 5) {
+          const domWords = new Set(domNorm.split(" ").slice(0, 8))
+          const shared   = vKey.split(" ").filter(w => domWords.has(w)).length
+          if (shared > score) score = shared
+        }
+        if (score > bestScore) { bestScore = score; bestKey = vKey }
       }
-    })
+      if (bestScore >= 3 && bestKey) {
+        result.set(dom.product_name, visionMap.get(bestKey)!)
+      } else {
+        result.set(dom.product_name, { price: null, original_price: null })
+      }
+    }
+
+    return result
   } catch (err: any) {
     logger.warn("[AlibabaScraper] Vision price extraction failed", { error: err.message })
-    return []
+    return new Map()
   }
 }
 
@@ -207,26 +241,30 @@ async function scrapeCategoryPage(
   // fullPage: true captures all products (including below the fold).
   // Viewport-only screenshot only shows ~5 cards → prices wrong for 6+.
   const screenshot = await page.screenshot({ type: "jpeg", quality: 75, fullPage: true })
-  const prices     = await extractPricesWithVision(screenshot, domProducts.length)
+  const priceMap   = await extractPricesWithVision(screenshot, domProducts)
 
-  // ── Step 3: Merge prices into DOM products ────────────────────────────────
-  const merged: AmazonProduct[] = domProducts.map((p, idx) => ({
-    asin:           p.asin,
-    product_name:   p.product_name,
-    category,
-    rank:           idx + 1,
-    price:          prices[idx]?.price          ?? null,
-    original_price: prices[idx]?.original_price ?? null,
-    rating:         null,
-    review_count:   p.review_count,
-    image_url:      p.image_url,
-    product_url:    p.product_url,
-    badge:          p.review_count && p.review_count >= 1000 ? "Best Seller" : null,
-    brand:          p.brand,
-    marketplace:    "Alibaba",
-  }))
+  // ── Step 3: Merge prices into DOM products by name ────────────────────────
+  const merged: AmazonProduct[] = domProducts.map((p, idx) => {
+    const pr = priceMap.get(p.product_name) ?? { price: null, original_price: null }
+    return {
+      asin:           p.asin,
+      product_name:   p.product_name,
+      category,
+      rank:           idx + 1,
+      price:          pr.price,
+      original_price: pr.original_price,
+      rating:         null,
+      review_count:   p.review_count,
+      image_url:      p.image_url,
+      product_url:    p.product_url,
+      badge:          p.review_count && p.review_count >= 1000 ? "Best Seller" : null,
+      brand:          p.brand,
+      marketplace:    "Alibaba",
+    }
+  })
 
-  logger.info("[AlibabaScraper] Category done", { category, products: merged.length, pricesFound: prices.filter(p => p.price !== null).length })
+  const pricesFound = merged.filter(p => p.price !== null).length
+  logger.info("[AlibabaScraper] Category done", { category, products: merged.length, pricesFound })
   return merged
 }
 
