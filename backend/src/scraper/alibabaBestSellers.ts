@@ -1,19 +1,14 @@
 /**
- * AliExpress Best Sellers — Playwright + Claude Vision scraper.
+ * AliExpress Best Sellers — Playwright scraper.
  *
- * Navigates AliExpress search pages sorted by total orders, scrolls to load
- * products, then takes a viewport screenshot and sends it to Claude Vision
- * (haiku) for extraction. Vision reads the actual displayed sale price —
- * immune to window.runParams field changes and DOM structure renames.
- *
+ * Scrapes aliexpress.com category pages sorted by total orders (best selling).
+ * Extracts product data from window.runParams embedded in the page.
  * Data stored in amazon_trending with marketplace = "Alibaba".
  */
 
-import { chromium }       from "playwright"
-import { logger }         from "../utils/logger"
-import { AmazonProduct }  from "./amazonBestSellers"
-
-const CLAUDE_API = "https://api.anthropic.com/v1/messages"
+import { chromium } from "playwright"
+import { logger }   from "../utils/logger"
+import { AmazonProduct } from "./amazonBestSellers"
 
 // ─── AliExpress category search queries ──────────────────────────────────────
 
@@ -28,103 +23,12 @@ const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
   { label: "Computer & Office", query: "computer office accessories" },
 ]
 
-// ─── Claude Vision extraction ─────────────────────────────────────────────────
-
-async function extractWithVision(
-  screenshot: Buffer,
-  category:   string,
-): Promise<AmazonProduct[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    logger.warn("[AlibabaScraper] No ANTHROPIC_API_KEY — skipping Vision extraction")
-    return []
-  }
-
-  const base64 = screenshot.toString("base64")
-  let text = "[]"
-
-  try {
-    const resp = await fetch(CLAUDE_API, {
-      method:  "POST",
-      headers: {
-        "x-api-key":         apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type":      "application/json",
-      },
-      body: JSON.stringify({
-        model:      "claude-haiku-4-5-20251001",
-        max_tokens: 1500,
-        messages: [{
-          role:    "user",
-          content: [
-            {
-              type:   "image",
-              source: { type: "base64", media_type: "image/jpeg", data: base64 },
-            },
-            {
-              type: "text",
-              text: `This is an AliExpress search results page (category: ${category}) sorted by most orders.
-Extract the TOP 10 best-selling products clearly visible on screen.
-Return ONLY a valid JSON array — no markdown fences, no explanation:
-[{"product_name":"...","brand":"...","price":62.02,"rating":4.6,"review_count":72}]
-
-Rules:
-- Use the SALE price (the bold/highlighted price, not the crossed-out original)
-- price must be a number (USD), not a string
-- rating must be 1.0–5.0 or null
-- review_count is orders sold count (integer) or null
-- If the page shows a CAPTCHA, error, or no products, return []`,
-            },
-          ],
-        }],
-      }),
-    })
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "")
-      throw new Error(`Claude API ${resp.status}: ${errText}`)
-    }
-
-    const json = await resp.json()
-    const raw  = json.content?.[0]?.text?.trim() ?? "[]"
-    const match = raw.match(/\[[\s\S]*?\]/)
-    text = match ? match[0] : "[]"
-  } catch (err: any) {
-    logger.warn("[AlibabaScraper] Claude Vision API error", { category, error: err.message })
-    return []
-  }
-
-  try {
-    const arr = JSON.parse(text)
-    if (!Array.isArray(arr)) return []
-
-    return arr.slice(0, 10).map((p: any, idx: number) => ({
-      asin:           null,
-      product_name:   String(p.product_name ?? "").trim(),
-      category,
-      rank:           idx + 1,
-      price:          typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null,
-      original_price: null,
-      rating:         typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
-      review_count:   typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
-      image_url:      null,
-      product_url:    null,
-      badge:          null,
-      brand:          p.brand ? String(p.brand).trim() || null : null,
-      marketplace:    "Alibaba",
-    })).filter((p: AmazonProduct) => p.product_name.length >= 3)
-  } catch (err: any) {
-    logger.warn("[AlibabaScraper] Vision JSON parse failed", { category, raw: text.slice(0, 200), error: err.message })
-    return []
-  }
-}
-
 // ─── Scrape one category page ─────────────────────────────────────────────────
 
 async function scrapeCategoryPage(
   query:    string,
   category: string,
-  page:     import("playwright").Page,
+  page:     import("playwright").Page
 ): Promise<AmazonProduct[]> {
   const encoded = encodeURIComponent(query)
   const url = `https://www.aliexpress.com/wholesale?SearchText=${encoded}&SortType=total_tranRanking_desc&page=1`
@@ -144,22 +48,132 @@ async function scrapeCategoryPage(
     return []
   }
 
-  // Scroll to trigger lazy-loaded product cards, then return to top
-  try {
-    for (let i = 0; i < 4; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1000))
-      await page.waitForTimeout(600)
+  // Try window.runParams first (AliExpress embeds all product data here)
+  const products = await page.evaluate((cat: string) => {
+    const rp = (window as any).runParams
+    if (!rp) return null
+
+    const mods: any = rp?.data?.result?.mods ?? rp?.mods ?? {}
+    const items: any[] = mods?.itemList?.content ?? mods?.list?.content ?? []
+    if (items.length === 0) return null
+
+    return items.slice(0, 48).map((item: any, idx: number) => {
+      const title: string = item.title ?? item.subject ?? ""
+      if (!title) return null
+
+      const priceInfo = item.prices?.salePrice ?? item.price ?? {}
+      const rawPrice  = priceInfo.minAmount ?? priceInfo.price ?? null
+      const price: number | null = rawPrice != null ? parseFloat(String(rawPrice)) || null : null
+
+      const imgRaw: string = item.image?.imgUrl ?? item.imageUrl ?? ""
+      const image_url = imgRaw ? (imgRaw.startsWith("//") ? `https:${imgRaw}` : imgRaw) : null
+
+      const tradeStr: string = item.trade?.realTradeDesc ?? item.trade?.tradeDesc ?? ""
+      const tm = tradeStr.replace(/[,+]/g, "").match(/(\d+)/)
+      const review_count: number | null = tm ? parseInt(tm[1], 10) : null
+
+      const brand: string | null = item.storeInfo?.storeName ?? item.store?.storeName ?? null
+
+      const urlRaw: string = item.productDetailUrl ?? item.detailUrl ?? ""
+      const product_url = urlRaw.startsWith("//") ? `https:${urlRaw}` : urlRaw.startsWith("http") ? urlRaw
+        : `https://www.aliexpress.com/item/${item.productId ?? ""}.html`
+
+      return {
+        asin:           String(item.productId ?? item.id ?? "").trim() || null,
+        product_name:   title,
+        category:       cat,
+        rank:           idx + 1,
+        price,
+        original_price: null,
+        rating:         item.evaluation?.starRating != null ? parseFloat(item.evaluation.starRating) : null,
+        review_count,
+        image_url,
+        product_url,
+        badge:          review_count && review_count >= 1000 ? "Best Seller" : null,
+        brand,
+        marketplace:    "Alibaba",
+      }
+    }).filter(Boolean)
+  }, category) as AmazonProduct[] | null
+
+  if (products && products.length > 0) {
+    logger.info("[AlibabaScraper] runParams hit", { query: category, count: products.length })
+    return products
+  }
+
+  // Fallback: DOM extraction for product cards
+  const domProducts = await page.evaluate((cat: string) => {
+    const results: any[] = []
+
+    let cards: Element[] = Array.from(document.querySelectorAll(
+      "a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]"
+    ))
+
+    if (cards.length === 0) {
+      cards = Array.from(document.querySelectorAll("a[href*='/item/']"))
+        .map(a => a.closest("li, [class*='card'], [class*='item']") ?? a.parentElement ?? a)
+        .filter((el, i, arr) => arr.indexOf(el) === i)
     }
-    await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(2000)
-  } catch { /* ignore */ }
 
-  // Take a JPEG viewport screenshot and send to Claude Vision
-  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
-  const products   = await extractWithVision(screenshot, category)
+    cards.slice(0, 48).forEach((el, idx) => {
+      const linkEl = (
+        el.tagName === "A" ? el : el.querySelector("a[href*='/item/']")
+      ) as HTMLAnchorElement | null
+      const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
+      if (!href.includes("/item/")) return
+      const product_url = href.startsWith("//") ? `https:${href}` : href
+      const productId = href.match(/\/item\/(\d+)/)?.[1] ?? null
 
-  logger.info("[AlibabaScraper] Category done", { category, count: products.length })
-  return products
+      const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
+      const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
+      if (!product_name || product_name.length < 3) return
+
+      let price: number | null = null
+      const leafPrices: number[] = []
+      Array.from(el.querySelectorAll("*")).forEach(node => {
+        if (node.children.length > 0) return
+        const t = node.textContent?.trim() ?? ""
+        if (/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) {
+          const n = parseFloat(t.replace(/[^\d.]/g, ""))
+          if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
+        }
+      })
+      if (leafPrices.length > 0) price = Math.min(...leafPrices)
+
+      const imgEl     = el.querySelector("img")
+      const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
+
+      let review_count: number | null = null
+      const tradeEl = el.querySelector("[class*='trade'], [class*='order'], [class*='sold']")
+      if (tradeEl) {
+        const m = (tradeEl.textContent ?? "").replace(/,/g, "").match(/(\d+)/)
+        if (m) review_count = parseInt(m[1], 10)
+      }
+
+      const brandEl = el.querySelector("[class*='store'], [class*='shop']")
+      const brand   = brandEl?.textContent?.trim() || null
+
+      results.push({
+        asin:           productId,
+        product_name,
+        category:       cat,
+        rank:           idx + 1,
+        price,
+        original_price: null,
+        rating:         null,
+        review_count,
+        image_url,
+        product_url,
+        badge:          null,
+        brand,
+        marketplace:    "Alibaba",
+      })
+    })
+    return results
+  }, category)
+
+  logger.info("[AlibabaScraper] DOM fallback", { query: category, count: domProducts.length })
+  return domProducts
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -168,7 +182,7 @@ export async function scrapeAlibabaBestSellers(opts: {
   category?: string
   limit?:    number
 }): Promise<AmazonProduct[]> {
-  const { category = "All", limit = 80 } = opts
+  const { category = "All", limit = 100 } = opts
 
   const targets = category === "All"
     ? ALIBABA_CATEGORIES
@@ -179,7 +193,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     return []
   }
 
-  logger.info("[AlibabaScraper] Starting scrape (Vision mode)", { categories: targets.map(t => t.label) })
+  logger.info("[AlibabaScraper] Starting scrape", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
@@ -188,10 +202,8 @@ export async function scrapeAlibabaBestSellers(opts: {
   const context = await browser.newContext({
     userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
     locale:           "en-US",
-    viewport:         { width: 1440, height: 900 },
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
-  // Force global English / USD
   await context.addCookies([
     { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
     { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=", domain: ".aliexpress.com", path: "/" },
@@ -212,7 +224,7 @@ export async function scrapeAlibabaBestSellers(opts: {
 
   const seen  = new Set<string>()
   const dedup = allProducts.filter(p => {
-    const key = p.product_name
+    const key = p.asin ?? p.product_name
     if (seen.has(key)) return false
     seen.add(key)
     return true
