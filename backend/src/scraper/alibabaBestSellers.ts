@@ -66,15 +66,6 @@ async function scrapeCategoryPage(
 
   // ── DOM extraction — everything including prices ───────────────────────────
   const domProducts = await page.evaluate((cat: string) => {
-    // Helper: parse price text → number
-    function px(text: string | null): number | null {
-      if (!text) return null
-      const m = text.replace(/,/g, "").match(/[\d]+\.?\d*/)
-      if (!m) return null
-      const n = parseFloat(m[0])
-      return n > 0 && n < 50000 ? n : null
-    }
-
     const results: any[] = []
 
     // Find product cards — try multiple strategies
@@ -138,13 +129,14 @@ async function scrapeCategoryPage(
       //   Original price → class contains "--del--"
       const currentEl  = el.querySelector("[class*='--current--']")
       const delEl      = el.querySelector("[class*='--del--']")
-      const price_raw          = currentEl?.textContent?.trim() ?? null
-      const original_price_raw = delEl?.textContent?.trim() ?? null
 
-      const price          = px(price_raw)
-      const original_price_val = px(original_price_raw)
-      const original_price = original_price_val && price && original_price_val > price
-        ? original_price_val : null
+      const currentText = currentEl?.textContent?.trim() ?? ""
+      const delText     = delEl?.textContent?.trim() ?? ""
+      const currentMatch = currentText.replace(/,/g, "").match(/\d+\.?\d*/)
+      const delMatch     = delText.replace(/,/g, "").match(/\d+\.?\d*/)
+      const price              = currentMatch ? (parseFloat(currentMatch[0]) > 0 && parseFloat(currentMatch[0]) < 50000 ? parseFloat(currentMatch[0]) : null) : null
+      const original_price_val = delMatch     ? (parseFloat(delMatch[0])     > 0 && parseFloat(delMatch[0])     < 50000 ? parseFloat(delMatch[0])     : null) : null
+      const original_price     = original_price_val && price && original_price_val > price ? original_price_val : null
 
       results.push({
         asin:          productId,
