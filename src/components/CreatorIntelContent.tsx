@@ -654,11 +654,29 @@ export function CreatorIntelContent({ role }: Props) {
         activeMarket === "iHerb"    ? `${API}/api/creator-intel/scrape-iherb`    :
         activeMarket === "Banggood" ? `${API}/api/creator-intel/scrape-banggood` :
                                       `${API}/api/creator-intel/scrape-amazon`
-      await fetch(endpoint, {
+
+      // Fire-and-forget: server returns 202 + jobId immediately
+      const startRes = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ limit: 100 }),
       })
+      const startJson = await startRes.json()
+      const jobId: string | null = startJson?.jobId ?? null
+
+      // Poll job status every 8s until done or error (max 5 min)
+      if (jobId) {
+        const deadline = Date.now() + 5 * 60 * 1000
+        while (Date.now() < deadline) {
+          await new Promise(r => setTimeout(r, 8000))
+          const statusRes = await fetch(`${API}/api/creator-intel/job-status/${jobId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+          const status = await statusRes.json()
+          if (status.status === "done" || status.status === "error") break
+        }
+      }
+
       await loadData(filters, activeMarket)
     } catch { /* ignore */ }
     setRefreshing(false)

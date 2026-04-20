@@ -49,6 +49,27 @@ async function isAdmin(email: string): Promise<boolean> {
   return rows[0] && ADMIN_ROLES.includes(rows[0].role)
 }
 
+// ── In-memory job tracker for long-running scrapes ───────────────────────────
+type JobStatus = { status: "running" | "done" | "error"; inserted?: number; error?: string; startedAt: number }
+const scrapeJobs = new Map<string, JobStatus>()
+
+function startJob(): string {
+  const jobId = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+  scrapeJobs.set(jobId, { status: "running", startedAt: Date.now() })
+  // Clean up jobs older than 1 hour
+  for (const [id, job] of scrapeJobs) {
+    if (Date.now() - job.startedAt > 3_600_000) scrapeJobs.delete(id)
+  }
+  return jobId
+}
+
+// ── GET /api/creator-intel/job-status/:jobId ─────────────────────────────────
+creatorIntelRouter.get("/job-status/:jobId", (req: AuthRequest, res: Response) => {
+  const job = scrapeJobs.get(req.params.jobId)
+  if (!job) return res.json({ status: "not_found" })
+  res.json(job)
+})
+
 // ── GET /api/creator-intel/trending ─────────────────────────────────────────
 creatorIntelRouter.get("/trending", async (req: AuthRequest, res: Response) => {
   try {
@@ -139,18 +160,17 @@ creatorIntelRouter.post("/scrape-amazon", async (req: AuthRequest, res: Response
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
 
-  try {
-    const { category = "All", marketplace = "US", limit = 20 } = req.body
-    const key = apiKey()
-    if (!key) return res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY not set" })
+  const key = apiKey()
+  if (!key) return res.status(500).json({ success: false, error: "ANTHROPIC_API_KEY not set" })
 
-    logger.info("[CreatorIntel] Amazon scrape triggered", { category, marketplace, limit, by: req.email })
-    const result = await runAmazonScrape({ category, marketplace, limit, apiKey: key })
-    res.json({ success: true, ...result })
-  } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-amazon", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
-  }
+  const { category = "All", marketplace = "US", limit = 20 } = req.body
+  const jobId = startJob()
+  logger.info("[CreatorIntel] Amazon scrape triggered (async)", { category, marketplace, limit, by: req.email, jobId })
+  res.status(202).json({ success: true, status: "started", jobId })
+
+  runAmazonScrape({ category, marketplace, limit, apiKey: key })
+    .then(result => scrapeJobs.set(jobId, { status: "done", inserted: result.inserted, startedAt: scrapeJobs.get(jobId)!.startedAt }))
+    .catch(err  => { scrapeJobs.set(jobId, { status: "error", error: err.message, startedAt: scrapeJobs.get(jobId)!.startedAt }); logger.error("[CreatorIntel] Amazon scrape failed", { error: err.message }) })
 })
 
 // ── GET /api/creator-intel/ebay-trending ─────────────────────────────────────
@@ -184,15 +204,14 @@ creatorIntelRouter.post("/scrape-ebay", async (req: AuthRequest, res: Response) 
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
 
-  try {
-    const { category = "All", limit = 100 } = req.body
-    logger.info("[CreatorIntel] eBay scrape triggered", { category, limit, by: req.email })
-    const result = await runEbayScrape({ category, limit })
-    res.json({ success: true, ...result })
-  } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-ebay", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
-  }
+  const { category = "All", limit = 100 } = req.body
+  const jobId = startJob()
+  logger.info("[CreatorIntel] eBay scrape triggered (async)", { category, limit, by: req.email, jobId })
+  res.status(202).json({ success: true, status: "started", jobId })
+
+  runEbayScrape({ category, limit })
+    .then(result => scrapeJobs.set(jobId, { status: "done", inserted: result.inserted, startedAt: scrapeJobs.get(jobId)!.startedAt }))
+    .catch(err  => { scrapeJobs.set(jobId, { status: "error", error: err.message, startedAt: scrapeJobs.get(jobId)!.startedAt }); logger.error("[CreatorIntel] eBay scrape failed", { error: err.message }) })
 })
 
 // ── GET /api/creator-intel/iherb-trending ────────────────────────────────────
@@ -225,15 +244,14 @@ creatorIntelRouter.post("/scrape-iherb", async (req: AuthRequest, res: Response)
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
 
-  try {
-    const { category = "All", limit = 100 } = req.body
-    logger.info("[CreatorIntel] iHerb scrape triggered", { category, limit, by: req.email })
-    const result = await runIherbScrape({ category, limit })
-    res.json({ success: true, ...result })
-  } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-iherb", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
-  }
+  const { category = "All", limit = 100 } = req.body
+  const jobId = startJob()
+  logger.info("[CreatorIntel] iHerb scrape triggered (async)", { category, limit, by: req.email, jobId })
+  res.status(202).json({ success: true, status: "started", jobId })
+
+  runIherbScrape({ category, limit })
+    .then(result => scrapeJobs.set(jobId, { status: "done", inserted: result.inserted, startedAt: scrapeJobs.get(jobId)!.startedAt }))
+    .catch(err  => { scrapeJobs.set(jobId, { status: "error", error: err.message, startedAt: scrapeJobs.get(jobId)!.startedAt }); logger.error("[CreatorIntel] iHerb scrape failed", { error: err.message }) })
 })
 
 // ── GET /api/creator-intel/tesco-trending ────────────────────────────────────
@@ -307,15 +325,14 @@ creatorIntelRouter.post("/scrape-alibaba", async (req: AuthRequest, res: Respons
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
 
-  try {
-    const { category = "All", limit = 100 } = req.body
-    logger.info("[CreatorIntel] Alibaba scrape triggered", { category, limit, by: req.email })
-    const result = await runAlibabaScrape({ category, limit })
-    res.json({ success: true, ...result })
-  } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-alibaba", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
-  }
+  const { category = "All", limit = 100 } = req.body
+  const jobId = startJob()
+  logger.info("[CreatorIntel] Alibaba scrape triggered (async)", { category, limit, by: req.email, jobId })
+  res.status(202).json({ success: true, status: "started", jobId })
+
+  runAlibabaScrape({ category, limit })
+    .then(result => scrapeJobs.set(jobId, { status: "done", inserted: result.inserted, startedAt: scrapeJobs.get(jobId)!.startedAt }))
+    .catch(err  => { scrapeJobs.set(jobId, { status: "error", error: err.message, startedAt: scrapeJobs.get(jobId)!.startedAt }); logger.error("[CreatorIntel] Alibaba scrape failed", { error: err.message }) })
 })
 
 // ── Shein ─────────────────────────────────────────────────────────────────────
@@ -421,15 +438,15 @@ creatorIntelRouter.get("/banggood-history", async (_req: AuthRequest, res: Respo
 creatorIntelRouter.post("/scrape-banggood", async (req: AuthRequest, res: Response) => {
   const admin = await isAdmin(req.email!).catch(() => false)
   if (!admin) return res.status(403).json({ success: false, error: "Forbidden" })
-  try {
-    const { category = "All", limit = 100 } = req.body
-    logger.info("[CreatorIntel] Banggood scrape triggered", { category, limit, by: req.email })
-    const result = await runBanggoodScrape({ category, limit })
-    res.json({ success: true, ...result })
-  } catch (err: any) {
-    logger.error("[CreatorIntel] POST /scrape-banggood", { error: err.message })
-    res.status(500).json({ success: false, error: err.message })
-  }
+
+  const { category = "All", limit = 100 } = req.body
+  const jobId = startJob()
+  logger.info("[CreatorIntel] Banggood scrape triggered (async)", { category, limit, by: req.email, jobId })
+  res.status(202).json({ success: true, status: "started", jobId })
+
+  runBanggoodScrape({ category, limit })
+    .then(result => scrapeJobs.set(jobId, { status: "done", inserted: result.inserted, startedAt: scrapeJobs.get(jobId)!.startedAt }))
+    .catch(err  => { scrapeJobs.set(jobId, { status: "error", error: err.message, startedAt: scrapeJobs.get(jobId)!.startedAt }); logger.error("[CreatorIntel] Banggood scrape failed", { error: err.message }) })
 })
 
 // ── Lazada ────────────────────────────────────────────────────────────────────
