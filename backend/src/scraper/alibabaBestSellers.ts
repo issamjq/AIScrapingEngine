@@ -60,6 +60,11 @@ async function scrapeCategoryPage(
     const items: any[] = mods?.itemList?.content ?? mods?.list?.content ?? []
     if (items.length === 0) return null
 
+    // Debug: log price structure of first item so we can see field names
+    if (items[0]) {
+      console.log("[AlibabaScraper] First item prices debug:", JSON.stringify(items[0].prices ?? items[0].price ?? "no price field"))
+    }
+
     return items.slice(0, 48).map((item: any, idx: number) => {
       const title: string = item.title ?? item.subject ?? ""
       if (!title) return null

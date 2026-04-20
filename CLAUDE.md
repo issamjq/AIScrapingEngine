@@ -9,7 +9,7 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v1.10.2
+**Current version:** v2.2.9
 
 ---
 
@@ -17,9 +17,9 @@ A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e
 
 | Checkpoint | Git commit | What works |
 |---|---|---|
-| **LATEST STABLE** | `ea131e9` (v1.10.2) | Creator Intel — Kalodata UI, amazon.com scraper, real rank history, sparkline tooltips, sticky filter buttons |
+| **LATEST STABLE** | `0d2d98a` (v2.2.9) | AliExpress via local home-PC scraper, original_price extraction, iHerb+Banggood hidden, eBay+Alibaba tabs live |
+| **Pre-local-scraper** | `ea131e9` (v1.10.2) | Creator Intel — Kalodata UI, amazon.com scraper, real rank history, sparkline tooltips, sticky filter buttons |
 | **Previous stable** | `fa1bcf0` (v1.9.10) | Kalodata-style Creator Intel full rewrite, amazon.com BSR Playwright scraper, all filters working |
-| **Before Creator Intel rewrite** | `2be4784` (v1.9.7) | Creator Intel v2 live dashboard (TikTok + Amazon real data), dual sidebar entries |
 | **Old stable** | `05e7938` (v1.7.4) | Landing page, subscription system v2, daily/weekly/cycle limits, new plan config, usage UI |
 
 ---
@@ -514,7 +514,7 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 ---
 
-## Creator Intelligence — Current State (as of v1.10.2)
+## Creator Intelligence — Current State (as of v2.2.9)
 
 ### What is BUILT ✅
 
@@ -526,7 +526,12 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 **Backend (fully working):**
 - `backend/src/scraper/tiktokScraper.ts` — Claude `web_search_20250305` searches kalodata/shoplus/pipiads for trending TikTok products, then Claude haiku extracts JSON
 - `backend/src/scraper/apifyTikTokScraper.ts` — Apify `clockworks~tiktok-scraper` actor: real TikTok videos → Claude extracts products
-- `backend/src/scraper/amazonBestSellers.ts` — **Real Playwright scraper** hitting amazon.com/gp/bestsellers for 10 categories. Extracts: ASIN, product_name, brand, rank, price, rating, review_count, image_url, product_url, badge (Best Seller / Amazon's Choice), marketplace=US
+- `backend/src/scraper/amazonBestSellers.ts` — **Real Playwright scraper** hitting amazon.com/gp/bestsellers for 10 categories. Extracts: ASIN, product_name, brand, rank, price, **original_price**, rating, review_count, image_url, product_url, badge (Best Seller / Amazon's Choice), marketplace=US
+- `backend/src/scraper/alibabaBestSellers.ts` — Playwright scraper using `window.runParams` + DOM fallback. **Runs via local home-PC server** (residential IP) — Render IPs are blocked by AliExpress. Extracts price + original_price from `prices.salePrice` / `prices.originalPrice` fields
+- `backend/src/scraper/banggoodBestSellers.ts` — Claude Vision scraper (screenshot → haiku). **Tab hidden** — blocked on Render datacenter IPs. To re-enable: add to local-scraper.ts + re-add tab in CreatorIntelContent.tsx
+- `backend/src/scraper/iherbBestSellers.ts` — Claude Vision scraper. **Tab hidden** — Cloudflare blocks Render IPs. Same fix path as Banggood
+- `backend/src/scraper/ebayBestSellers.ts` — Official eBay Finding API (no Playwright). Needs `EBAY_APP_ID` env var in Render
+- `backend/local-scraper.ts` — **Local home-PC Express server** on port 3099. Exposes `POST /scrape-aliexpress`. Run with `npm run local-scraper` from backend dir. Exposed via Cloudflare Tunnel → URL set as `LOCAL_SCRAPER_URL` in Render env vars
 - `backend/src/services/creatorIntelService.ts`:
   - `runAmazonScrape`: plain INSERT per scrape run — **no upsert, no dedup** — accumulates history rows
   - `getAmazonTrending`: `DISTINCT ON (COALESCE(asin, product_name))` subquery ordered by `scraped_at DESC` → returns latest per product, then sorted by rank ASC
@@ -535,9 +540,9 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 **DB tables (live in Neon):**
 - `tiktok_products` — product_name, category, tiktok_price, gmv_7d, units_sold_7d, growth_pct, video_count, top_creator_handle, shop_name, image_url, scraped_at
-- `amazon_trending` — asin (NO unique constraint — dropped), product_name, category, rank, price, rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at
+- `amazon_trending` — asin, product_name, category, rank, price, **original_price** (DECIMAL — crossed-out price when sale is active), rating, review_count, image_url, product_url, badge, brand, marketplace, scraped_at
   - **No unique constraint on asin** — multiple rows per ASIN (one per scrape run) = historical data
-  - Current data: ~196 rows from initial scrape
+  - `original_price` column added via `ALTER TABLE amazon_trending ADD COLUMN IF NOT EXISTS original_price DECIMAL(10,2)`
 
 **Frontend (`CreatorIntelContent.tsx`) — Kalodata-style:**
 - AI suggestion bar (blue gradient)
@@ -550,8 +555,9 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 - **Sparkline**: real data when ≥2 scrape runs exist (from `/amazon-history`); estimated fallback otherwise. Hover tooltip shows date + Monthly Sales estimate. Vertical dashed guide on hover.
 - **Item Sold estimate**: granular per-rank tiers (rank 1=44k, 2=32k, 3=24k, 4=18k, 5=14k…) scaled by review count — same-rank products show different numbers
 - BSR % change column: shows "—" (no historical comparison yet; will be real once 2+ scrapes)
-- Action buttons: "Trend Details" → amazon.com/dp/, "TikTok Matching" → tiktok.com/search, "Similar Products" → amazon.com/s?k=
-- Dev-only: "Refresh Data" button (orange) triggers `POST /api/creator-intel/scrape-amazon`
+- Action buttons: `productLink(p)` helper routes per marketplace — "Trend Details" → correct URL per marketplace (not always amazon.com/dp/)
+- Price cell: shows sale price + crossed-out `original_price` when `original_price > price`
+- Dev-only: "Refresh Data" button (orange) triggers scrape for active marketplace tab
 - Loads rank history in background after products load; passes `history` prop per ASIN to each sparkline
 
 **Scrape trigger flow (dev only):**
@@ -567,17 +573,16 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 | Marketplace | Status | Notes |
 |-------------|--------|-------|
-| **Amazon** | ✅ Done | BSR scraper live, sparklines, badges, rank history |
-| **iHerb** | ✅ Done | Playwright scraper live, 8 categories |
-| **Alibaba** | ✅ Done | Playwright scraper, window.runParams extraction, 8 categories |
-| **Banggood** | ✅ Done | Playwright scraper, 7 categories — confirmed working locally |
-| **Shein** | ❌ Blocked | Scraper built but Shein redirects to `/risk/challenge` CAPTCHA on headless browsers |
-| **Etsy** | ❌ Blocked | DataDome bot protection — full Cloudflare challenge on headless browsers |
-| **Lazada** | ❌ Blocked | reCAPTCHA `/punish` page on headless browsers |
+| **Amazon** | ✅ Live | BSR scraper on Render, sparklines, badges, rank history, original_price |
+| **Alibaba** | ✅ Live | Runs via **local home-PC scraper** (residential IP). window.runParams + DOM fallback. sale + original_price |
 | **eBay** | ⏳ Waiting | Official Finding API scraper built; needs `EBAY_APP_ID` env var in Render |
-| **Tesco** | ❌ Blocked | Scraper built but Tesco blocks Render datacenter IPs. Needs residential proxy. |
-| **TikTok** | ❌ Not needed | Removed from scope for now |
-| **Walmart** | ❌ Not needed | Blocked by Akamai Bot Manager on all approaches |
+| **iHerb** | 🔴 Hidden | Scraper built (Claude Vision). Tab hidden — Cloudflare blocks Render IPs. Re-enable via local scraper |
+| **Banggood** | 🔴 Hidden | Scraper built (Claude Vision). Tab hidden — blocked on Render IPs. Re-enable via local scraper |
+| **Shein** | ❌ Blocked | `/risk/challenge` CAPTCHA on all headless browsers |
+| **Etsy** | ❌ Blocked | DataDome bot protection |
+| **Lazada** | ❌ Blocked | reCAPTCHA on headless browsers |
+| **Tesco** | ❌ Blocked | Blocks Render datacenter IPs |
+| **Walmart** | ❌ Blocked | Akamai Bot Manager |
 
 ---
 
@@ -591,16 +596,45 @@ POST /api/creator-intel/scrape-amazon     ← Trigger Amazon BSR scrape (dev/own
 
 ---
 
+### Local Home-PC Scraper — Architecture
+
+Render's datacenter IPs are blocked by AliExpress, iHerb, Banggood. Solution: run Playwright on the user's home PC (residential IP) and expose it via Cloudflare Tunnel.
+
+**Files:**
+- `backend/local-scraper.ts` — Express server on port 3099
+- Run: `cd backend && npm run local-scraper`
+- Tunnel: `cloudflared.exe tunnel --url http://localhost:3099` (keep both terminals open while scraping)
+- Render env var: `LOCAL_SCRAPER_URL = https://xxxx.trycloudflare.com`
+
+**How it works:**
+1. User clicks "Refresh Data" in app
+2. Render receives request → checks `LOCAL_SCRAPER_URL` env var
+3. Render calls `POST ${LOCAL_SCRAPER_URL}/scrape-aliexpress`
+4. Home PC runs Playwright with residential IP → AliExpress serves real products
+5. Products returned as JSON → Render saves to DB
+
+**Current endpoints on local scraper:**
+- `GET /health` — health check
+- `POST /scrape-aliexpress` — scrapes all 8 AliExpress categories
+
+**To add iHerb/Banggood to local scraper:**
+1. Add `POST /scrape-iherb` and `POST /scrape-banggood` endpoints to `local-scraper.ts`
+2. Add `LOCAL_SCRAPER_URL` check to `iherbBestSellers.ts` and `banggoodBestSellers.ts`
+3. Re-add tabs in `CreatorIntelContent.tsx` `MARKETPLACES` array
+
+**Cloudflare Tunnel note:** Free quick tunnels change URL on restart. Update `LOCAL_SCRAPER_URL` in Render env vars when restarting the tunnel. For permanent URL: use named tunnel with a Cloudflare domain.
+
+---
+
 ### What is NOT YET BUILT ❌
 
 **New features to build next (in order):**
 1. **eBay tab (unblock)** — App ID pending approval; scraper already built in `ebayBestSellers.ts`, just needs `EBAY_APP_ID` env var set in Render
-2. **Shein tab** — trending fashion best sellers; no bot protection; easy win
+2. **iHerb + Banggood re-enable** — add to local-scraper.ts, re-add tabs in frontend
 3. **Noon.com tab** — UAE/KSA marketplace; most relevant for B2B audience
-4. **Etsy tab** — trending unique/handmade products; public API
-5. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically
-6. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN
-7. **Unified product modal** — click any Amazon product → see Alibaba sourcing in one modal
+4. **Daily auto-scrape cron** — Render cron job, scrapes Amazon every 24h automatically
+5. **BSR % change column** — compute rank delta between latest and previous scrape run per ASIN
+6. **Unified product modal** — click any Amazon product → see Alibaba sourcing in one modal
 
 **Planned DB tables (not yet created):**
 ```sql
