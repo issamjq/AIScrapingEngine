@@ -10,18 +10,19 @@ import { chromium } from "playwright"
 import { logger }   from "../utils/logger"
 
 export interface AmazonProduct {
-  asin:         string | null
-  product_name: string
-  category:     string | null
-  rank:         number | null
-  price:        number | null
-  rating:       number | null
-  review_count: number | null
-  image_url:    string | null
-  product_url:  string | null
-  badge:        string | null   // comma-separated: "Best Seller" | "Amazon's Choice" | "A+" | combinations
-  brand:        string | null
-  marketplace:  string
+  asin:           string | null
+  product_name:   string
+  category:       string | null
+  rank:           number | null
+  price:          number | null
+  original_price: number | null   // crossed-out/strikethrough price when a sale is active
+  rating:         number | null
+  review_count:   number | null
+  image_url:      string | null
+  product_url:    string | null
+  badge:          string | null   // comma-separated: "Best Seller" | "Amazon's Choice" | "A+" | combinations
+  brand:          string | null
+  marketplace:    string
 }
 
 // ─── Amazon.com BSR category URLs ────────────────────────────────────────────
