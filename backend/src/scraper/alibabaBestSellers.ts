@@ -25,7 +25,10 @@ import { chromium } from "playwright"
 import { logger }   from "../utils/logger"
 import { AmazonProduct } from "./amazonBestSellers"
 
-const SUPER_DEALS_URL = "https://www.aliexpress.us/p/deal/superDeals.html"
+// aliexpress.com works for all IPs (including Lebanon).
+// aliexpress.us is geo-blocked to US IPs — blank page for non-US visitors.
+// USD is forced via the c_tp=USD cookie on .aliexpress.com domain.
+const SUPER_DEALS_URL = "https://www.aliexpress.com/p/deal/superDeals.html"
 
 // ─── Scrape the Super Deals page ─────────────────────────────────────────────
 
@@ -269,10 +272,10 @@ export async function scrapeAlibabaBestSellers(opts: {
     viewport:         { width: 1440, height: 900 },
     extraHTTPHeaders: { "Accept-Language": "en-US,en;q=0.9" },
   })
-  // USD + US locale cookies for aliexpress.us
+  // Force USD currency regardless of visitor IP via aliexpress.com cookies
   await context.addCookies([
-    { name: "aep_usuc_f", value: "site=usa&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.us", path: "/" },
-    { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=",                     domain: ".aliexpress.us", path: "/" },
+    { name: "aep_usuc_f", value: "site=glo&c_tp=USD&region=US&b_locale=en_US", domain: ".aliexpress.com", path: "/" },
+    { name: "xman_us_f",  value: "x_locale=en_US&acs_rt=",                     domain: ".aliexpress.com", path: "/" },
   ])
   const page = await context.newPage()
 
