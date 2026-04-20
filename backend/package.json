@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "local-scraper": "tsx local-scraper.ts",
     "build": "tsc",
     "start": "node dist/index.js",
     "db:generate": "prisma generate",

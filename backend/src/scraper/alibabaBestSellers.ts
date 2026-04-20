@@ -4,6 +4,9 @@
  * Scrapes aliexpress.com category pages sorted by total orders (best selling).
  * Extracts product data from window.runParams embedded in the page.
  * Data stored in amazon_trending with marketplace = "Alibaba".
+ *
+ * If LOCAL_SCRAPER_URL env var is set, delegates to the local home-PC server
+ * (residential IP) instead of running Playwright on Render (datacenter IP blocked).
  */
 
 import { chromium } from "playwright"
@@ -183,6 +186,25 @@ export async function scrapeAlibabaBestSellers(opts: {
   limit?:    number
 }): Promise<AmazonProduct[]> {
   const { category = "All", limit = 100 } = opts
+
+  // ── Delegate to local home-PC scraper if URL is configured ──────────────────
+  const localUrl = process.env.LOCAL_SCRAPER_URL
+  if (localUrl) {
+    logger.info("[AlibabaScraper] Delegating to local scraper", { localUrl })
+    try {
+      const resp = await fetch(
+        `${localUrl}/scrape-aliexpress?category=${encodeURIComponent(category)}&limit=${limit}`,
+        { method: "POST", signal: AbortSignal.timeout(300_000) }  // 5 min timeout
+      )
+      if (!resp.ok) throw new Error(`Local scraper responded ${resp.status}`)
+      const data = await resp.json() as { products: AmazonProduct[] }
+      logger.info("[AlibabaScraper] Local scraper returned", { count: data.products.length })
+      return data.products
+    } catch (err: any) {
+      logger.error("[AlibabaScraper] Local scraper failed, falling back", { error: err.message })
+      // Falls through to Playwright below
+    }
+  }
 
   const targets = category === "All"
     ? ALIBABA_CATEGORIES
