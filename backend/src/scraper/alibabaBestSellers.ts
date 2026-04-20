@@ -108,12 +108,20 @@ async function scrapeDealsPage(
 
       // ── Title ──
       const titleEl = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name'], [class*='Name']")
-      const product_name = (
+      const rawName = (
         titleEl?.textContent ??
         linkEl?.getAttribute("title") ??
         linkEl?.textContent ??
         ""
       ).trim().replace(/\s+/g, " ")
+      // Strip price/metadata noise that gets concatenated into title text:
+      // e.g. "...Blush Powder$2.80$3.57-21%5 left5,000+ sold4.6" → "...Blush Powder"
+      const product_name = rawName
+        .replace(/\$[\d,.]+.*$/, "")   // cut at first $ sign
+        .replace(/US\s*\$.*$/, "")     // cut at "US $"
+        .replace(/\d+%.*$/, "")        // cut at discount percentage
+        .replace(/\d+\s*left.*$/, "")  // cut at "N left"
+        .trim()
       if (!product_name || product_name.length < 3) return
 
       // ── Image ──
