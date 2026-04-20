@@ -404,7 +404,7 @@ const DEFAULT_FILTERS: Filters = {
 
 // ─── Marketplace tab config ───────────────────────────────────────────────────
 
-type MarketplaceId = "Amazon" | "eBay" | "iHerb" | "Alibaba" | "Banggood"
+type MarketplaceId = "Amazon" | "eBay" | "Alibaba"
 
 const MARKETPLACES: {
   id:    MarketplaceId
@@ -434,25 +434,13 @@ const MARKETPLACES: {
     ),
   },
   {
-    id: "iHerb", flag: "🌍",
-    logo: (
-      <span className="font-black text-[14px] tracking-[-0.3px]">
-        <span style={{ color: "#1B7340" }}>i</span><span style={{ color: "#66A830" }}>Herb</span>
-      </span>
-    ),
-  },
-  {
     id: "Alibaba", flag: "🌐",
     logo: (
       <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#E62D2D" }}>AliExpress</span>
     ),
   },
-  {
-    id: "Banggood", flag: "🌏",
-    logo: (
-      <span className="font-black text-[14px] tracking-[-0.3px]" style={{ color: "#E5361A" }}>Banggood</span>
-    ),
-  },
+  // iHerb — hidden: Cloudflare blocks Render IPs; revisit with residential proxy or Apify
+  // Banggood — hidden: revisit with Vision improvements or alternative data source
 ]
 
 // ─── Marketplace-aware product link helper ────────────────────────────────────
@@ -474,9 +462,7 @@ function productLink(p: { product_url: string | null; asin: string | null; produ
 const MARKETPLACE_CATEGORIES: Record<MarketplaceId, string[]> = {
   Amazon:  ["All", "Electronics", "Beauty", "Home & Kitchen", "Health", "Sports & Outdoors", "Toys & Games", "Fashion", "Books", "Office Products", "Pet Supplies"],
   eBay:    ["All", "Electronics", "Health & Beauty", "Home & Garden", "Sporting Goods", "Toys & Hobbies", "Fashion", "Books", "Baby", "Pet Supplies", "Collectibles"],
-  iHerb:   ["All", "Vitamins", "Sports Nutrition", "Beauty", "Grocery", "Baby & Kids", "Pets", "Health", "Herbs"],
-  Alibaba:  ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
-  Banggood: ["All", "Electronics", "Phone & Gadgets", "Computers", "Home & Garden", "Sports & Outdoors", "Toys & Hobbies", "Beauty & Health"],
+  Alibaba: ["All", "Electronics", "Phone Accessories", "Home & Garden", "Beauty & Health", "Fashion", "Toys & Games", "Sports & Outdoor", "Computer & Office"],
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -535,14 +521,6 @@ export function CreatorIntelContent({ role }: Props) {
         if (ebRes.ok)   { const j = await ebRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
-      } else if (market === "iHerb") {
-        const [ihRes, histRes] = await Promise.all([
-          fetch(`${API}/api/creator-intel/iherb-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API}/api/creator-intel/iherb-history`,             { headers: { Authorization: `Bearer ${token}` } }),
-        ])
-        if (ihRes.ok)   { const j = await ihRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
-        if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
-        setLastScraped(null)
       } else if (market === "Alibaba") {
         const [alRes, histRes] = await Promise.all([
           fetch(`${API}/api/creator-intel/alibaba-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
@@ -550,14 +528,6 @@ export function CreatorIntelContent({ role }: Props) {
         ])
         if (alRes.ok)   { const j = await alRes.json();   setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
         if (histRes.ok) { const j = await histRes.json(); setRankHistory(j.data ?? {}) }
-        setLastScraped(null)
-      } else if (market === "Banggood") {
-        const [r, h] = await Promise.all([
-          fetch(`${API}/api/creator-intel/banggood-trending?${params}`, { headers: { Authorization: `Bearer ${token}` } }),
-          fetch(`${API}/api/creator-intel/banggood-history`,             { headers: { Authorization: `Bearer ${token}` } }),
-        ])
-        if (r.ok) { const j = await r.json(); setAllProducts(j.data ?? []); setTotalCount(j.count ?? 0) }
-        if (h.ok) { const j = await h.json(); setRankHistory(j.data ?? {}) }
         setLastScraped(null)
       }
     } catch (e) { console.error(e) }
@@ -650,11 +620,9 @@ export function CreatorIntelContent({ role }: Props) {
     setRefreshing(true)
     try {
       const endpoint =
-        activeMarket === "eBay"     ? `${API}/api/creator-intel/scrape-ebay`     :
-        activeMarket === "iHerb"    ? `${API}/api/creator-intel/scrape-iherb`    :
-        activeMarket === "Alibaba"  ? `${API}/api/creator-intel/scrape-alibaba`  :
-        activeMarket === "Banggood" ? `${API}/api/creator-intel/scrape-banggood` :
-                                      `${API}/api/creator-intel/scrape-amazon`
+        activeMarket === "eBay"    ? `${API}/api/creator-intel/scrape-ebay`    :
+        activeMarket === "Alibaba" ? `${API}/api/creator-intel/scrape-alibaba` :
+                                     `${API}/api/creator-intel/scrape-amazon`
       await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
