@@ -38,7 +38,7 @@ async function scrapeCategoryPage(
 
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 35_000 })
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(4000)
   } catch (err: any) {
     logger.warn("[AlibabaScraper] Page load failed", { query, error: err.message })
     return []
@@ -51,6 +51,16 @@ async function scrapeCategoryPage(
     return []
   }
 
+  // Scroll to trigger lazy-loaded product cards, then return to top
+  try {
+    for (let i = 0; i < 6; i++) {
+      await page.evaluate(() => window.scrollBy(0, 1200))
+      await page.waitForTimeout(600)
+    }
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(2000)
+  } catch { /* ignore */ }
+
   // Try window.runParams first (AliExpress embeds all product data here)
   const products = await page.evaluate((cat: string) => {
     const rp = (window as any).runParams
@@ -59,11 +69,6 @@ async function scrapeCategoryPage(
     const mods: any = rp?.data?.result?.mods ?? rp?.mods ?? {}
     const items: any[] = mods?.itemList?.content ?? mods?.list?.content ?? []
     if (items.length === 0) return null
-
-    // Debug: log price structure of first item so we can see field names
-    if (items[0]) {
-      console.log("[AlibabaScraper] First item prices debug:", JSON.stringify(items[0].prices ?? items[0].price ?? "no price field"))
-    }
 
     return items.slice(0, 48).map((item: any, idx: number) => {
       const title: string = item.title ?? item.subject ?? ""
@@ -140,17 +145,25 @@ async function scrapeCategoryPage(
       const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
       if (!product_name || product_name.length < 3) return
 
-      let price: number | null = null
-      const leafPrices: number[] = []
-      Array.from(el.querySelectorAll("*")).forEach(node => {
-        if (node.children.length > 0) return
-        const t = node.textContent?.trim() ?? ""
-        if (/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) {
-          const n = parseFloat(t.replace(/[^\d.]/g, ""))
-          if (isFinite(n) && n > 0.01 && n < 50000) leafPrices.push(n)
-        }
-      })
-      if (leafPrices.length > 0) price = Math.min(...leafPrices)
+      // CSS strikethrough detection — separates sale price from crossed-out original
+      const salePrices: number[] = []
+      const strikePrices: number[] = []
+      for (const node of Array.from(el.querySelectorAll("*"))) {
+        if (node.children.length > 0) continue
+        const t = (node.textContent ?? "").trim()
+        if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
+        const n = parseFloat(t.replace(/[^\d.]/g, ""))
+        if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
+        const style = window.getComputedStyle(node as Element)
+        const isStrike = style.textDecoration.includes("line-through") ||
+                         style.textDecorationLine.includes("line-through")
+        if (isStrike) strikePrices.push(n); else salePrices.push(n)
+      }
+      const price: number | null = salePrices.length > 0
+        ? Math.min(...salePrices)
+        : strikePrices.length > 0 ? Math.min(...strikePrices) : null
+      const original_price: number | null = strikePrices.length > 0 && salePrices.length > 0
+        ? Math.max(...strikePrices) : null
 
       const imgEl     = el.querySelector("img")
       const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
@@ -171,7 +184,7 @@ async function scrapeCategoryPage(
         category:       cat,
         rank:           idx + 1,
         price,
-        original_price: null,
+        original_price,
         rating:         null,
         review_count,
         image_url,
