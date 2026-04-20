@@ -1,10 +1,9 @@
 /**
- * AliExpress Best Sellers — Playwright + DOM scraper.
+ * AliExpress Best Sellers — Playwright + Claude Vision scraper.
  *
- * Scrapes aliexpress.com search pages sorted by total orders.
- * Price extraction uses leaf-node Math.min() — picks the sale/flash price
- * (lower number) and ignores the crossed-out original price (higher number).
- * window.runParams is intentionally skipped — it returned wrong price variants.
+ * Same pattern as Banggood: navigate, scroll, screenshot, send to Claude Vision.
+ * Vision prompt explicitly asks for sale price vs crossed-out original price.
+ * DOM-based extraction returns 0 on Render (datacenter IPs blocked by AliExpress).
  *
  * Data stored in amazon_trending with marketplace = "Alibaba".
  */
@@ -13,7 +12,9 @@ import { chromium }       from "playwright"
 import { logger }         from "../utils/logger"
 import { AmazonProduct }  from "./amazonBestSellers"
 
-// ─── AliExpress category search queries ──────────────────────────────────────
+const CLAUDE_API = "https://api.anthropic.com/v1/messages"
+
+// ─── AliExpress category search URLs ─────────────────────────────────────────
 
 const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
   { label: "Electronics",       query: "electronics gadgets" },
@@ -25,6 +26,108 @@ const ALIBABA_CATEGORIES: { label: string; query: string }[] = [
   { label: "Sports & Outdoor",  query: "sports outdoor fitness" },
   { label: "Computer & Office", query: "computer office accessories" },
 ]
+
+// ─── Claude Vision extraction ─────────────────────────────────────────────────
+
+async function extractWithVision(
+  screenshot: Buffer,
+  category:   string,
+): Promise<AmazonProduct[]> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) {
+    logger.warn("[AlibabaScraper] No ANTHROPIC_API_KEY — skipping Vision extraction")
+    return []
+  }
+
+  const base64 = screenshot.toString("base64")
+  let text = "[]"
+
+  try {
+    const resp = await fetch(CLAUDE_API, {
+      method:  "POST",
+      headers: {
+        "x-api-key":         apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type":      "application/json",
+      },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 2000,
+        messages: [{
+          role:    "user",
+          content: [
+            {
+              type:   "image",
+              source: { type: "base64", media_type: "image/jpeg", data: base64 },
+            },
+            {
+              type: "text",
+              text: `This is an AliExpress search results page (category: ${category}).
+Extract the TOP 10 best-selling products clearly visible on screen.
+Return ONLY a valid JSON array — no markdown fences, no explanation:
+[{"product_name":"...","brand":"...","price":26.49,"original_price":34.99,"rating":4.7,"review_count":4912}]
+
+PRICE RULES (very important):
+- AliExpress shows TWO prices on sale items: a SALE price (lower, often in red/orange) and an ORIGINAL price (higher, crossed out with a line through it)
+- "price" = the SALE price (the lower number — the one customers actually pay)
+- "original_price" = the CROSSED-OUT price (the higher number with a strikethrough line)
+- If only ONE price is shown, put it in "price" and set "original_price" to null
+- Both must be numbers, not strings
+
+Other rules:
+- rating must be 1.0–5.0 or null
+- review_count is orders/reviews count (integer) or null
+- If the page shows a CAPTCHA, error, or no products, return []`,
+            },
+          ],
+        }],
+      }),
+    })
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "")
+      throw new Error(`Claude API ${resp.status}: ${errText}`)
+    }
+
+    const json = await resp.json()
+    const raw  = json.content?.[0]?.text?.trim() ?? "[]"
+    const match = raw.match(/\[[\s\S]*?\]/)
+    text = match ? match[0] : "[]"
+  } catch (err: any) {
+    logger.warn("[AlibabaScraper] Claude Vision API error", { category, error: err.message })
+    return []
+  }
+
+  try {
+    const arr = JSON.parse(text)
+    if (!Array.isArray(arr)) return []
+
+    return arr.slice(0, 10).map((p: any, idx: number) => {
+      const price         = typeof p.price === "number" && p.price > 0 && p.price < 50000 ? p.price : null
+      const original_price = typeof p.original_price === "number" && p.original_price > 0 && p.original_price < 50000
+        ? p.original_price : null
+
+      return {
+        asin:           null,
+        product_name:   String(p.product_name ?? "").trim(),
+        category,
+        rank:           idx + 1,
+        price,
+        original_price: original_price && price && original_price > price ? original_price : null,
+        rating:         typeof p.rating === "number" && p.rating >= 1 && p.rating <= 5 ? p.rating : null,
+        review_count:   typeof p.review_count === "number" && p.review_count > 0 ? Math.round(p.review_count) : null,
+        image_url:      null,
+        product_url:    null,
+        badge:          "Best Seller",
+        brand:          p.brand ? String(p.brand).trim() || null : null,
+        marketplace:    "Alibaba",
+      }
+    }).filter((p: AmazonProduct) => p.product_name.length >= 3)
+  } catch (err: any) {
+    logger.warn("[AlibabaScraper] Vision JSON parse failed", { category, raw: text.slice(0, 200), error: err.message })
+    return []
+  }
+}
 
 // ─── Scrape one category page ─────────────────────────────────────────────────
 
@@ -44,119 +147,19 @@ async function scrapeCategoryPage(
     return []
   }
 
-  // Check for bot challenge
-  const bodyText = await page.evaluate(() => document.body?.innerText?.slice(0, 500) ?? "").catch(() => "")
-  if (/captcha|robot|access.denied|verify you/i.test(bodyText)) {
-    logger.warn("[AlibabaScraper] Bot challenge detected", { query })
-    return []
-  }
-
-  // Scroll to trigger lazy-loaded product cards
+  // Scroll to trigger lazy-loaded product cards, then return to top
   try {
     for (let i = 0; i < 5; i++) {
-      await page.evaluate(() => window.scrollBy(0, 1000))
-      await page.waitForTimeout(600)
+      await page.evaluate(() => window.scrollBy(0, 1200))
+      await page.waitForTimeout(700)
     }
     await page.evaluate(() => window.scrollTo(0, 0))
-    await page.waitForTimeout(2000)
+    await page.waitForTimeout(3000)
   } catch { /* ignore */ }
 
-  const products = await page.evaluate((cat: string) => {
-    const results: any[] = []
-
-    // AliExpress search card selector
-    let cards: Element[] = Array.from(document.querySelectorAll(
-      "a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]"
-    ))
-
-    // Fallback: any link to an item page → walk up to card container
-    if (cards.length === 0) {
-      cards = Array.from(document.querySelectorAll("a[href*='/item/']"))
-        .map(a => a.closest("li, [class*='card'], [class*='item']") ?? a.parentElement ?? a)
-        .filter((el, i, arr) => arr.indexOf(el) === i)
-    }
-
-    cards.slice(0, 48).forEach((el, idx) => {
-      // Link
-      const linkEl = (
-        el.tagName === "A" ? el : el.querySelector("a[href*='/item/']")
-      ) as HTMLAnchorElement | null
-      const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
-      if (!href.includes("/item/")) return
-      const product_url = href.startsWith("//") ? `https:${href}` : href
-      const productId   = href.match(/\/item\/(\d+)/)?.[1] ?? null
-
-      // Title
-      const titleEl    = el.querySelector("h3, h2, [class*='title'], [class*='Title'], [class*='name']")
-      const product_name = (titleEl?.textContent ?? linkEl?.getAttribute("title") ?? "").trim()
-      if (!product_name || product_name.length < 3) return
-
-      // Price — leaf-node scan with strikethrough detection.
-      // Elements with CSS text-decoration: line-through are the crossed-out original price.
-      // Elements without are the sale/current price.
-      // If both exist → sale price = non-strikethrough, original = strikethrough.
-      // If only one type → use whatever is available.
-      const salePrices: number[] = []
-      const strikePrices: number[] = []
-      for (const node of Array.from(el.querySelectorAll("*"))) {
-        if (node.children.length > 0) continue
-        const t = (node.textContent ?? "").trim()
-        if (!/^\$[\d,]+\.?\d{0,2}$|^US\$[\d,]+/.test(t)) continue
-        const n = parseFloat(t.replace(/[^\d.]/g, ""))
-        if (!isFinite(n) || n <= 0.01 || n >= 50000) continue
-        const style = window.getComputedStyle(node as Element)
-        const isStrike = style.textDecoration.includes("line-through") ||
-                         style.textDecorationLine.includes("line-through")
-        if (isStrike) strikePrices.push(n); else salePrices.push(n)
-      }
-      const price: number | null = salePrices.length > 0
-        ? Math.min(...salePrices)
-        : strikePrices.length > 0 ? Math.min(...strikePrices) : null
-      const original_price: number | null = strikePrices.length > 0 && salePrices.length > 0
-        ? Math.max(...strikePrices) : null
-
-      // Image
-      const imgEl     = el.querySelector("img")
-      const image_url = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
-
-      // Orders/sold count
-      let review_count: number | null = null
-      const tradeEl = el.querySelector("[class*='trade'], [class*='order'], [class*='sold']")
-      if (tradeEl) {
-        const m = (tradeEl.textContent ?? "").replace(/,/g, "").match(/(\d+)/)
-        if (m) review_count = parseInt(m[1], 10)
-      }
-
-      // Rating
-      let rating: number | null = null
-      const ratingEl = el.querySelector("[class*='rating'], [class*='star'], [class*='Rate']")
-      if (ratingEl) {
-        const m = (ratingEl.textContent ?? "").match(/(\d[\d.]*)/)
-        if (m) { const v = parseFloat(m[1]); if (v >= 1 && v <= 5) rating = v }
-      }
-
-      const brandEl = el.querySelector("[class*='store'], [class*='shop']")
-      const brand   = brandEl?.textContent?.trim() || null
-
-      results.push({
-        asin:           productId,
-        product_name,
-        category:       cat,
-        rank:           idx + 1,
-        price,
-        original_price,
-        rating,
-        review_count,
-        image_url:      image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
-        product_url,
-        badge:          review_count && review_count >= 1000 ? "Best Seller" : null,
-        brand,
-        marketplace:    "Alibaba",
-      })
-    })
-
-    return results
-  }, category)
+  // Take a JPEG screenshot and send to Claude Vision
+  const screenshot = await page.screenshot({ type: "jpeg", quality: 80 })
+  const products   = await extractWithVision(screenshot, category)
 
   logger.info("[AlibabaScraper] Category done", { category, count: products.length })
   return products
@@ -179,11 +182,11 @@ export async function scrapeAlibabaBestSellers(opts: {
     return []
   }
 
-  logger.info("[AlibabaScraper] Starting scrape", { categories: targets.map(t => t.label) })
+  logger.info("[AlibabaScraper] Starting scrape (Vision mode)", { categories: targets.map(t => t.label) })
 
   const browser = await chromium.launch({
     headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+    args:     ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
   })
   const context = await browser.newContext({
     userAgent:        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -204,7 +207,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     for (const target of targets) {
       const products = await scrapeCategoryPage(target.query, target.label, page)
       allProducts.push(...products)
-      await new Promise(r => setTimeout(r, 1500 + Math.random() * 500))
+      await new Promise(r => setTimeout(r, 1500 + Math.random() * 700))
     }
   } finally {
     await browser.close()
@@ -212,7 +215,7 @@ export async function scrapeAlibabaBestSellers(opts: {
 
   const seen  = new Set<string>()
   const dedup = allProducts.filter(p => {
-    const key = p.asin ?? p.product_name
+    const key = p.product_name
     if (seen.has(key)) return false
     seen.add(key)
     return true
