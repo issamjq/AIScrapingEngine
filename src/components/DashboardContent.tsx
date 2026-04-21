@@ -47,6 +47,8 @@ interface AdminStats {
   top_queries:    { query: string; count: number }[]
   users_by_plan:  { plan: string; count: number }[]
   recent_signups: { email: string; role: string; plan_code: string; created_at: string }[]
+  activity_feed:  { id: number; user_email: string; role: string; action: string; details: any; ip: string; created_at: string }[]
+  action_counts:  { action: string; count: number }[]
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -85,6 +87,50 @@ function mergeDays(
     else map[r.date] = { date: r.date, [keyA]: 0, [keyB]: r.count }
   })
   return Object.values(map).sort((x, y) => x.date.localeCompare(y.date))
+}
+
+const ACTION_LABELS: Record<string, { label: string; color: string }> = {
+  b2c_search:           { label: "B2C Search",         color: "bg-violet-500" },
+  b2c_unlock:           { label: "Unlock",              color: "bg-violet-300" },
+  b2b_ai_search:        { label: "B2B AI Search",       color: "bg-blue-500"  },
+  b2b_catalog_discovery:{ label: "Catalog Discovery",   color: "bg-blue-400"  },
+  b2b_confirm_mappings: { label: "Confirm Mappings",    color: "bg-blue-300"  },
+  product_add:          { label: "Product Added",       color: "bg-emerald-500"},
+  product_import:       { label: "Product Import",      color: "bg-emerald-400"},
+  product_delete:       { label: "Product Deleted",     color: "bg-red-400"   },
+  store_add:            { label: "Store Added",         color: "bg-teal-500"  },
+  store_edit:           { label: "Store Edited",        color: "bg-teal-400"  },
+  store_delete:         { label: "Store Deleted",       color: "bg-red-300"   },
+  scrape_amazon:        { label: "Amazon Scrape",       color: "bg-orange-500"},
+  scrape_aliexpress:    { label: "AliExpress Scrape",   color: "bg-orange-400"},
+  scrape_tiktok:        { label: "TikTok Scrape",       color: "bg-pink-500"  },
+  scrape_ebay:          { label: "eBay Scrape",         color: "bg-yellow-500"},
+  signup:               { label: "New Signup",          color: "bg-green-500" },
+  account_update:       { label: "Account Updated",     color: "bg-slate-400" },
+  account_delete:       { label: "Account Deleted",     color: "bg-red-500"   },
+  credits_deducted:     { label: "Credits Deducted",    color: "bg-amber-500" },
+  price_sync:           { label: "Price Sync",          color: "bg-indigo-400"},
+}
+
+function actionInfo(action: string) {
+  return ACTION_LABELS[action] ?? { label: action, color: "bg-slate-400" }
+}
+
+function detailSummary(action: string, details: any): string {
+  if (!details) return ""
+  switch (action) {
+    case "b2c_search":            return details.query ? `"${String(details.query).slice(0, 40)}"` : ""
+    case "b2b_ai_search":         return details.query ? `"${String(details.query).slice(0, 40)}"` : ""
+    case "b2b_catalog_discovery": return details.query ? `"${String(details.query).slice(0, 30)}"` : ""
+    case "product_import":        return details.count ? `${details.count} products` : ""
+    case "product_add":           return details.name  ? String(details.name).slice(0, 40) : ""
+    case "store_add":             return details.name  ? String(details.name).slice(0, 40) : ""
+    case "scrape_amazon":         return details.marketplace ? details.marketplace : ""
+    case "scrape_aliexpress":     return details.category ?? ""
+    case "signup":                return details.plan ? details.plan : ""
+    case "b2c_unlock":            return details.count ? `${details.count} results` : ""
+    default:                      return ""
+  }
 }
 
 // ─── Stat card ────────────────────────────────────────────────────────────────
@@ -176,7 +222,7 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts } = stats
 
   // Merge searches + scrapes into one activity chart
   const activityData = mergeDays(charts.searches_by_day, charts.scrapes_by_day, "searches", "scrapes")
@@ -450,6 +496,67 @@ export function DashboardContent(_: { role?: string }) {
             ))}
           </CardContent>
         </Card>
+      </div>
+
+      {/* Activity Monitoring — full width */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+
+        {/* Action breakdown (7d) */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Actions Breakdown (7d)</CardTitle>
+            <CardDescription className="text-xs">What users are doing most</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {action_counts.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No activity yet</p>
+            ) : action_counts.map((a, i) => {
+              const info = actionInfo(a.action)
+              return (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 w-2 rounded-full shrink-0 ${info.color}`} />
+                    <span className="text-xs">{info.label}</span>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] shrink-0">{a.count}×</Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Live activity feed — spans 2 cols */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Live Activity Feed</CardTitle>
+            <CardDescription className="text-xs">Last 100 events across all users</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-96 overflow-y-auto">
+              {activity_feed.length === 0 ? (
+                <p className="text-xs text-muted-foreground p-4">No activity logged yet</p>
+              ) : activity_feed.map((ev) => {
+                const info    = actionInfo(ev.action)
+                const summary = detailSummary(ev.action, ev.details)
+                return (
+                  <div key={ev.id} className="flex items-start gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors">
+                    <div className={`mt-1 h-2 w-2 rounded-full shrink-0 ${info.color}`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs font-medium truncate max-w-[180px]">{ev.user_email}</span>
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 shrink-0">{ev.role ?? "—"}</Badge>
+                        <span className="text-xs text-foreground shrink-0">{info.label}</span>
+                        {summary && <span className="text-xs text-muted-foreground truncate">{summary}</span>}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{timeAgo(ev.created_at)}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
       </div>
 
     </div>

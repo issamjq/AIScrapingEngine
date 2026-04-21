@@ -35,6 +35,7 @@ import {
   getDataFreshness,
 } from "../services/creatorIntelService"
 import { logger } from "../utils/logger"
+import { logActivity, getClientIp } from "../services/activityLogger"
 
 export const creatorIntelRouter = Router()
 
@@ -148,6 +149,7 @@ creatorIntelRouter.post("/scrape-tiktok", async (req: AuthRequest, res: Response
 
     logger.info("[CreatorIntel] TikTok scrape triggered", { category, limit, by: req.email })
     const result = await runTikTokScrape({ category, limit, apiKey: key })
+    logActivity({ user_email: req.email!, action: "scrape_tiktok", details: { category, limit, inserted: (result as any).inserted }, ip: getClientIp(req) })
     res.json({ success: true, ...result })
   } catch (err: any) {
     logger.error("[CreatorIntel] POST /scrape-tiktok", { error: err.message })
@@ -166,6 +168,7 @@ creatorIntelRouter.post("/scrape-amazon", async (req: AuthRequest, res: Response
   const { category = "All", marketplace = "US", limit = 20 } = req.body
   const jobId = startJob()
   logger.info("[CreatorIntel] Amazon scrape triggered (async)", { category, marketplace, limit, by: req.email, jobId })
+  logActivity({ user_email: req.email!, action: "scrape_amazon", details: { category, marketplace, limit, jobId }, ip: getClientIp(req) })
   res.status(202).json({ success: true, status: "started", jobId })
 
   runAmazonScrape({ category, marketplace, limit, apiKey: key })
@@ -207,6 +210,7 @@ creatorIntelRouter.post("/scrape-ebay", async (req: AuthRequest, res: Response) 
   const { category = "All", limit = 100 } = req.body
   const jobId = startJob()
   logger.info("[CreatorIntel] eBay scrape triggered (async)", { category, limit, by: req.email, jobId })
+  logActivity({ user_email: req.email!, action: "scrape_ebay", details: { category, limit, jobId }, ip: getClientIp(req) })
   res.status(202).json({ success: true, status: "started", jobId })
 
   runEbayScrape({ category, limit })
@@ -328,6 +332,7 @@ creatorIntelRouter.post("/scrape-alibaba", async (req: AuthRequest, res: Respons
   const { category = "All", limit = 100 } = req.body
   const jobId = startJob()
   logger.info("[CreatorIntel] Alibaba scrape triggered (async)", { category, limit, by: req.email, jobId })
+  logActivity({ user_email: req.email!, action: "scrape_aliexpress", details: { category, limit, jobId }, ip: getClientIp(req) })
   res.status(202).json({ success: true, status: "started", jobId })
 
   runAlibabaScrape({ category, limit })

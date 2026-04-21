@@ -2,6 +2,7 @@ import { Router } from "express"
 import * as svc from "../services/productService"
 import { requireBody, validateId, createError } from "../middleware/validate"
 import { AuthRequest } from "../middleware/auth"
+import { logActivity, getClientIp } from "../services/activityLogger"
 
 export const productsRouter = Router()
 
@@ -21,6 +22,7 @@ productsRouter.post("/import", async (req, res, next) => {
       return next(createError("products array required", 400, "VALIDATION"))
     }
     const data = await svc.bulkImport(products, email)
+    logActivity({ user_email: email, action: "product_import", details: { count: products.length, imported: data.inserted ?? 0 }, ip: getClientIp(req) })
     res.json({ success: true, data })
   } catch (err) { next(err) }
 })
@@ -29,6 +31,7 @@ productsRouter.post("/", requireBody(["internal_name"]), async (req, res, next) 
   try {
     const email = (req as AuthRequest).email!
     const data  = await svc.create(req.body, email)
+    logActivity({ user_email: email, action: "product_add", details: { name: req.body.internal_name, sku: req.body.internal_sku }, ip: getClientIp(req) })
     res.status(201).json({ success: true, data })
   } catch (err: any) {
     if (err.code === "23505") return next(createError("SKU already exists", 409, "DUPLICATE"))
@@ -58,6 +61,7 @@ productsRouter.delete("/:id", validateId, async (req, res, next) => {
     const email = (req as AuthRequest).email!
     const ok    = await svc.remove(Number(req.params.id), email)
     if (!ok) return next(createError("Product not found", 404, "NOT_FOUND"))
+    logActivity({ user_email: email, action: "product_delete", details: { product_id: req.params.id }, ip: getClientIp(req) })
     res.json({ success: true, message: "Product deleted" })
   } catch (err) { next(err) }
 })

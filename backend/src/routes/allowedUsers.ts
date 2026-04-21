@@ -1,5 +1,5 @@
 import { Router } from "express"
-import { Request, Response, NextFunction } from "express"
+import { Response, NextFunction } from "express"
 import { query } from "../db"
 import { createError } from "../middleware/validate"
 import { AuthRequest } from "../middleware/auth"
@@ -8,6 +8,7 @@ import { copyGlobalStoresToUser } from "../services/companyService"
 import { createWallet } from "../services/walletService"
 import { getPlanByKey } from "../services/plansService"
 import { signupLimiter } from "../middleware/rateLimit"
+import { logActivity } from "../services/activityLogger"
 
 export const allowedUsersRouter = Router()
 
@@ -175,6 +176,8 @@ allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest
       ? (chosenPlan?.credits_b2b ?? 20)
       : (chosenPlan?.credits_b2c ?? 30)
     await createWallet(email.toLowerCase().trim(), initialCredits)
+
+    logActivity({ user_email: email.toLowerCase().trim(), role, action: "signup", details: { plan: effectivePlanCode, billing_interval: billingInterval, initial_credits: initialCredits } })
 
     res.status(201).json({ success: true, data: rows[0] })
   } catch (err) { next(err) }

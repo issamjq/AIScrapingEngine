@@ -131,6 +131,23 @@ adminStatsRouter.get("/", async (req, res, next) => {
       LIMIT 10
     `)
 
+    // ── Activity log feed (last 100 events) ──────────────────────────────────
+    const { rows: activityFeed } = await query(`
+      SELECT id, user_email, role, action, details, ip, created_at
+      FROM activity_log
+      ORDER BY created_at DESC
+      LIMIT 100
+    `)
+
+    // ── Activity counts by action type (last 7 days) ──────────────────────────
+    const { rows: actionCounts } = await query(`
+      SELECT action, COUNT(*)::int AS count
+      FROM activity_log
+      WHERE created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY action
+      ORDER BY count DESC
+    `)
+
     // ── Creator Intel scrapes by marketplace (last 30 days) ──────────────────
     const { rows: byMarketplace } = await query(`
       SELECT
@@ -190,6 +207,9 @@ adminStatsRouter.get("/", async (req, res, next) => {
         top_queries:    topQueries,
         users_by_plan:  byPlan,
         recent_signups: recentSignups,
+        // Activity monitoring
+        activity_feed:   activityFeed,
+        action_counts:   actionCounts,
       },
     })
   } catch (err) { next(err) }

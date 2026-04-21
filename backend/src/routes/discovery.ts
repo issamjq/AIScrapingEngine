@@ -11,17 +11,20 @@ import { logger } from "../utils/logger"
 import { query as dbQuery } from "../db"
 import { upsertSuggestion } from "../services/suggestionsService"
 import { b2cSearchLimiter, unlockLimiter } from "../middleware/rateLimit"
+import { logActivity, getClientIp } from "../services/activityLogger"
 
 export const discoveryRouter = Router()
 
 // POST /api/discovery/search
 discoveryRouter.post("/search", checkUsageLimit as any, async (req, res, next) => {
   try {
+    const email     = (req as AuthRequest).email!
     const companyId = parseInt(req.body.company_id)
     if (!companyId || isNaN(companyId)) return next(createError("company_id is required", 400, "VALIDATION_ERROR"))
     const searchQuery = (req.body.query || "marvis").toString().trim()
     logger.info("[DiscoveryRoute] search", { companyId, searchQuery })
     const data = await discoverProducts(companyId, searchQuery)
+    logActivity({ user_email: email, action: "b2b_catalog_discovery", details: { query: searchQuery, company_id: companyId }, ip: getClientIp(req) })
     res.json({ success: true, data })
   } catch (err) { next(err) }
 })
@@ -38,6 +41,7 @@ discoveryRouter.post("/confirm", async (req, res, next) => {
     }
     logger.info("[DiscoveryRoute] confirm", { companyId, count: mappings.length })
     const data = await confirmMappings(companyId, mappings)
+    logActivity({ user_email: (req as AuthRequest).email!, action: "b2b_confirm_mappings", details: { company_id: companyId, count: mappings.length }, ip: getClientIp(req) })
     res.json({ success: true, data })
   } catch (err) { next(err) }
 })
@@ -57,6 +61,7 @@ discoveryRouter.post("/ai-search", checkUsageLimit as any, async (req, res, next
 
     logger.info("[DiscoveryRoute] ai-search", { query, retailers })
     const results = await aiWebSearch(query, retailers, apiKey)
+    logActivity({ user_email: (req as AuthRequest).email!, action: "b2b_ai_search", details: { query, retailers, results_count: results.length }, ip: getClientIp(req) })
     res.json({ success: true, data: { query, results } })
   } catch (err) { next(err) }
 })
@@ -237,6 +242,9 @@ discoveryRouter.post("/b2c-search", b2cSearchLimiter as any, async (req, res, ne
       const finalQuery = correctedQuery ?? queryText
       logger.info("[B2CSearch] Done", { email, count: results.length, correctedQuery, durationSeconds })
 
+      // Log activity
+      logActivity({ user_email: email, action: "b2c_search", details: { query: finalQuery, results_count: results.length, batch, credits, country_hint: countryHint }, ip: getClientIp(req) })
+
       // Save to suggestions table — crowdsourced autocomplete (fire-and-forget)
       upsertSuggestion(finalQuery, results.length).catch(() => {})
 
@@ -359,6 +367,7 @@ discoveryRouter.post("/b2c-unlock", unlockLimiter as any, async (req, res, next)
     const wallet   = await (await import("../services/walletService")).getWallet(email)
     logger.info("[B2CUnlock]", { email, historyId, requested: urls.length, found: unlocked.length })
 
+    logActivity({ user_email: email, action: "b2c_unlock", details: { history_id: historyId, count: unlocked.length }, ip: getClientIp(req) })
     res.json({ success: true, data: { results: unlocked, balance: wallet?.balance ?? null } })
   } catch (err) { next(err) }
 })
