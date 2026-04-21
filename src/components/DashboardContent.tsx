@@ -367,8 +367,8 @@ export function DashboardContent(_: { role?: string }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
                 <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} />
-                <Bar dataKey="users" fill="#3b82f6" radius={[4, 4, 0, 0]} name="New users" />
+                <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} cursor={{ fill: "transparent" }} />
+                <Bar dataKey="users" fill="#7c3aed" radius={[4, 4, 0, 0]} name="New users" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
@@ -413,7 +413,7 @@ export function DashboardContent(_: { role?: string }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <YAxis type="category" dataKey="plan" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={56} />
-                <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} />
+                <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} cursor={{ fill: "transparent" }} />
                 <Bar dataKey="count" fill="#818cf8" radius={[0, 4, 4, 0]} name="Users" />
               </BarChart>
             </ResponsiveContainer>
