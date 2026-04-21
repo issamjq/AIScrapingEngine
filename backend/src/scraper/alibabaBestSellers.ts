@@ -217,8 +217,17 @@ async function scrapeDealsPage(
   const screenshots: Buffer[] = []
 
   // Scroll past carousel + category tabs into the Recommended product grid
+  // 5 screenshots × ~10 products each = ~50 products sent to Claude in one call
   await page.evaluate(() => window.scrollTo(0, 700))
   await page.waitForTimeout(1200)
+  screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
+
+  await page.evaluate(() => window.scrollBy(0, 900))
+  await page.waitForTimeout(1000)
+  screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
+
+  await page.evaluate(() => window.scrollBy(0, 900))
+  await page.waitForTimeout(1000)
   screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
 
   await page.evaluate(() => window.scrollBy(0, 900))
