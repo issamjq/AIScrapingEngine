@@ -414,7 +414,7 @@ export function DashboardContent(_: { role?: string }) {
                 <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <YAxis type="category" dataKey="plan" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={56} />
                 <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} cursor={{ fill: "transparent" }} />
-                <Bar dataKey="count" fill="#818cf8" radius={[0, 4, 4, 0]} name="Users" />
+                <Bar dataKey="count" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Users" />
               </BarChart>
             </ResponsiveContainer>
           </CardContent>
