@@ -38,9 +38,9 @@ adminStatsRouter.get("/", async (req, res, next) => {
           WHERE subscription = 'paid')                                        AS paid_users,
         (SELECT COUNT(*)::int FROM b2c_search_history)                        AS total_b2c_searches,
         (SELECT COUNT(*)::int FROM b2c_search_history
-          WHERE created_at >= NOW() - INTERVAL '24 hours')                    AS b2c_searches_24h,
+          WHERE searched_at >= NOW() - INTERVAL '24 hours')                   AS b2c_searches_24h,
         (SELECT COUNT(*)::int FROM b2c_search_history
-          WHERE created_at >= NOW() - INTERVAL '7 days')                      AS b2c_searches_7d,
+          WHERE searched_at >= NOW() - INTERVAL '7 days')                     AS b2c_searches_7d,
         (SELECT COUNT(*)::int FROM price_snapshots)                           AS total_scrapes,
         (SELECT COUNT(*)::int FROM price_snapshots
           WHERE checked_at >= NOW() - INTERVAL '24 hours')                    AS scrapes_24h,
@@ -70,11 +70,11 @@ adminStatsRouter.get("/", async (req, res, next) => {
     // ── B2C searches per day (last 30 days) ───────────────────────────────────
     const { rows: searchesByDay } = await query(`
       SELECT
-        DATE(created_at) AS date,
-        COUNT(*)::int    AS count
+        DATE(searched_at) AS date,
+        COUNT(*)::int     AS count
       FROM b2c_search_history
-      WHERE created_at >= NOW() - INTERVAL '30 days'
-      GROUP BY DATE(created_at)
+      WHERE searched_at >= NOW() - INTERVAL '30 days'
+      GROUP BY DATE(searched_at)
       ORDER BY date ASC
     `)
 
@@ -107,7 +107,7 @@ adminStatsRouter.get("/", async (req, res, next) => {
         query,
         COUNT(*)::int AS count
       FROM b2c_search_history
-      WHERE created_at >= NOW() - INTERVAL '7 days'
+      WHERE searched_at >= NOW() - INTERVAL '7 days'
       GROUP BY query
       ORDER BY count DESC
       LIMIT 10
