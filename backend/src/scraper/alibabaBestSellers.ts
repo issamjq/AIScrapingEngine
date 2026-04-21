@@ -1,19 +1,17 @@
 /**
  * AliExpress Super Deals — Playwright + Claude Vision hybrid scraper.
  *
- * Page: https://www.aliexpress.com/ssr/300002660/Deals-HomePage (SSR — works for all IPs)
+ * Strategy (3 phases):
+ *   Phase 1 — Screenshot: scroll through the Recommended section, take 5
+ *             viewport screenshots, send all to Claude Vision in one API call.
+ *             Vision reads product names + prices exactly as displayed.
  *
- * Strategy:
- *   DOM   → product URLs, ASINs, image URLs (reliable, class-agnostic)
- *   Vision → product names, prices, original prices, ratings (accurate, reads what humans see)
+ *   Phase 2 — Search: for each product name Vision returned, run an AliExpress
+ *             search, grab the first result's URL / image / ASIN from DOM.
+ *             This guarantees the URL actually matches the product name.
  *
- * Merge by position index: DOM card[0] + Vision product[0], etc.
- *
- * Why Vision for prices:
- *   - DOM price selectors break when AliExpress changes CSS class names
- *   - Min/max decimal guessing picks ratings or sold counts by mistake
- *   - Claude reads the price exactly as displayed — handles any currency or layout
- *   - Also ignores "Welcome deal" $0.99 promo prices (told to skip them)
+ *   Phase 3 — Merge: Vision data (name/price/rating) + Search data (url/image/asin).
+ *             Screenshots are in-memory Buffers — cleared after Vision call.
  *
  * Data stored in amazon_trending with marketplace = "Alibaba".
  */
@@ -25,7 +23,7 @@ import { AmazonProduct } from "./amazonBestSellers"
 const SUPER_DEALS_URL = "https://www.aliexpress.com/ssr/300002660/Deals-HomePage?disableNav=YES&pha_manifest=ssr&_immersiveMode=true"
 const CLAUDE_API      = "https://api.anthropic.com/v1/messages"
 
-// ─── Claude Vision price extraction ──────────────────────────────────────────
+// ─── Phase 1: Claude Vision — extract names + prices from screenshots ─────────
 
 async function extractWithVision(
   screenshots: Buffer[],
@@ -42,7 +40,6 @@ async function extractWithVision(
     return []
   }
 
-  // Build content blocks: one image block per screenshot + one text instruction
   const imageBlocks = screenshots.map(buf => ({
     type:   "image",
     source: { type: "base64", media_type: "image/jpeg", data: buf.toString("base64") },
@@ -73,6 +70,7 @@ Return ONLY a valid JSON array — no markdown fences, no explanation:
 [{"product_name":"...","price":2.80,"original_price":3.57,"rating":null,"review_count":null}]
 
 Rules:
+- product_name = the full product title shown on the card (read every word carefully)
 - price = the current sale price shown on the card
 - original_price = the crossed-out / strikethrough price — null if none
 - original_price MUST be higher than price, otherwise null
@@ -122,11 +120,59 @@ Rules:
   }
 }
 
-// ─── Scrape the SSR deals page ────────────────────────────────────────────────
+// ─── Phase 2: Search AliExpress by product name → get correct URL / image ────
+
+async function searchForProduct(
+  page:        import("playwright").Page,
+  productName: string,
+): Promise<{ product_url: string | null; image_url: string | null; asin: string | null }> {
+  const searchUrl = `https://www.aliexpress.com/wholesale?SearchText=${encodeURIComponent(productName)}&sortType=default`
+
+  try {
+    await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 20_000 })
+    await page.waitForTimeout(2000)
+  } catch {
+    return { product_url: null, image_url: null, asin: null }
+  }
+
+  // Check for bot challenge
+  const title = await page.title().catch(() => "")
+  if (/captcha|robot|verify/i.test(title)) {
+    return { product_url: null, image_url: null, asin: null }
+  }
+
+  return await page.evaluate(() => {
+    // Find the first product link in the search results
+    const links = Array.from(document.querySelectorAll("a[href*='/item/']"))
+    const link  = links[0] as HTMLAnchorElement | undefined
+    if (!link) return { product_url: null, image_url: null, asin: null }
+
+    const href        = link.href || link.getAttribute("href") || ""
+    const product_url = href.startsWith("//") ? `https:${href}` : href
+    const asin        = href.match(/\/item\/(\d+)/)?.[1] ?? null
+
+    // Find the image closest to this link
+    const container = link.closest("[class*='card'], [class*='item'], [class*='product'], li") ?? link.parentElement ?? link
+    const imgEl     = container?.querySelector("img") as HTMLImageElement | null
+    const raw_img   = imgEl?.getAttribute("src") || imgEl?.getAttribute("data-src") || null
+    const image_url = raw_img
+      ? (raw_img.startsWith("//") ? `https:${raw_img}` : raw_img)
+      : null
+
+    return {
+      product_url: product_url || null,
+      image_url,
+      asin,
+    }
+  })
+}
+
+// ─── Phase 3: Scrape deals page + orchestrate all phases ─────────────────────
 
 async function scrapeDealsPage(
   page: import("playwright").Page
 ): Promise<AmazonProduct[]> {
+  // ── Navigate to SSR Super Deals page ──────────────────────────────────────
   try {
     await page.goto(SUPER_DEALS_URL, { waitUntil: "domcontentloaded", timeout: 40_000 })
     await page.waitForTimeout(4000)
@@ -153,71 +199,11 @@ async function scrapeDealsPage(
   } catch { /* ignore */ }
 
   const pageTitle = await page.title().catch(() => "")
-  logger.info("[AlibabaScraper] Page loaded", { title: pageTitle, url: page.url().slice(0, 80) })
+  logger.info("[AlibabaScraper] Page loaded", { title: pageTitle })
 
-  // ── DOM: extract URLs, images, ASINs (reliable — no price guessing) ────────
-  const domCards = await page.evaluate(() => {
-    const results: any[] = []
-
-    let cards: Element[] = Array.from(document.querySelectorAll(
-      "a[class*='search-card-item'], [class*='search-item-card-wrapper-gallery'], [data-item-id]"
-    ))
-
-    if (cards.length === 0) {
-      const seen = new Set<Element>()
-      document.querySelectorAll("a[href*='/item/']").forEach(a => {
-        const card = a.closest("[class*='card'], [class*='item'], [class*='product'], [class*='deal'], li") ?? a.parentElement ?? a
-        if (!seen.has(card)) { seen.add(card); cards.push(card) }
-      })
-    }
-
-    if (cards.length === 0) {
-      cards = Array.from(document.querySelectorAll("li, article, div"))
-        .filter(el => el.querySelector("a[href*='/item/']") && el.querySelector("img"))
-    }
-
-    cards.slice(0, 40).forEach(el => {
-      const linkEl = (
-        el.tagName === "A" && (el as HTMLAnchorElement).href?.includes("/item/")
-          ? el : el.querySelector("a[href*='/item/']")
-      ) as HTMLAnchorElement | null
-
-      const href = linkEl?.href ?? linkEl?.getAttribute("href") ?? ""
-      if (!href.includes("/item/")) return
-
-      const product_url = href.startsWith("//") ? `https:${href}` : href
-      const asin        = href.match(/\/item\/(\d+)/)?.[1] ?? null
-      const imgEl       = el.querySelector("img")
-      const image_url   = imgEl?.getAttribute("src") ?? imgEl?.getAttribute("data-src") ?? null
-      const brandEl     = el.querySelector("[class*='store'], [class*='shop'], [class*='Store']")
-      const brand       = brandEl?.textContent?.trim() || null
-
-      results.push({
-        asin,
-        product_url,
-        image_url: image_url ? (image_url.startsWith("//") ? `https:${image_url}` : image_url) : null,
-        brand,
-      })
-    })
-
-    return results
-  })
-
-  if (domCards.length === 0) {
-    logger.info("[AlibabaScraper] DOM found 0 cards")
-    return []
-  }
-
-  logger.info("[AlibabaScraper] DOM cards found", { count: domCards.length })
-
-  // ── Vision: scroll through Recommended section, take 3 viewport screenshots ─
-  // Today's deals = horizontal carousel (only 6 products, arrow not clickable).
-  // Recommended section below = grid layout with 12 products per viewport.
-  // 3 screenshots × 12 products = ~30 products sent to Claude in one API call.
+  // ── Phase 1: Take 5 viewport screenshots of Recommended grid ──────────────
   const screenshots: Buffer[] = []
 
-  // Scroll past carousel + category tabs into the Recommended product grid
-  // 5 screenshots × ~10 products each = ~50 products sent to Claude in one call
   await page.evaluate(() => window.scrollTo(0, 700))
   await page.waitForTimeout(1200)
   screenshots.push(await page.screenshot({ type: "jpeg", quality: 85 }))
@@ -240,20 +226,31 @@ async function scrapeDealsPage(
 
   logger.info("[AlibabaScraper] Screenshots taken", { count: screenshots.length })
 
+  // Send all screenshots to Claude Vision in one API call
   const visionResult = await extractWithVision(screenshots)
+
+  // Clear screenshots from memory — no longer needed
+  screenshots.splice(0)
 
   logger.info("[AlibabaScraper] Vision extracted", { count: visionResult.length })
 
-  // ── Vision results are from Recommended section (scrolled), DOM cards from
-  // the initial page load. Index alignment is unreliable — use Vision as primary
-  // source and assign DOM cards by index for URL/image where available.
+  if (visionResult.length === 0) return []
+
+  // ── Phase 2: Search AliExpress for each product name to get correct URL ───
+  logger.info("[AlibabaScraper] Starting product search phase", { total: visionResult.length })
+
   const products: AmazonProduct[] = []
 
-  visionResult.forEach((vis, i) => {
-    if (!vis.product_name || vis.product_name.length < 3) return
-    const dom = domCards[i] ?? null
+  for (let i = 0; i < visionResult.length; i++) {
+    const vis = visionResult[i]
+    if (!vis.product_name || vis.product_name.length < 3) continue
+
+    logger.info("[AlibabaScraper] Searching", { rank: i + 1, name: vis.product_name.slice(0, 50) })
+
+    const searchData = await searchForProduct(page, vis.product_name)
+
     products.push({
-      asin:           dom?.asin ?? null,
+      asin:           searchData.asin,
       product_name:   vis.product_name,
       category:       "Super Deals",
       rank:           i + 1,
@@ -261,16 +258,21 @@ async function scrapeDealsPage(
       original_price: vis.original_price,
       rating:         vis.rating,
       review_count:   vis.review_count,
-      image_url:      dom?.image_url ?? null,
-      product_url:    dom?.product_url ?? null,
+      image_url:      searchData.image_url,
+      product_url:    searchData.product_url,
       badge:          "Best Seller",
-      brand:          dom?.brand ?? null,
+      brand:          null,
       marketplace:    "Alibaba",
     })
-  })
 
-  const pricesFound = products.filter(p => p.price !== null).length
-  logger.info("[AlibabaScraper] Merge done", { total: products.length, pricesFound })
+    // Small delay between searches to avoid rate-limiting
+    await page.waitForTimeout(800 + Math.random() * 400)
+  }
+
+  const pricesFound  = products.filter(p => p.price !== null).length
+  const urlsFound    = products.filter(p => p.product_url !== null).length
+  const imagesFound  = products.filter(p => p.image_url !== null).length
+  logger.info("[AlibabaScraper] All phases complete", { total: products.length, pricesFound, urlsFound, imagesFound })
 
   return products
 }
@@ -301,7 +303,7 @@ export async function scrapeAlibabaBestSellers(opts: {
     }
   }
 
-  logger.info("[AlibabaScraper] Starting Vision scrape")
+  logger.info("[AlibabaScraper] Starting Vision + Search scrape")
 
   const browser = await chromium.launch({
     headless: true,
