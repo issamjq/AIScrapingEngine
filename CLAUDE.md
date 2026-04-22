@@ -55,20 +55,41 @@ Public marketing page. **Stays visible after sign-in** — users only enter the 
 ### Structure
 ```
 src/landing/
-  LandingPage.tsx           ← orchestrator; reads useAuth() directly; handles both signed-in + signed-out
+  LandingPage.tsx           ← orchestrator; reads useAuth() directly; wraps everything with Geist font + overflow-x: clip; renders ScrollProgressBar at top
   LandingNav.tsx            ← sticky glass-morph nav (blur + subtle shadow on scroll); mega-menu (2 products + "See pricing" footer row)
-  HeroSection.tsx           ← headline + CTAs + live mockup; grid-pattern bg w/ radial mask; triple aurora blobs; floating "You save" / "Scanned in 2.4s" chips; staggered entrance via .hero-item class + heroIn keyframe
-  StatsBar.tsx              ← infinite retailer marquee (16 UAE retailers, 4-copy render + -25% shift for ultra-wide safety) + brand-colored accent dot per name with alternating weights/opacity; 4-stat row below
+  HeroSection.tsx           ← headline + CTAs + interactive mockup; mouse-tracked amber spotlight (--mx/--my CSS vars); grid-pattern bg w/ radial mask; triple aurora blobs + grain overlay; cycling demo queries (Sony/Dyson/AirPods) with typing animation; magnetic primary CTA; staggered entrance via .hero-item + heroIn keyframe
+  StatsBar.tsx              ← infinite retailer marquee (16 UAE retailers, 4-copy render + -25% shift for ultra-wide safety) + brand-colored accent dot per name with alternating weights/opacity; 4-stat row below with AnimatedCounter on "10+"
   ShowcaseSection.tsx       ← reusable split section; accent prop ("amber" | "blue" | "green" | "purple") drives gradient bar, checkmark color, ambient glow behind visual; wraps text + each feature bullet + visual in Reveal
   ShowcaseVisuals.tsx       ← B2BVisual (price deltas w/ trend arrows), B2CVisual (phase checks + locked-result teaser), PriceChartVisual (real SVG area chart w/ gradient fill + pulsing current dot)
+  BentoGrid.tsx             ← 6-col mosaic feature section; big Vision AI hero tile (4×2 with hover glow + mini-metric cards) + 5 smaller tiles (retailers count, 24/7 sync, alerts, export formats, speed) + wide SOC-ready security tile at bottom
+  StickyScrollSection.tsx   ← 4-step AI pipeline (Capture → Vision AI reads → Normalize/validate → Trigger alerts) with scroll-linked cross-fade. Wrapper = STEPS.length × 65vh, inner sticky top-0 h-screen. Progress mapped to step index via getBoundingClientRect on wrapper. REQUIRES overflow-x: clip (NOT hidden) on ancestor.
   HowItWorks.tsx            ← 3-step timeline; giant ghost step numbers, gradient icon tiles, grid-pattern backdrop; staggered Reveal (140ms per card)
-  TestimonialsSection.tsx   ← 3 testimonial cards (tinted gradient bgs + Quote icon) + metrics strip (4.3% · 24/7 · <3s · 10+)
+  TestimonialsSection.tsx   ← 3 testimonial cards (tinted gradient bgs + Quote icon) + metrics strip with AnimatedCounter (4.3% decimals=1, <3s, 10+ all count up; "24/7" stays static)
   TikTokTeaser.tsx          ← coming-soon gradient section; scroll reveals on header + 4 feature cards (100ms stagger)
-  LandingCTA.tsx            ← final CTA w/ aurora mesh bg + grid overlay + rounded-28px card; 3 plan cards with "Popular" pill on Pro; trust bullets row
+  FAQSection.tsx            ← 8 Q&A addressing real objections (spreadsheets, retailer blocks, accuracy, data safety, trial, credits, team accounts); Plus icon rotates 45° on open; content expands via grid-template-rows 0fr→1fr trick
+  LandingCTA.tsx            ← final CTA w/ aurora mesh + grid overlay + grain + rounded-28px card; magnetic primary CTA; 3 plan cards with "Popular" pill on Pro; trust bullets row
   LandingFooter.tsx         ← links + brand
+  ScrollProgressBar.tsx     ← fixed 2px top bar, amber→orange→rose gradient, z-[60], updates width via useScrollProgress hook
+  AnimatedCounter.tsx       ← counts up from 0 to value when scrolled into view; props: value, decimals, prefix, suffix, duration, className; uses useInViewOnce + useCountUp
   Reveal.tsx                ← scroll-triggered entrance wrapper; props: delay, duration, y, x, scale, as ("div"|"section"|"article"|"li"); uses cubic-bezier(0.16, 1, 0.3, 1); respects prefers-reduced-motion
   useInView.ts              ← IntersectionObserver hook (threshold 0.15, rootMargin "0px 0px -80px 0px"); disconnects after first intersection; reduced-motion = reveal immediately
+  utils.ts                  ← shared hooks + constants: useMouseGlow (sets --mx/--my on ref'd el), useMagnetic (translate3d toward pointer), useScrollProgress (0..1), useCountUp (easeOutCubic raf), useInViewOnce (variant with threshold 0.3), GRAIN_SVG (data URI feTurbulence noise for mix-blend-overlay), formatCount
 ```
+
+### Landing page section order (top → bottom)
+1. ScrollProgressBar (fixed)
+2. LandingNav (fixed)
+3. HeroSection
+4. StatsBar (retailer marquee + stats)
+5. ShowcaseSection × 3 (B2B blue, B2C green reversed, Price History purple)
+6. BentoGrid
+7. StickyScrollSection
+8. HowItWorks
+9. TestimonialsSection
+10. TikTokTeaser
+11. FAQSection
+12. LandingCTA
+13. LandingFooter
 
 ### Sign-in flow (IMPORTANT — different from before)
 1. User clicks "Sign in" or "Get Started Free" (no product target) → Google popup → stays on landing page
@@ -119,6 +140,14 @@ Positioning (`absolute left-1/2 -translate-x-1/2`) and the entrance animation MU
 - **Hero entrance:** uses CSS animations (`.hero-item` + `heroIn` keyframe), not Reveal, because hero is always above the fold. Delays are set via inline `style={{ animationDelay: "..." }}` (0, 120, 220, 300, 320, 420ms).
 - **Smooth scroll:** `html { scroll-behavior: smooth }` set globally in `src/styles/globals.css` (with reduced-motion override).
 - **Retailer strip brand colors:** dots use inline `style={{ backgroundColor }}` (not Tailwind classes — colors come from `RETAILERS[].color` data). To add a retailer, add a new row with `{ name, color: "#HEX" }`.
+- **Geist display font:** loaded via Google Fonts in `index.html` (weights 400/500/600/700/800). Applied ONLY to the landing page via inline `fontFamily` on the `.landing-root` div — does NOT affect the in-app UI.
+- **overflow-x: clip, NOT overflow-x-hidden** on `.landing-root`. `overflow-x: hidden` creates a containing block that breaks CSS `position: sticky` on descendants (StickyScrollSection stops sticking). Always use `overflowX: "clip"` via inline style. This is a load-bearing choice.
+- **Mouse-tracked glow:** `useMouseGlow()` returns a ref; set `pointermove` listener updates `--mx` / `--my` CSS vars in % of the element's bbox. Use in background: `background: "radial-gradient(600px circle at var(--mx,50%) var(--my,30%), rgba(245,158,11,0.18), transparent 60%)"`.
+- **Magnetic buttons:** `useMagnetic(strength)` returns a button ref that translate3d's toward the cursor based on offset × strength, springs back on `pointerleave`. Set `transition: transform 250ms cubic-bezier(0.16,1,0.3,1)` inline on the button. Default strength 0.2 (hero) / 0.18 (CTA).
+- **Grain overlay:** `GRAIN_SVG` from `./utils` is a data-URI feTurbulence noise. Apply as `backgroundImage` on a `mix-blend-overlay` layer at 8% light / 12% dark opacity.
+- **Animated counters:** any value that's purely numeric counts up when scrolled in — use `<AnimatedCounter value={4.3} decimals={1} suffix="%" />`. For non-numeric labels ("24/7", "Vision"), render as plain text, don't wrap them.
+- **Hero cycling demo:** `DEMOS[]` array in HeroSection drives a 5.5s rotation; each demo has `query`, `results[]`, `saves`. Typer component progressively reveals the query (45ms/char). Rows stagger in via `rowIn` keyframe on index change. Progress dots below are clickable to jump.
+- **StickyScrollSection math:** wrapper height = `STEPS.length * 65vh`. Step index derived from `-r.top / (wrapper.offsetHeight - vh)` × STEPS.length. Don't go above 65vh per step or the section feels empty/slow; don't go below 50vh or it rushes.
 
 ### What NOT to do on landing page
 - Do NOT mention Claude anywhere on the public-facing landing page
@@ -345,15 +374,25 @@ PORT=8080
 | File | Purpose |
 |------|---------|
 | `src/App.tsx` | State machine + hash nav. `showLanding` state keeps landing visible after sign-in until user picks a product. |
-| `src/landing/LandingPage.tsx` | Orchestrator. Reads `user` from `useAuth()` directly. `onAction(target?)` handles both states. Accepts `onNavigateToApp` prop from App.tsx. |
-| `src/landing/LandingNav.tsx` | Sticky nav. Two-product mega-menu. Shows avatar + "Open App" when `isLoggedIn`. Props: `onAction`, `isLoggedIn`, `userName`, `userPhotoURL`. |
-| `src/landing/HeroSection.tsx` | Hero: headline (text-7xl), mockup, CTAs. Props: `onAction`, `isLoggedIn`. CTA text changes when signed in. |
-| `src/landing/ShowcaseSection.tsx` | Reusable alternating left/right split section |
-| `src/landing/ShowcaseVisuals.tsx` | B2BVisual, B2CVisual, PriceChartVisual — UI mockup components |
-| `src/landing/HowItWorks.tsx` | 3-step process |
-| `src/landing/TikTokTeaser.tsx` | TikTok Intelligence coming soon section |
-| `src/landing/LandingCTA.tsx` | Final CTA with 3-plan tier preview. Props: `onAction`, `isLoggedIn`. Button text changes when signed in. |
-| `src/landing/LandingFooter.tsx` | Footer with links |
+| `src/landing/LandingPage.tsx` | Orchestrator. Reads `user` from `useAuth()` directly. Wraps everything with Geist font + `overflowX: "clip"` (NOT hidden). Renders ScrollProgressBar + all section components in order. Accepts `onNavigateToApp` prop from App.tsx. |
+| `src/landing/LandingNav.tsx` | Sticky glass-morph nav. Two-product mega-menu with "See pricing" footer row. Mega-menu animation lives on INNER div (positioning on outer). Shows avatar + "Open App" when `isLoggedIn`. |
+| `src/landing/HeroSection.tsx` | Hero: headline, mockup, CTAs. Mouse-tracked glow (`useMouseGlow`), magnetic primary CTA (`useMagnetic`), grain overlay, cycling demo queries (`DEMOS` array, 5.5s), typing animation, clickable progress dots. |
+| `src/landing/StatsBar.tsx` | Retailer marquee (16 names, 4 copies, -25% shift, brand-colored dots, alternating weights/opacity) + 4-stat row w/ AnimatedCounter on "10+". |
+| `src/landing/ShowcaseSection.tsx` | Reusable alternating split section with `accent` prop ("amber"/"blue"/"green"/"purple") — drives gradient bar, checkmark, ambient glow. Wraps text + features + visual in Reveal. |
+| `src/landing/ShowcaseVisuals.tsx` | B2BVisual (trend arrows), B2CVisual (phase checks + locked result), PriceChartVisual (SVG area chart w/ gradient fill) — UI mockup components. |
+| `src/landing/BentoGrid.tsx` | 6-col mosaic. Big Vision AI hero tile (4×2) + 5 smaller tiles (retailers count animated, 24/7 sync, alerts, export formats, speed) + wide security tile. |
+| `src/landing/StickyScrollSection.tsx` | 4-step AI pipeline w/ scroll-linked cross-fade. Wrapper = `STEPS.length × 65vh`. Sticky inner div (`top-0 h-screen`) — REQUIRES `overflow-x: clip` on `.landing-root`, breaks with `overflow-x: hidden`. |
+| `src/landing/HowItWorks.tsx` | 3-step process with giant ghost step numbers + gradient tiles + grid backdrop. |
+| `src/landing/TestimonialsSection.tsx` | 3 testimonial cards + metrics strip w/ AnimatedCounter (4.3%, <3s, 10+ count up; "24/7" static). |
+| `src/landing/TikTokTeaser.tsx` | TikTok Intelligence coming-soon section. |
+| `src/landing/FAQSection.tsx` | 8 Q&A accordion. Plus-icon rotates 45° on open. Content expands via grid-template-rows 0fr→1fr trick. |
+| `src/landing/LandingCTA.tsx` | Final CTA w/ aurora + grid + grain. Magnetic primary CTA. 3 plan cards, "Popular" pill on Pro. |
+| `src/landing/LandingFooter.tsx` | Footer with links. |
+| `src/landing/ScrollProgressBar.tsx` | Fixed 2px amber→orange→rose gradient bar at top of page (z-[60]). Uses `useScrollProgress` hook. |
+| `src/landing/AnimatedCounter.tsx` | Counts up from 0 to `value` when scrolled into view. Props: `value`, `decimals`, `prefix`, `suffix`, `duration`. For static labels like "24/7" render plain text, don't wrap in this. |
+| `src/landing/Reveal.tsx` | Scroll-triggered entrance wrapper. Props: `delay`, `duration`, `y`, `x`, `scale`, `as`. DON'T put hover transforms on Reveal — they'll be overridden; wrap inner card in a plain div with hover classes. |
+| `src/landing/useInView.ts` | IntersectionObserver hook for Reveal (threshold 0.15, rootMargin -80px bottom). |
+| `src/landing/utils.ts` | Shared hooks + constants: `useMouseGlow`, `useMagnetic`, `useScrollProgress`, `useCountUp`, `useInViewOnce`, `GRAIN_SVG` data URI, `formatCount`. |
 | `src/lib/plans.ts` | Frontend plan config mirror — `PLANS[]`, `getPlansForAudience()`, `yearlySavingsPct()`, `planPrice()` |
 | `src/assets.d.ts` | TypeScript module declarations for `.mpeg` and `.mp3` audio assets |
 | `src/assets/notification.mpeg` | Notification sound played on B2C search complete |
