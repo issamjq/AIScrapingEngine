@@ -186,4 +186,9 @@
 
 html {
   font-size: var(--font-size);
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }

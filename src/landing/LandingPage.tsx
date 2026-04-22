@@ -1,13 +1,18 @@
 import { useAuth } from "@/context/AuthContext"
-import { LandingNav }       from "./LandingNav"
-import { HeroSection }      from "./HeroSection"
-import { StatsBar }         from "./StatsBar"
-import { ShowcaseSection }  from "./ShowcaseSection"
+import { LandingNav }           from "./LandingNav"
+import { HeroSection }          from "./HeroSection"
+import { StatsBar }             from "./StatsBar"
+import { ShowcaseSection }      from "./ShowcaseSection"
 import { B2BVisual, B2CVisual, PriceChartVisual } from "./ShowcaseVisuals"
-import { HowItWorks }       from "./HowItWorks"
-import { TikTokTeaser }     from "./TikTokTeaser"
-import { LandingCTA }       from "./LandingCTA"
-import { LandingFooter }    from "./LandingFooter"
+import { BentoGrid }            from "./BentoGrid"
+import { StickyScrollSection }  from "./StickyScrollSection"
+import { HowItWorks }           from "./HowItWorks"
+import { TestimonialsSection }  from "./TestimonialsSection"
+import { TikTokTeaser }         from "./TikTokTeaser"
+import { FAQSection }           from "./FAQSection"
+import { LandingCTA }           from "./LandingCTA"
+import { LandingFooter }        from "./LandingFooter"
+import { ScrollProgressBar }    from "./ScrollProgressBar"
 
 interface Props {
   onNavigateToApp?: (page: string) => void
@@ -17,7 +22,6 @@ export function LandingPage({ onNavigateToApp }: Props) {
   const { user, signInWithGoogle, logout } = useAuth()
   const isLoggedIn = !!user
 
-  // Called by every CTA — if signed in, go directly; if not, trigger Google popup
   async function handleAction(target?: string) {
     const dest = target ?? "discovering"
     if (isLoggedIn) {
@@ -30,7 +34,15 @@ export function LandingPage({ onNavigateToApp }: Props) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div
+      className="landing-root min-h-screen bg-background text-foreground"
+      style={{
+        fontFamily: "'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
+        overflowX: "clip",
+      }}
+    >
+      <ScrollProgressBar />
+
       <LandingNav
         onAction={handleAction}
         onSignOut={logout}
@@ -45,9 +57,11 @@ export function LandingPage({ onNavigateToApp }: Props) {
 
       {/* B2B showcase */}
       <ShowcaseSection
+        step="01 · For businesses"
+        accent="blue"
         badge="For Businesses"
-        badgeColor="bg-blue-500/10 text-blue-500"
-        title="Track Every Competitor's Price — Automatically"
+        badgeColor="bg-blue-500/10 text-blue-500 ring-1 ring-blue-500/20"
+        title="Track every competitor's price — automatically."
         subtitle="Connect your product catalog and Spark AI monitors prices across Amazon AE, Noon, Carrefour, and 7+ more UAE retailers — every hour, automatically."
         features={[
           "Add products via CSV or manual entry — no technical knowledge needed",
@@ -60,9 +74,11 @@ export function LandingPage({ onNavigateToApp }: Props) {
 
       {/* B2C showcase */}
       <ShowcaseSection
+        step="02 · For shoppers"
+        accent="green"
         badge="For Shoppers"
-        badgeColor="bg-green-500/10 text-green-500"
-        title="Find the Best Price on Anything, Anywhere"
+        badgeColor="bg-emerald-500/10 text-emerald-500 ring-1 ring-emerald-500/20"
+        title="Find the best price on anything, anywhere."
         subtitle="Type any product in plain language. Spark AI scans global retailers using Vision AI and returns the cheapest prices sorted by distance from your location."
         features={[
           "No product links needed — just type what you're looking for",
@@ -76,9 +92,11 @@ export function LandingPage({ onNavigateToApp }: Props) {
 
       {/* Price tracking showcase */}
       <ShowcaseSection
+        step="03 · Price history"
+        accent="purple"
         badge="Price History"
-        badgeColor="bg-purple-500/10 text-purple-500"
-        title="30-Day Price History at a Glance"
+        badgeColor="bg-purple-500/10 text-purple-500 ring-1 ring-purple-500/20"
+        title="30-day price history at a glance."
         subtitle="Never pay too much again. Spark AI logs every price it finds and shows you the trend — so you know exactly when to buy or when to reprice your own products."
         features={[
           "See 30-day low, high, and current price in one view",
@@ -89,9 +107,17 @@ export function LandingPage({ onNavigateToApp }: Props) {
         visual={<PriceChartVisual />}
       />
 
+      <BentoGrid />
+
+      <StickyScrollSection />
+
       <HowItWorks />
 
+      <TestimonialsSection />
+
       <TikTokTeaser />
+
+      <FAQSection />
 
       <LandingCTA onAction={handleAction} isLoggedIn={isLoggedIn} />
 

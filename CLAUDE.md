@@ -55,16 +55,19 @@ Public marketing page. **Stays visible after sign-in** — users only enter the 
 ### Structure
 ```
 src/landing/
-  LandingPage.tsx       ← orchestrator; reads useAuth() directly; handles both signed-in + signed-out
-  LandingNav.tsx        ← sticky nav; mega-menu with two products; shows avatar when signed in
-  HeroSection.tsx       ← headline + CTAs + live B2C search mockup
-  StatsBar.tsx          ← 10+ retailers · Spark Vision AI · 3 search depths
-  ShowcaseSection.tsx   ← reusable left/right split section
-  ShowcaseVisuals.tsx   ← B2BVisual, B2CVisual, PriceChartVisual (UI mockups)
-  HowItWorks.tsx        ← 3-step process section
-  TikTokTeaser.tsx      ← coming soon gradient section for TikTok Intelligence
-  LandingCTA.tsx        ← final CTA with plan tier preview
-  LandingFooter.tsx     ← links + brand
+  LandingPage.tsx           ← orchestrator; reads useAuth() directly; handles both signed-in + signed-out
+  LandingNav.tsx            ← sticky glass-morph nav (blur + subtle shadow on scroll); mega-menu (2 products + "See pricing" footer row)
+  HeroSection.tsx           ← headline + CTAs + live mockup; grid-pattern bg w/ radial mask; triple aurora blobs; floating "You save" / "Scanned in 2.4s" chips; staggered entrance via .hero-item class + heroIn keyframe
+  StatsBar.tsx              ← infinite retailer marquee (16 UAE retailers, 4-copy render + -25% shift for ultra-wide safety) + brand-colored accent dot per name with alternating weights/opacity; 4-stat row below
+  ShowcaseSection.tsx       ← reusable split section; accent prop ("amber" | "blue" | "green" | "purple") drives gradient bar, checkmark color, ambient glow behind visual; wraps text + each feature bullet + visual in Reveal
+  ShowcaseVisuals.tsx       ← B2BVisual (price deltas w/ trend arrows), B2CVisual (phase checks + locked-result teaser), PriceChartVisual (real SVG area chart w/ gradient fill + pulsing current dot)
+  HowItWorks.tsx            ← 3-step timeline; giant ghost step numbers, gradient icon tiles, grid-pattern backdrop; staggered Reveal (140ms per card)
+  TestimonialsSection.tsx   ← 3 testimonial cards (tinted gradient bgs + Quote icon) + metrics strip (4.3% · 24/7 · <3s · 10+)
+  TikTokTeaser.tsx          ← coming-soon gradient section; scroll reveals on header + 4 feature cards (100ms stagger)
+  LandingCTA.tsx            ← final CTA w/ aurora mesh bg + grid overlay + rounded-28px card; 3 plan cards with "Popular" pill on Pro; trust bullets row
+  LandingFooter.tsx         ← links + brand
+  Reveal.tsx                ← scroll-triggered entrance wrapper; props: delay, duration, y, x, scale, as ("div"|"section"|"article"|"li"); uses cubic-bezier(0.16, 1, 0.3, 1); respects prefers-reduced-motion
+  useInView.ts              ← IntersectionObserver hook (threshold 0.15, rootMargin "0px 0px -80px 0px"); disconnects after first intersection; reduced-motion = reveal immediately
 ```
 
 ### Sign-in flow (IMPORTANT — different from before)
@@ -80,28 +83,49 @@ src/landing/
 - Reset to `true` on sign-out so next sign-in starts on landing again.
 - Render order: `loading → LandingPage (if !user or showLanding+ready) → AppLoader → onboarding/denied/app`
 
-### Mega-menu structure — two products
+### Mega-menu structure — two products (680px wide, 1.2:1 grid)
 **Left card — Market Intelligence** (our price scraping engine):
+- Amber gradient tint + "Live" emerald badge + dashed divider
 - Sub-items: Market Discovery (`#discovering`), Price Tracking (`#price-board`), Catalog Discovery (`#discovering`)
-- Each item deep-links to its specific app page after sign-in
+- Each sub-item: icon tile scales on hover, arrow slides in from the right
 
 **Right card — Creator Intelligence** (kalodata-style TikTok product):
-- Single card, no sub-items yet
+- Pink/purple gradient tint + shimmer sweep on hover
+- "Q3 2026" pill with pulsing dot
 - Clicking → sign in → opens `#creator-intel` route
-- Badge shows "Coming Q3 2026"
+
+**Footer row** (below the two cards):
+- Left: `<Zap/> Every plan includes Vision AI`
+- Right: `See pricing →` link (sets `window.location.hash = "pricing"`)
+
+**Animation — IMPORTANT structural rule:**
+Positioning (`absolute left-1/2 -translate-x-1/2`) and the entrance animation MUST live on separate elements. Otherwise Tailwind's `transform: translateX(-50%)` and the keyframe's `transform` fight each other and the menu flashes off-center before settling. Pattern:
+```tsx
+<div className="absolute left-1/2 -translate-x-1/2 w-[680px]">  {/* positioning only */}
+  <div className="origin-top animate-[megaIn_220ms_cubic-bezier(0.16,1,0.3,1)_both]">
+    {/* card + footer */}
+  </div>
+</div>
+```
+`megaIn` keyframe = `opacity 0→1` + `translateY(-8px)→0` + `scale(0.97→1)`. `origin-top` so it grows downward from the Products button.
 
 ### Key behaviors
 - **Light mode is the default** for visitors with no saved theme preference
-- Mega-menu uses 150ms close delay + `pt-2` invisible bridge so mouse can cross the gap
+- Mega-menu uses 150ms close delay + `pt-3` invisible bridge so mouse can cross the gap
 - All CTAs use `onAction(target?)` — same handler for signed-in and signed-out states
 - **No Claude AI branding** anywhere — all references are "Spark AI" or "Spark Vision AI"
 - When logged in: "Get Started Free" → "Open Market Intelligence"; "Sign in" → removed; "Get Started Free" in CTA → "Open App"
+- **Scroll animations:** every section below the hero uses `<Reveal>` from `./Reveal` with scroll-triggered fade-up + optional scale. Stagger grid items by passing `delay={i * 120}`. Do NOT put hover transforms on the Reveal itself — they'll be overridden; wrap the inner card with a plain div that owns the hover classes.
+- **Hero entrance:** uses CSS animations (`.hero-item` + `heroIn` keyframe), not Reveal, because hero is always above the fold. Delays are set via inline `style={{ animationDelay: "..." }}` (0, 120, 220, 300, 320, 420ms).
+- **Smooth scroll:** `html { scroll-behavior: smooth }` set globally in `src/styles/globals.css` (with reduced-motion override).
+- **Retailer strip brand colors:** dots use inline `style={{ backgroundColor }}` (not Tailwind classes — colors come from `RETAILERS[].color` data). To add a retailer, add a new row with `{ name, color: "#HEX" }`.
 
 ### What NOT to do on landing page
 - Do NOT mention Claude anywhere on the public-facing landing page
 - Do NOT add max-width constraints to sections — they should fill full width
 - Do NOT wire the TikTok/Creator notify email yet — it's coming later
 - Do NOT set `showLanding = false` unless user has clicked into a specific product
+- Do NOT use real retailer logos — use brand-name wordmarks with colored accent dots (legal safety: Amazon/Noon/Carrefour etc. are competitors being tracked, not partners — logos imply partnership we don't have)
 
 ---
 
