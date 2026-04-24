@@ -28,6 +28,7 @@ import { searchRouter }             from "./routes/search"
 import { suggestionsRouter }        from "./routes/suggestions"
 import { creatorIntelRouter }       from "./routes/creatorIntel"
 import { adminStatsRouter }        from "./routes/adminStats"
+import { adminUserRouter }         from "./routes/adminUser"
 import { heartbeatRouter }         from "./routes/heartbeat"
 import { broadcastsRouter }        from "./routes/broadcasts"
 import { timingMiddleware }        from "./middleware/timing"
@@ -94,6 +95,7 @@ app.use("/api/search",               requireAuth, searchRouter)
 app.use("/api/suggestions",          requireAuth, suggestionsRouter)
 app.use("/api/creator-intel",        requireAuth, creatorIntelRouter)
 app.use("/api/admin/stats",          requireAuth, adminStatsRouter)
+app.use("/api/admin/user",           requireAuth, adminUserRouter)
 app.use("/api/heartbeat",            requireAuth, heartbeatRouter)
 app.use("/api/broadcasts",           requireAuth, broadcastsRouter)
 

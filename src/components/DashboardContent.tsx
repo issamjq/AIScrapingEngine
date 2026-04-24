@@ -7,6 +7,9 @@ import { useState, useEffect, lazy, Suspense } from "react"
 
 // Lazy: three.js + react-globe.gl only pulled in for the 2 admins who see this dashboard.
 const LiveGlobe = lazy(() => import("./LiveGlobe"))
+
+import { UserDetailSheet } from "./UserDetailSheet"
+import { LiveViewDialog }  from "./LiveViewDialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card"
 import { Badge } from "./ui/badge"
 import {
@@ -302,6 +305,8 @@ export function DashboardContent(_: { role?: string }) {
   const [broadcastDraft, setBroadcastDraft] = useState("")
   const [broadcastVariant, setBroadcastVariant] = useState<"info" | "warn" | "success" | "danger">("info")
   const [broadcastSaving, setBroadcastSaving] = useState(false)
+  const [selectedUser, setSelectedUser] = useState<string | null>(null)
+  const [liveOpen, setLiveOpen] = useState(false)
 
   const isAdmin = ADMIN_EMAILS.has(user?.email ?? "")
 
@@ -436,21 +441,39 @@ export function DashboardContent(_: { role?: string }) {
     <div className="space-y-6">
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold">Platform Dashboard</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             Real-time metrics across all users and services
           </p>
         </div>
-        <button
-          onClick={refresh}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Shopify-style live visitor pill */}
+          <button
+            type="button"
+            onClick={() => setLiveOpen(true)}
+            className="group inline-flex items-center gap-1.5 pl-2.5 pr-3 py-1.5 rounded-full border bg-background hover:bg-emerald-50 dark:hover:bg-emerald-950/30 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors shadow-sm"
+          >
+            <span className="relative flex h-2 w-2">
+              {live_users.live_5m > 0 && (
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${live_users.live_5m > 0 ? "bg-emerald-500" : "bg-slate-400"}`} />
+            </span>
+            <span className="text-xs font-medium">
+              {live_users.live_5m} live visitor{live_users.live_5m === 1 ? "" : "s"}
+            </span>
+          </button>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Live Now + Revenue — hero row */}
@@ -569,12 +592,19 @@ export function DashboardContent(_: { role?: string }) {
               <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
               Recent (5–30m)
             </span>
+            <button
+              type="button"
+              onClick={() => setLiveOpen(true)}
+              className="ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] transition-colors"
+            >
+              Open Live View →
+            </button>
           </div>
         </CardHeader>
 
         <CardContent className="relative p-0">
           {live_users.points.length === 0 ? (
-            <div className="h-[480px] flex flex-col items-center justify-center text-slate-500 gap-2">
+            <div className="h-[560px] flex flex-col items-center justify-center text-slate-500 gap-2">
               <Globe className="h-10 w-10 opacity-30" />
               <p className="text-xs">No users online right now</p>
               <p className="text-[10px] text-slate-600">Dots will appear here the moment someone opens the app</p>
@@ -582,12 +612,12 @@ export function DashboardContent(_: { role?: string }) {
           ) : (
             <Suspense
               fallback={
-                <div className="h-[480px] flex items-center justify-center">
+                <div className="h-[560px] flex items-center justify-center">
                   <div className="h-8 w-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-400 animate-spin" />
                 </div>
               }
             >
-              <LiveGlobe points={live_users.points} dark />
+              <LiveGlobe points={live_users.points} dark heightPx={560} />
             </Suspense>
           )}
         </CardContent>
@@ -804,7 +834,12 @@ export function DashboardContent(_: { role?: string }) {
             {live_users.online.length === 0 ? (
               <p className="text-xs text-muted-foreground">No one online right now</p>
             ) : live_users.online.slice(0, 10).map((u, i) => (
-              <div key={i} className="flex items-center justify-between gap-2">
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSelectedUser(u.email)}
+                className="w-full flex items-center justify-between gap-2 text-left hover:bg-muted/50 rounded-md -mx-2 px-2 py-1 transition-colors"
+              >
                 <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="relative flex h-2 w-2 shrink-0">
                     <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -826,7 +861,7 @@ export function DashboardContent(_: { role?: string }) {
                   </div>
                 </div>
                 <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(u.last_seen_at)}</span>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -890,7 +925,12 @@ export function DashboardContent(_: { role?: string }) {
             {recent_signups.length === 0 ? (
               <p className="text-xs text-muted-foreground">No users yet</p>
             ) : recent_signups.map((u, i) => (
-              <div key={i} className="flex items-center justify-between gap-2">
+              <button
+                key={i}
+                type="button"
+                onClick={() => setSelectedUser(u.email)}
+                className="w-full flex items-center justify-between gap-2 text-left hover:bg-muted/50 rounded-md -mx-2 px-2 py-1 transition-colors"
+              >
                 <div className="flex-1 min-w-0">
                   <p className="text-xs truncate font-medium">{u.email}</p>
                   <div className="flex items-center gap-1.5 mt-0.5">
@@ -903,7 +943,7 @@ export function DashboardContent(_: { role?: string }) {
                 <span className="text-[10px] text-muted-foreground shrink-0">
                   {timeAgo(u.created_at)}
                 </span>
-              </div>
+              </button>
             ))}
           </CardContent>
         </Card>
@@ -1016,7 +1056,12 @@ export function DashboardContent(_: { role?: string }) {
             ) : power_users.map((u, i) => {
               const pct = (u.credits_used / maxPowerCredits) * 100
               return (
-                <div key={i} className="space-y-1">
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setSelectedUser(u.email)}
+                  className="w-full text-left space-y-1 hover:bg-muted/50 rounded-md -mx-2 px-2 py-1 transition-colors"
+                >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
                       <span className={`text-[10px] font-bold w-5 text-center shrink-0 ${i === 0 ? "text-amber-500" : i < 3 ? "text-slate-500" : "text-muted-foreground"}`}>
@@ -1033,7 +1078,7 @@ export function DashboardContent(_: { role?: string }) {
                   <div className="relative h-1 bg-muted/40 rounded overflow-hidden ml-7">
                     <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-amber-400 to-orange-500 rounded" style={{ width: `${pct}%` }} />
                   </div>
-                </div>
+                </button>
               )
             })}
           </CardContent>
@@ -1111,13 +1156,18 @@ export function DashboardContent(_: { role?: string }) {
               ) : (
                 <div className="space-y-1.5">
                   {at_risk.silent_paid.slice(0, 8).map((u, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedUser(u.email)}
+                      className="w-full flex items-center justify-between gap-2 text-xs text-left hover:bg-muted/50 rounded px-1 py-0.5 transition-colors"
+                    >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {u.country_code && <span>{flagOf(u.country_code)}</span>}
                         <span className="truncate">{u.email}</span>
                       </div>
                       <Badge variant="secondary" className="text-[10px] shrink-0">{u.days_silent}d</Badge>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1134,13 +1184,18 @@ export function DashboardContent(_: { role?: string }) {
               ) : (
                 <div className="space-y-1.5">
                   {at_risk.ending_trials.slice(0, 8).map((u, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedUser(u.email)}
+                      className="w-full flex items-center justify-between gap-2 text-xs text-left hover:bg-muted/50 rounded px-1 py-0.5 transition-colors"
+                    >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {u.country_code && <span>{flagOf(u.country_code)}</span>}
                         <span className="truncate">{u.email}</span>
                       </div>
                       <Badge variant="secondary" className="text-[10px] shrink-0">{u.days_left}d</Badge>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1157,13 +1212,18 @@ export function DashboardContent(_: { role?: string }) {
               ) : (
                 <div className="space-y-1.5">
                   {at_risk.credit_exhaustion.slice(0, 8).map((u, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setSelectedUser(u.email)}
+                      className="w-full flex items-center justify-between gap-2 text-xs text-left hover:bg-muted/50 rounded px-1 py-0.5 transition-colors"
+                    >
                       <div className="flex items-center gap-1.5 min-w-0 flex-1">
                         {u.country_code && <span>{flagOf(u.country_code)}</span>}
                         <span className="truncate">{u.email}</span>
                       </div>
                       <Badge variant="secondary" className="text-[10px] shrink-0">{u.pct_used}%</Badge>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -1755,6 +1815,25 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
 
       </div>
+
+      {/* User drill-down — opens when any user row is clicked */}
+      <UserDetailSheet
+        email={selectedUser}
+        open={!!selectedUser}
+        onOpenChange={(v) => { if (!v) setSelectedUser(null) }}
+      />
+
+      {/* Live View fullscreen — opens from the pill or "Open Live View" button */}
+      <LiveViewDialog
+        open={liveOpen}
+        onOpenChange={setLiveOpen}
+        points={live_users.points}
+        liveCount={live_users.live_5m}
+        recentCount={Math.max(0, live_users.live_30m - live_users.live_5m)}
+        activeToday={live_users.active_24h}
+        searches24h={searches.last_24h}
+        totalSearches={searches.total}
+      />
 
     </div>
   )

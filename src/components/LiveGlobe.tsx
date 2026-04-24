@@ -26,23 +26,30 @@ export interface LivePoint {
 interface Props {
   points: LivePoint[]
   dark?:  boolean
+  tall?:  boolean   // fill the full container height (for fullscreen Live View)
+  heightPx?: number // explicit pixel height override (default 560 for inline card)
 }
 
-export default function LiveGlobe({ points, dark = false }: Props) {
+export default function LiveGlobe({ points, dark = false, tall = false, heightPx }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const globeRef     = useRef<any>(null)
-  const [width, setWidth] = useState(800)
+  const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: heightPx ?? (tall ? 720 : 560) })
 
-  // Resize-aware width
+  // Resize-aware width + height (height matters in `tall` mode so the globe
+  // fills the fullscreen dialog).
   useEffect(() => {
     if (!containerRef.current) return
     const ro = new ResizeObserver(entries => {
-      const w = entries[0]?.contentRect.width ?? 800
-      setWidth(Math.max(280, Math.floor(w)))
+      const r = entries[0]?.contentRect
+      if (!r) return
+      setDims({
+        w: Math.max(280, Math.floor(r.width)),
+        h: tall ? Math.max(360, Math.floor(r.height)) : (heightPx ?? 560),
+      })
     })
     ro.observe(containerRef.current)
     return () => ro.disconnect()
-  }, [])
+  }, [tall, heightPx])
 
   // Auto-rotate + camera framing
   useEffect(() => {
@@ -70,12 +77,12 @@ export default function LiveGlobe({ points, dark = false }: Props) {
     <div
       ref={containerRef}
       className="relative w-full"
-      style={{ height: 480, cursor: "grab" }}
+      style={{ height: tall ? "100%" : (heightPx ?? 560), cursor: "grab" }}
     >
       <Globe
         ref={globeRef}
-        width={width}
-        height={480}
+        width={dims.w}
+        height={dims.h}
         backgroundColor="rgba(0,0,0,0)"
         globeImageUrl={globeImage}
         atmosphereColor={atmosphereColor}
