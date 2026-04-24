@@ -28,6 +28,7 @@ import { searchRouter }             from "./routes/search"
 import { suggestionsRouter }        from "./routes/suggestions"
 import { creatorIntelRouter }       from "./routes/creatorIntel"
 import { adminStatsRouter }        from "./routes/adminStats"
+import { heartbeatRouter }         from "./routes/heartbeat"
 import { requireAuth }              from "./middleware/auth"
 import { globalLimiter }            from "./middleware/rateLimit"
 
@@ -87,6 +88,7 @@ app.use("/api/search",               requireAuth, searchRouter)
 app.use("/api/suggestions",          requireAuth, suggestionsRouter)
 app.use("/api/creator-intel",        requireAuth, creatorIntelRouter)
 app.use("/api/admin/stats",          requireAuth, adminStatsRouter)
+app.use("/api/heartbeat",            requireAuth, heartbeatRouter)
 
 // 404
 app.use((_req, res) => {

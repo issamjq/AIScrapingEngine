@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react"
 import spinnerGif from "@/assets/spinner.gif"
 import { AuthProvider, useAuth } from "./context/AuthContext"
+import { useHeartbeat } from "./lib/useHeartbeat"
 import { Toaster } from "./components/ui/sonner"
 import { LandingPage } from "./landing/LandingPage"
 import { DashboardLayout } from "./components/DashboardLayout"
@@ -142,6 +143,7 @@ function getHashSubTab(): string {
 
 function AppInner() {
   const { user, loading } = useAuth()
+  useHeartbeat() // keeps allowed_users.last_seen_at fresh so admin dashboard shows accurate "live now" count
   const [currentPage, setCurrentPage] = useState(getHashPage)
   const [appState, setAppState] = useState<AppState>("loading")
   const [retryCount, setRetryCount] = useState(0)

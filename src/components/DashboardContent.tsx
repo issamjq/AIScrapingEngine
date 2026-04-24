@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/
 import { Badge } from "./ui/badge"
 import {
   Users, Search, Database, Zap, TrendingUp, ShoppingBag,
-  Globe, Activity, Clock, RefreshCw,
+  Globe, Activity, Clock, RefreshCw, Radio, MapPin,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { PageSkeleton } from "./PageSkeleton"
@@ -49,6 +49,25 @@ interface AdminStats {
   recent_signups: { email: string; role: string; plan_code: string; created_at: string }[]
   activity_feed:  { id: number; user_email: string; role: string; action: string; details: any; ip: string; created_at: string }[]
   action_counts:  { action: string; count: number }[]
+  live_users: {
+    live_5m:    number
+    live_30m:   number
+    active_24h: number
+    online: { email: string; role: string; plan_code: string | null; signup_country: string | null; signup_country_code: string | null; last_seen_at: string }[]
+  }
+  users_by_country: { country: string; code: string | null; count: number }[]
+  geo_summary: { known: number; unknown: number }
+}
+
+// Emoji flag from ISO-3166-1 alpha-2 country code (e.g. "AE" → 🇦🇪)
+function flagOf(code: string | null | undefined): string {
+  if (!code || code.length !== 2) return "🌐"
+  const A = 0x1F1E6
+  const base = "A".charCodeAt(0)
+  return String.fromCodePoint(
+    A + code.toUpperCase().charCodeAt(0) - base,
+    A + code.toUpperCase().charCodeAt(1) - base,
+  )
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -222,7 +241,8 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary } = stats
+  const maxCountryCount = Math.max(1, ...users_by_country.map(c => c.count))
 
   // Merge searches + scrapes into one activity chart
   const activityData = mergeDays(charts.searches_by_day, charts.scrapes_by_day, "searches", "scrapes")
@@ -258,6 +278,49 @@ export function DashboardContent(_: { role?: string }) {
           Refresh
         </button>
       </div>
+
+      {/* Live Now — hero card with pulsing indicator */}
+      <Card className="relative overflow-hidden border-emerald-200 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/60 to-transparent dark:from-emerald-950/30">
+        <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-emerald-400/10 blur-3xl" />
+        <CardContent className="relative p-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                </span>
+                <span className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Live Now</span>
+              </div>
+              <div className="mt-1.5 flex items-baseline gap-2">
+                <span className="text-3xl font-bold">{fmt(live_users.live_5m)}</span>
+                <span className="text-xs text-muted-foreground">online in last 5m</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {live_users.live_30m} active in 30m · {live_users.active_24h} today
+              </p>
+            </div>
+            {live_users.online.length > 0 && (
+              <div className="flex -space-x-2">
+                {live_users.online.slice(0, 6).map((u, i) => (
+                  <div
+                    key={i}
+                    title={`${u.email} · ${u.signup_country ?? "Unknown"} · ${timeAgo(u.last_seen_at)}`}
+                    className="h-8 w-8 rounded-full bg-white dark:bg-slate-900 border-2 border-emerald-400 shadow-sm flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200"
+                  >
+                    {u.email.slice(0, 1).toUpperCase()}
+                  </div>
+                ))}
+                {live_users.online.length > 6 && (
+                  <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white dark:border-slate-900 flex items-center justify-center text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                    +{live_users.online.length - 6}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Top metric cards */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
@@ -417,6 +480,83 @@ export function DashboardContent(_: { role?: string }) {
                 <Bar dataKey="count" fill="#7c3aed" radius={[0, 4, 4, 0]} name="Users" />
               </BarChart>
             </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Geo row: Users by Country + Active right now */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+
+        {/* Users by Country — spans 2 cols */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-blue-500" />
+              Users by Country
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {geo_summary.known} located · {geo_summary.unknown} unknown
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {users_by_country.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No location data yet</p>
+            ) : users_by_country.slice(0, 12).map((c, i) => {
+              const pct = (c.count / maxCountryCount) * 100
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-lg shrink-0 w-6 text-center">{flagOf(c.code)}</span>
+                  <span className="text-xs w-28 truncate shrink-0">{c.country}</span>
+                  <div className="flex-1 relative h-5 bg-muted/40 rounded overflow-hidden">
+                    <div
+                      className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-blue-500 to-violet-500 rounded"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] shrink-0 min-w-[32px] justify-center">{c.count}</Badge>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Active Right Now */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Radio className="h-4 w-4 text-emerald-500" />
+              Active Right Now
+            </CardTitle>
+            <CardDescription className="text-xs">Users online in last 5 minutes</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2.5">
+            {live_users.online.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No one online right now</p>
+            ) : live_users.online.slice(0, 10).map((u, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs truncate font-medium">{u.email}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <Badge variant="outline" className="text-[10px] px-1 py-0">{u.role}</Badge>
+                      {u.signup_country_code && (
+                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                          <span>{flagOf(u.signup_country_code)}</span>
+                          {u.signup_country}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(u.last_seen_at)}</span>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>

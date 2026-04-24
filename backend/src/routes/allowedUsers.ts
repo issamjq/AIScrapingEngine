@@ -9,6 +9,7 @@ import { createWallet } from "../services/walletService"
 import { getPlanByKey } from "../services/plansService"
 import { signupLimiter } from "../middleware/rateLimit"
 import { logActivity } from "../services/activityLogger"
+import { lookupIp } from "../services/geoService"
 
 export const allowedUsersRouter = Router()
 
@@ -158,13 +159,17 @@ allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest
     // Effective plan code to store (prefer new plan_code if provided, else derive from legacy key)
     const effectivePlanCode = planCode || (VALID_NEW.includes(planKey) ? planKey : null)
 
+    // Resolve country/city for the signup IP (best-effort — never blocks signup)
+    const geo = await lookupIp(clientIp)
+
     const { rows } = await query(
       `INSERT INTO allowed_users
-         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip)
-       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10)
+         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip, signup_country, signup_country_code, signup_city, last_seen_at, last_seen_ip)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $10)
        RETURNING *`,
       [email.toLowerCase().trim(), name || null, role, subscription, effectivePlanCode, billingInterval,
-       effectiveTrial, billingRenewsAt, uid || null, clientIp]
+       effectiveTrial, billingRenewsAt, uid || null, clientIp,
+       geo?.country ?? null, geo?.countryCode ?? null, geo?.city ?? null]
     )
 
     // Seed the 8 default UAE stores for this new user
