@@ -125,6 +125,11 @@ function PlanPicker({
       const token = await user.getIdToken()
       // Map plan key to legacy plan value for backend compat
       const legacyPlan = plan.isFree ? "free" : "trial"
+      // Pull any UTM / referrer the landing page stashed at first visit
+      const utm = (() => {
+        try { return JSON.parse(sessionStorage.getItem("spark_utm") ?? "{}") ?? {} }
+        catch { return {} }
+      })()
       const res = await fetch(`${API}/api/allowed-users/signup`, {
         method:  "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -134,6 +139,10 @@ function PlanPicker({
           plan_code:        plan.key,
           billing_interval: interval,
           name:             user.displayName || user.email,
+          utm_source:       utm.source   ?? null,
+          utm_medium:       utm.medium   ?? null,
+          utm_campaign:     utm.campaign ?? null,
+          referrer:         utm.referrer ?? null,
         }),
       })
       const data = await res.json()

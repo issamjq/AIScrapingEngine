@@ -162,15 +162,22 @@ allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest
     // Resolve country/city for the signup IP (best-effort — never blocks signup)
     const geo = await lookupIp(clientIp)
 
+    // Optional UTM / referrer attribution captured by the landing page
+    const utmSource   = req.body?.utm_source   ? String(req.body.utm_source).slice(0, 80)    : null
+    const utmMedium   = req.body?.utm_medium   ? String(req.body.utm_medium).slice(0, 80)    : null
+    const utmCampaign = req.body?.utm_campaign ? String(req.body.utm_campaign).slice(0, 120) : null
+    const referrer    = req.body?.referrer     ? String(req.body.referrer).slice(0, 250)     : null
+
     const { rows } = await query(
       `INSERT INTO allowed_users
-         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip, signup_country, signup_country_code, signup_city, signup_region, signup_lat, signup_lon, last_seen_at, last_seen_ip)
-       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), $10)
+         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip, signup_country, signup_country_code, signup_city, signup_region, signup_lat, signup_lon, utm_source, utm_medium, utm_campaign, referrer, last_seen_at, last_seen_ip)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW(), $10)
        RETURNING *`,
       [email.toLowerCase().trim(), name || null, role, subscription, effectivePlanCode, billingInterval,
        effectiveTrial, billingRenewsAt, uid || null, clientIp,
        geo?.country ?? null, geo?.countryCode ?? null, geo?.city ?? null,
-       geo?.region ?? null, geo?.lat ?? null, geo?.lon ?? null]
+       geo?.region ?? null, geo?.lat ?? null, geo?.lon ?? null,
+       utmSource, utmMedium, utmCampaign, referrer]
     )
 
     // Seed the 8 default UAE stores for this new user

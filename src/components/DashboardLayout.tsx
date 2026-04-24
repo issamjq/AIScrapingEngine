@@ -21,6 +21,7 @@ import {
   SidebarProvider,
 } from "./ui/sidebar"
 import { TopNavigation } from "./TopNavigation"
+import { BroadcastBanner } from "./BroadcastBanner"
 import { UserMenuButton } from "./UserMenuButton"
 import { Separator } from "./ui/separator"
 import { useAuth } from "@/context/AuthContext"
@@ -204,6 +205,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
         {/* Main content */}
         <div className="flex-1 flex flex-col min-w-0">
           <TopNavigation />
+          <BroadcastBanner />
           <main className="flex-1 overflow-auto p-4 sm:p-6">
             {children}
           </main>

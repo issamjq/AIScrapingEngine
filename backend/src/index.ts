@@ -29,6 +29,9 @@ import { suggestionsRouter }        from "./routes/suggestions"
 import { creatorIntelRouter }       from "./routes/creatorIntel"
 import { adminStatsRouter }        from "./routes/adminStats"
 import { heartbeatRouter }         from "./routes/heartbeat"
+import { broadcastsRouter }        from "./routes/broadcasts"
+import { timingMiddleware }        from "./middleware/timing"
+import { logError }                from "./services/errorLogger"
 import { requireAuth }              from "./middleware/auth"
 import { globalLimiter }            from "./middleware/rateLimit"
 
@@ -58,6 +61,9 @@ app.use(express.urlencoded({ extended: true }))
 
 // Global rate limit — all API routes
 app.use("/api/", globalLimiter)
+
+// Request timing — records duration/status for every finished API request
+app.use("/api/", timingMiddleware)
 
 // Health check
 app.get("/health", (_req, res) => {
@@ -89,6 +95,7 @@ app.use("/api/suggestions",          requireAuth, suggestionsRouter)
 app.use("/api/creator-intel",        requireAuth, creatorIntelRouter)
 app.use("/api/admin/stats",          requireAuth, adminStatsRouter)
 app.use("/api/heartbeat",            requireAuth, heartbeatRouter)
+app.use("/api/broadcasts",           requireAuth, broadcastsRouter)
 
 // 404
 app.use((_req, res) => {
@@ -96,11 +103,24 @@ app.use((_req, res) => {
 })
 
 // Global error handler — never expose raw DB/internal errors to client
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
   const status = err.status || err.statusCode || 500
   console.error(err.stack)
   // Only pass through messages we explicitly set via createError (have a .code property)
   const isAppError = !!err.code && status < 500
+  // Persist 5xx (and uncategorized) errors so the admin dashboard can surface them
+  if (status >= 500 || !isAppError) {
+    logError({
+      level:      status >= 500 ? "error" : "warn",
+      source:     "express",
+      message:    err.message || "unknown error",
+      stack:      err.stack,
+      path:       req.path,
+      status,
+      user_email: (req as any).email ?? null,
+      ip:         (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.ip ?? null,
+    })
+  }
   res.status(status).json({
     success: false,
     error: {

@@ -602,6 +602,85 @@ adminStatsRouter.get("/", async (req, res, next) => {
         .sort((a, b) => b.cost - a.cost),
     }
 
+    // ── Error feed (last 50) ─────────────────────────────────────────────────
+    const { rows: errorFeed } = await query(`
+      SELECT id, level, source, message, path, status, user_email, created_at
+        FROM error_log
+       ORDER BY created_at DESC
+       LIMIT 50
+    `)
+    const { rows: errorCounts } = await query(`
+      SELECT
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours')::int AS last_24h,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int   AS last_7d
+      FROM error_log
+    `)
+    const ec = errorCounts[0] || {}
+
+    // ── Admin audit log (last 30) ────────────────────────────────────────────
+    const { rows: auditFeed } = await query(`
+      SELECT id, actor_email, action, target_email, details, ip, created_at
+        FROM admin_audit_log
+       ORDER BY created_at DESC
+       LIMIT 30
+    `)
+
+    // ── Rate-limit hits summary (last 7 days) ────────────────────────────────
+    const { rows: rateLimitSummary } = await query(`
+      SELECT user_email,
+             limit_type,
+             COUNT(*)::int       AS hits,
+             MAX(created_at)     AS last_hit
+        FROM rate_limit_hits
+       WHERE created_at >= NOW() - INTERVAL '7 days'
+       GROUP BY user_email, limit_type
+       ORDER BY hits DESC
+       LIMIT 15
+    `)
+
+    // ── Slow endpoints (last 24h, per-route p50/p95/p99) ─────────────────────
+    const { rows: slowEndpoints } = await query(`
+      SELECT route,
+             method,
+             COUNT(*)::int                                                                 AS calls,
+             ROUND(AVG(duration_ms))::int                                                  AS avg_ms,
+             PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY duration_ms)::int                AS p50,
+             PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::int                AS p95,
+             PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms)::int                AS p99,
+             COUNT(*) FILTER (WHERE status >= 500)::int                                    AS err_5xx
+        FROM endpoint_timings
+       WHERE created_at >= NOW() - INTERVAL '24 hours'
+       GROUP BY route, method
+      HAVING COUNT(*) >= 3
+       ORDER BY p95 DESC
+       LIMIT 12
+    `)
+
+    // ── Broadcasts (recent 20) ───────────────────────────────────────────────
+    const { rows: broadcastList } = await query(`
+      SELECT id, message, variant, active, starts_at, ends_at, created_by, created_at
+        FROM broadcasts
+       ORDER BY created_at DESC
+       LIMIT 20
+    `)
+
+    // ── UTM attribution (last 90 days) ───────────────────────────────────────
+    const { rows: utmBreakdown } = await query(`
+      SELECT
+        COALESCE(utm_source, '(direct)')                                AS source,
+        COUNT(*)::int                                                   AS signups,
+        COUNT(*) FILTER (WHERE subscription = 'paid')::int              AS paid,
+        ROUND(
+          100.0 * COUNT(*) FILTER (WHERE subscription = 'paid')
+          / NULLIF(COUNT(*), 0), 1
+        )::numeric(5,1)                                                 AS conversion_pct
+      FROM allowed_users
+      WHERE created_at >= NOW() - INTERVAL '90 days'
+      GROUP BY COALESCE(utm_source, '(direct)')
+      ORDER BY signups DESC
+      LIMIT 10
+    `)
+
     // ── Funnel: signups → activated (first search) → paid ────────────────────
     const { rows: funnelRow } = await query(`
       WITH first_search AS (
@@ -760,6 +839,17 @@ adminStatsRouter.get("/", async (req, res, next) => {
           samples:   Number(r.samples)  || 0,
         })),
         anthropic_spend: anthropicSpend,
+
+        error_feed: errorFeed,
+        error_counts: {
+          last_24h: Number(ec.last_24h) || 0,
+          last_7d:  Number(ec.last_7d)  || 0,
+        },
+        admin_audit: auditFeed,
+        rate_limit_hits: rateLimitSummary,
+        slow_endpoints:  slowEndpoints,
+        broadcasts:      broadcastList,
+        utm_breakdown:   utmBreakdown,
       },
     })
   } catch (err) { next(err) }

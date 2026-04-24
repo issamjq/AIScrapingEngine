@@ -15,6 +15,7 @@ import {
   DollarSign, Trophy, ShieldAlert, Repeat, Filter,
   CheckCircle2, AlertTriangle, XCircle, Hourglass,
   Flame, Layers, UserX, Fingerprint, ArrowUpRight, ArrowDownRight, Brain,
+  Bug, ScrollText, GaugeCircle, Siren, Megaphone, Plus, Link2,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { PageSkeleton } from "./PageSkeleton"
@@ -100,6 +101,13 @@ interface AdminStats {
     by_day:    { date: string; cost: number }[]
     by_action: { action: string; calls: number; cost: number }[]
   }
+  error_feed:     { id: number; level: string; source: string | null; message: string; path: string | null; status: number | null; user_email: string | null; created_at: string }[]
+  error_counts:   { last_24h: number; last_7d: number }
+  admin_audit:    { id: number; actor_email: string; action: string; target_email: string | null; details: any; ip: string | null; created_at: string }[]
+  rate_limit_hits:{ user_email: string; limit_type: string; hits: number; last_hit: string }[]
+  slow_endpoints: { route: string; method: string; calls: number; avg_ms: number; p50: number; p95: number; p99: number; err_5xx: number }[]
+  broadcasts:     { id: number; message: string; variant: string; active: boolean; starts_at: string; ends_at: string | null; created_by: string | null; created_at: string }[]
+  utm_breakdown:  { source: string; signups: number; paid: number; conversion_pct: number }[]
 }
 
 // Defaults used when the backend hasn't deployed yet (Vercel is faster than
@@ -121,6 +129,13 @@ const EMPTY_STATS_DEFAULTS = {
   trial_abuse:      [],
   price_moves:      [],
   anthropic_spend:  { last_7d: 0, last_30d: 0, by_day: [], by_action: [] },
+  error_feed:       [],
+  error_counts:     { last_24h: 0, last_7d: 0 },
+  admin_audit:      [],
+  rate_limit_hits:  [],
+  slow_endpoints:   [],
+  broadcasts:       [],
+  utm_breakdown:    [],
   activity_feed:    [],
   action_counts:    [],
   top_queries:      [],
@@ -284,8 +299,38 @@ export function DashboardContent(_: { role?: string }) {
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [broadcastDraft, setBroadcastDraft] = useState("")
+  const [broadcastVariant, setBroadcastVariant] = useState<"info" | "warn" | "success" | "danger">("info")
+  const [broadcastSaving, setBroadcastSaving] = useState(false)
 
   const isAdmin = ADMIN_EMAILS.has(user?.email ?? "")
+
+  async function createBroadcast() {
+    if (!broadcastDraft.trim()) return
+    setBroadcastSaving(true)
+    try {
+      const token = await user!.getIdToken()
+      await fetch(`${API}/api/broadcasts`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ message: broadcastDraft.trim(), variant: broadcastVariant }),
+      })
+      setBroadcastDraft("")
+      await loadStats()
+    } catch { /* silent */ }
+    finally { setBroadcastSaving(false) }
+  }
+
+  async function deactivateBroadcast(id: number) {
+    try {
+      const token = await user!.getIdToken()
+      await fetch(`${API}/api/broadcasts/${id}/deactivate`, {
+        method:  "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      await loadStats()
+    } catch { /* silent */ }
+  }
 
   async function loadStats() {
     try {
@@ -312,6 +357,7 @@ export function DashboardContent(_: { role?: string }) {
         activation: { ...EMPTY_STATS_DEFAULTS.activation, ...(data.activation ?? {}) },
         stickiness: { ...EMPTY_STATS_DEFAULTS.stickiness, ...(data.stickiness ?? {}) },
         anthropic_spend: { ...EMPTY_STATS_DEFAULTS.anthropic_spend, ...(data.anthropic_spend ?? {}) },
+        error_counts: { ...EMPTY_STATS_DEFAULTS.error_counts, ...(data.error_counts ?? {}) },
       } as AdminStats
       setStats(merged)
       setError(null)
@@ -361,7 +407,7 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel, at_risk, activation, stickiness, feature_adoption, cohort_retention, trial_abuse, price_moves, anthropic_spend } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel, at_risk, activation, stickiness, feature_adoption, cohort_retention, trial_abuse, price_moves, anthropic_spend, error_feed, error_counts, admin_audit, rate_limit_hits, slow_endpoints, broadcasts, utm_breakdown } = stats
   const maxCountryCount = Math.max(1, ...users_by_country.map(c => c.count))
   const maxPowerCredits = Math.max(1, ...power_users.map(u => u.credits_used))
   const activationRate = funnel.signups > 0 ? (funnel.activated / funnel.signups) * 100 : 0
@@ -1394,6 +1440,255 @@ export function DashboardContent(_: { role?: string }) {
                   {c.emails.slice(0, 4).join(" · ")}
                   {c.emails.length > 4 && ` · +${c.emails.length - 4} more`}
                 </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Broadcast Composer + UTM Attribution */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Broadcast Composer */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Megaphone className="h-4 w-4 text-sky-500" />
+              Broadcast Banner
+            </CardTitle>
+            <CardDescription className="text-xs">Push a dismissible message to every signed-in user</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <textarea
+              value={broadcastDraft}
+              onChange={e => setBroadcastDraft(e.target.value.slice(0, 500))}
+              placeholder="e.g. Maintenance 8pm UTC — expect 5 min downtime"
+              className="w-full min-h-[60px] rounded-md border bg-background text-xs px-3 py-2 focus:outline-none focus:ring-2 focus:ring-sky-500/30 resize-y"
+            />
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(["info","success","warn","danger"] as const).map(v => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setBroadcastVariant(v)}
+                    className={`text-[10px] px-2 py-1 rounded-md border transition-colors ${
+                      broadcastVariant === v
+                        ? v === "danger"  ? "bg-red-600 text-white border-red-600"
+                        : v === "warn"    ? "bg-amber-500 text-white border-amber-500"
+                        : v === "success" ? "bg-emerald-600 text-white border-emerald-600"
+                        : "bg-slate-900 text-white border-slate-900"
+                        : "bg-transparent"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+              <span className="text-[10px] text-muted-foreground">{broadcastDraft.length}/500</span>
+              <button
+                type="button"
+                onClick={createBroadcast}
+                disabled={!broadcastDraft.trim() || broadcastSaving}
+                className="text-xs inline-flex items-center gap-1 bg-sky-600 hover:bg-sky-700 disabled:opacity-40 text-white px-3 py-1.5 rounded-md transition-colors"
+              >
+                <Plus className="h-3 w-3" />
+                {broadcastSaving ? "Publishing..." : "Publish"}
+              </button>
+            </div>
+            {broadcasts.length > 0 && (
+              <div className="pt-2 border-t space-y-1.5 max-h-40 overflow-y-auto">
+                {broadcasts.slice(0, 10).map(b => (
+                  <div key={b.id} className="flex items-center justify-between gap-2 text-[11px]">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${b.active ? "bg-emerald-500" : "bg-slate-400"}`} />
+                      <span className="truncate">{b.message}</span>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(b.created_at)}</span>
+                    {b.active && (
+                      <button
+                        type="button"
+                        onClick={() => deactivateBroadcast(b.id)}
+                        className="text-[10px] text-red-500 hover:text-red-600 shrink-0"
+                      >Stop</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* UTM Attribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-fuchsia-500" />
+              Signup Source (90d)
+            </CardTitle>
+            <CardDescription className="text-xs">UTM / referrer attribution · paid conversion per channel</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {utm_breakdown.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No signups in the last 90 days</p>
+            ) : utm_breakdown.map((u, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <span className="text-xs truncate flex-1 font-medium">{u.source}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline" className="text-[10px]">{u.signups} signups</Badge>
+                  <Badge variant="secondary" className="text-[10px]">{u.paid} paid</Badge>
+                  <span className="text-xs font-semibold text-fuchsia-600 dark:text-fuchsia-400 min-w-[44px] text-right">{u.conversion_pct}%</span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Error Feed + Slow Endpoints */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Error Feed */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Bug className="h-4 w-4 text-red-500" />
+              Errors
+              {error_counts.last_24h > 0 && (
+                <Badge variant="destructive" className="text-[10px] ml-1">{error_counts.last_24h} in 24h</Badge>
+              )}
+            </CardTitle>
+            <CardDescription className="text-xs">Last 50 backend 5xx + uncaught exceptions · {error_counts.last_7d} in 7d</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-80 overflow-y-auto">
+              {error_feed.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic p-4">No errors logged — system healthy.</p>
+              ) : error_feed.map((e) => (
+                <div key={e.id} className="px-4 py-2 text-xs hover:bg-muted/30 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${
+                          e.level === "fatal" ? "bg-red-600" :
+                          e.level === "error" ? "bg-red-500" : "bg-amber-500"
+                        }`} />
+                        {e.status && <Badge variant="outline" className="text-[10px] px-1 py-0">{e.status}</Badge>}
+                        {e.source && <span className="text-[10px] text-muted-foreground">{e.source}</span>}
+                        {e.path && <code className="text-[10px] text-muted-foreground truncate">{e.path}</code>}
+                      </div>
+                      <div className="font-medium text-xs truncate">{e.message}</div>
+                      {e.user_email && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{e.user_email}</div>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(e.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Slow Endpoints */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <GaugeCircle className="h-4 w-4 text-yellow-500" />
+              Slow Endpoints (24h)
+            </CardTitle>
+            <CardDescription className="text-xs">Top routes by p95 latency</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-80 overflow-y-auto">
+              {slow_endpoints.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic p-4">No traffic yet — come back once requests roll in.</p>
+              ) : slow_endpoints.map((s, i) => (
+                <div key={i} className="px-4 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">{s.method}</Badge>
+                      <code className="text-[11px] truncate">{s.route}</code>
+                      {s.err_5xx > 0 && (
+                        <Badge variant="destructive" className="text-[9px] shrink-0">{s.err_5xx} err</Badge>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{s.calls} calls</span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                    <span>avg <span className="text-foreground font-medium">{s.avg_ms}ms</span></span>
+                    <span>p50 <span className="text-foreground font-medium">{s.p50}</span></span>
+                    <span>p95 <span className={`font-medium ${s.p95 > 2000 ? "text-red-500" : s.p95 > 1000 ? "text-amber-500" : "text-foreground"}`}>{s.p95}</span></span>
+                    <span>p99 <span className="text-foreground font-medium">{s.p99}</span></span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Admin Audit Log + Rate-Limit Hits */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Admin Audit Log */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ScrollText className="h-4 w-4 text-slate-500" />
+              Admin Audit Log
+            </CardTitle>
+            <CardDescription className="text-xs">Privileged actions taken by admins (last 30)</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y max-h-80 overflow-y-auto">
+              {admin_audit.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic p-4">No admin actions yet.</p>
+              ) : admin_audit.map(a => (
+                <div key={a.id} className="px-4 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+                        <span className="font-medium text-xs truncate">{a.actor_email}</span>
+                        <Badge variant="outline" className="text-[10px] px-1 py-0">{a.action}</Badge>
+                        {a.target_email && (
+                          <span className="text-[10px] text-muted-foreground">→ {a.target_email}</span>
+                        )}
+                      </div>
+                      {a.details && Object.keys(a.details).length > 0 && (
+                        <code className="text-[10px] text-muted-foreground truncate block">
+                          {JSON.stringify(a.details).slice(0, 120)}
+                        </code>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(a.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Rate-Limit Hits */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Siren className="h-4 w-4 text-orange-500" />
+              Rate-Limit Hits (7d)
+            </CardTitle>
+            <CardDescription className="text-xs">Users hitting daily / weekly caps · conversion + abuse signal</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {rate_limit_hits.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No one hitting limits right now.</p>
+            ) : rate_limit_hits.map((r, i) => (
+              <div key={i} className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs truncate font-medium">{r.user_email}</span>
+                </div>
+                <Badge variant="outline" className="text-[10px] shrink-0">{r.limit_type}</Badge>
+                <Badge variant="secondary" className="text-[10px] shrink-0">{r.hits}×</Badge>
+                <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">{timeAgo(r.last_hit)}</span>
               </div>
             ))}
           </CardContent>

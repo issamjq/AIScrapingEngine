@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { LandingNav }           from "./LandingNav"
 import { HeroSection }          from "./HeroSection"
@@ -21,6 +22,24 @@ interface Props {
 export function LandingPage({ onNavigateToApp }: Props) {
   const { user, signInWithGoogle, logout } = useAuth()
   const isLoggedIn = !!user
+
+  // Capture UTM + referrer on first visit so signup can attribute the source.
+  // Idempotent — only writes if nothing stored yet (preserves original channel).
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem("spark_utm")) return
+      const p = new URLSearchParams(window.location.search)
+      const utm = {
+        source:   p.get("utm_source"),
+        medium:   p.get("utm_medium"),
+        campaign: p.get("utm_campaign"),
+        referrer: document.referrer || null,
+      }
+      if (utm.source || utm.medium || utm.campaign || utm.referrer) {
+        sessionStorage.setItem("spark_utm", JSON.stringify(utm))
+      }
+    } catch { /* sessionStorage blocked — fine */ }
+  }, [])
 
   async function handleAction(target?: string) {
     const dest = target ?? "discovering"

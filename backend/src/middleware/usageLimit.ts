@@ -34,6 +34,11 @@ export async function checkUsageLimit(req: AuthRequest, res: Response, next: Nex
     const result = await checkAndDeductCredits(email, 1, "AI search credit used")
     if (!result.success) {
       const wallet = await getWallet(email)
+      // fire-and-forget log so admin dashboard can see which users hit limits
+      query(
+        `INSERT INTO rate_limit_hits (user_email, limit_type, route, ip) VALUES ($1, $2, $3, $4)`,
+        [email, result.limitType ?? "balance", req.path, req.ip ?? null],
+      ).catch(() => {})
       const limitMsg: Record<string, string> = {
         daily:   "Daily credit limit reached. Limit resets at midnight UTC.",
         weekly:  "Weekly credit limit reached. Limit resets next Monday.",
