@@ -9,6 +9,7 @@ import { query }  from "../db"
 import { AuthRequest } from "../middleware/auth"
 import { lookupBatch } from "../services/geoService"
 import { logger } from "../utils/logger"
+import { PLANS, legacyPlanKey } from "../config/plans"
 
 export const adminStatsRouter = Router()
 
@@ -29,7 +30,7 @@ async function backfillMissingGeo(): Promise<void> {
          FROM allowed_users
         WHERE signup_ip IS NOT NULL
           AND signup_ip <> 'unknown'
-          AND signup_country IS NULL
+          AND (signup_country IS NULL OR signup_lat IS NULL)
         LIMIT 50`,
     )
     const ips = rows.map(r => r.signup_ip).filter(Boolean) as string[]
@@ -37,14 +38,17 @@ async function backfillMissingGeo(): Promise<void> {
 
     const geo = await lookupBatch(ips)
     for (const [ip, g] of geo) {
-      if (!g.country && !g.countryCode && !g.city) continue
+      if (!g.country && !g.countryCode && !g.city && g.lat == null) continue
       await query(
         `UPDATE allowed_users
-            SET signup_country = COALESCE(signup_country, $2),
+            SET signup_country      = COALESCE(signup_country, $2),
                 signup_country_code = COALESCE(signup_country_code, $3),
-                signup_city = COALESCE(signup_city, $4)
+                signup_city         = COALESCE(signup_city, $4),
+                signup_region       = COALESCE(signup_region, $5),
+                signup_lat          = COALESCE(signup_lat, $6),
+                signup_lon          = COALESCE(signup_lon, $7)
           WHERE signup_ip = $1`,
-        [ip, g.country, g.countryCode, g.city],
+        [ip, g.country, g.countryCode, g.city, g.region, g.lat, g.lon],
       )
     }
   } catch (err: any) {
@@ -214,12 +218,26 @@ adminStatsRouter.get("/", async (req, res, next) => {
     `)
     const lc = liveCounts[0] || {}
 
+    // Return presence points for the globe — covers last 30 minutes.
+    // Frontend colors by status: "live" (≤5m) vs "recent" (5–30m).
     const { rows: liveList } = await query(`
-      SELECT email, role, plan_code, signup_country, signup_country_code, last_seen_at
+      SELECT email,
+             role,
+             plan_code,
+             signup_country,
+             signup_country_code,
+             signup_city,
+             signup_lat,
+             signup_lon,
+             last_seen_at,
+             CASE
+               WHEN last_seen_at >= NOW() - INTERVAL '5 minutes'  THEN 'live'
+               ELSE 'recent'
+             END AS status
         FROM allowed_users
-       WHERE last_seen_at >= NOW() - INTERVAL '5 minutes'
+       WHERE last_seen_at >= NOW() - INTERVAL '30 minutes'
        ORDER BY last_seen_at DESC
-       LIMIT 20
+       LIMIT 100
     `)
 
     // ── Users by country ─────────────────────────────────────────────────────
@@ -238,6 +256,115 @@ adminStatsRouter.get("/", async (req, res, next) => {
       .filter((r: any) => r.country && r.country !== "Unknown")
       .reduce((sum: number, r: any) => sum + Number(r.count), 0)
     const geoUnknown = Number(c.total_users) - geoKnown
+
+    // ── Revenue / MRR ────────────────────────────────────────────────────────
+    // Group paid users by plan + billing_interval, multiply by price, normalize
+    // weekly→monthly (×4.333), yearly→monthly (÷12). ARR = MRR × 12.
+    const { rows: paidByPlan } = await query(`
+      SELECT
+        COALESCE(plan_code, subscription)      AS plan_key,
+        COALESCE(billing_interval, 'monthly')  AS interval,
+        role,
+        subscription,
+        COUNT(*)::int                          AS count
+      FROM allowed_users
+      WHERE subscription = 'paid'
+      GROUP BY plan_code, billing_interval, role, subscription
+    `)
+    let mrr = 0
+    let weeklyRevenue = 0
+    const revenueBreakdown: { plan: string; interval: string; count: number; mrr: number }[] = []
+    for (const row of paidByPlan) {
+      const key  = row.plan_key && PLANS.some(p => p.key === row.plan_key)
+        ? row.plan_key
+        : legacyPlanKey(row.role ?? "b2c", row.subscription ?? "paid")
+      const plan = PLANS.find(p => p.key === key)
+      if (!plan) continue
+      const count = Number(row.count) || 0
+      let perUserMonthly = 0
+      if (row.interval === "weekly")  perUserMonthly = plan.prices.weekly * 4.333
+      else if (row.interval === "yearly") perUserMonthly = plan.prices.yearly / 12
+      else perUserMonthly = plan.prices.monthly
+      const bucketMrr = perUserMonthly * count
+      mrr += bucketMrr
+      if (row.interval === "weekly") weeklyRevenue += plan.prices.weekly * count
+      revenueBreakdown.push({
+        plan:     plan.name,
+        interval: row.interval,
+        count,
+        mrr:      Math.round(bucketMrr),
+      })
+    }
+
+    // ── Power users leaderboard (credits burned last 7d) ─────────────────────
+    const { rows: powerUsers } = await query(`
+      SELECT
+        wt.user_email                                   AS email,
+        au.role,
+        au.plan_code,
+        au.signup_country_code                          AS country_code,
+        au.signup_country                               AS country,
+        COALESCE(SUM(ABS(wt.amount)), 0)::int           AS credits_used,
+        COUNT(*)::int                                   AS tx_count
+      FROM wallet_transactions wt
+      LEFT JOIN allowed_users au ON au.email = wt.user_email
+      WHERE wt.type = 'debit'
+        AND wt.created_at >= NOW() - INTERVAL '7 days'
+      GROUP BY wt.user_email, au.role, au.plan_code, au.signup_country_code, au.signup_country
+      ORDER BY credits_used DESC
+      LIMIT 10
+    `)
+
+    // ── Scrape health (per retailer, last 24h) ───────────────────────────────
+    const { rows: scrapeHealth } = await query(`
+      SELECT
+        COALESCE(c.name, 'Unknown')                                 AS retailer,
+        COUNT(*)::int                                               AS total,
+        COUNT(*) FILTER (WHERE ps.scrape_status = 'success')::int   AS success,
+        COUNT(*) FILTER (WHERE ps.scrape_status <> 'success')::int  AS failed,
+        MAX(ps.checked_at)                                          AS last_scrape
+      FROM price_snapshots ps
+      LEFT JOIN companies c ON c.id = ps.company_id
+      WHERE ps.checked_at >= NOW() - INTERVAL '24 hours'
+      GROUP BY c.name
+      ORDER BY total DESC
+      LIMIT 15
+    `)
+
+    // ── Retention: DAU / WAU / MAU ───────────────────────────────────────────
+    const { rows: retentionSummary } = await query(`
+      SELECT
+        COUNT(DISTINCT user_email) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours')::int AS dau,
+        COUNT(DISTINCT user_email) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int   AS wau,
+        COUNT(DISTINCT user_email) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int  AS mau
+      FROM activity_log
+    `)
+    const rs = retentionSummary[0] || {}
+
+    const { rows: dauByDay } = await query(`
+      SELECT
+        DATE(created_at)                   AS date,
+        COUNT(DISTINCT user_email)::int    AS dau
+      FROM activity_log
+      WHERE created_at >= NOW() - INTERVAL '30 days'
+      GROUP BY DATE(created_at)
+      ORDER BY date ASC
+    `)
+
+    // ── Funnel: signups → activated (first search) → paid ────────────────────
+    const { rows: funnelRow } = await query(`
+      WITH first_search AS (
+        SELECT DISTINCT user_email FROM b2c_search_history
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM allowed_users)                                            AS signups,
+        (SELECT COUNT(*)::int FROM allowed_users au
+            WHERE au.email IN (SELECT user_email FROM first_search)
+               OR au.email IN (SELECT DISTINCT user_email FROM activity_log
+                                WHERE action IN ('b2c_search','b2b_ai_search','b2b_catalog_discovery'))) AS activated,
+        (SELECT COUNT(*)::int FROM allowed_users WHERE subscription = 'paid')                AS paid
+    `)
+    const funnel = funnelRow[0] || { signups: 0, activated: 0, paid: 0 }
 
     return res.json({
       success: true,
@@ -294,12 +421,46 @@ adminStatsRouter.get("/", async (req, res, next) => {
           live_5m:    Number(lc.live_5m)    || 0,
           live_30m:   Number(lc.live_30m)   || 0,
           active_24h: Number(lc.active_24h) || 0,
-          online: liveList,
+          // "online" = the 5-minute window (used by the Active Right Now list)
+          online: liveList.filter((u: any) => u.status === "live"),
+          // "points" = the full 30-minute window with status flag + numeric lat/lon,
+          // rendered as green (live) / blue (recent) dots on the globe.
+          points: liveList.map((u: any) => ({
+            email:               u.email,
+            role:                u.role,
+            country:             u.signup_country,
+            country_code:        u.signup_country_code,
+            city:                u.signup_city,
+            lat:                 u.signup_lat != null ? Number(u.signup_lat) : null,
+            lng:                 u.signup_lon != null ? Number(u.signup_lon) : null,
+            last_seen_at:        u.last_seen_at,
+            status:              u.status,
+          })).filter((p: any) => p.lat != null && p.lng != null),
         },
         users_by_country: byCountry,
         geo_summary: {
           known:   geoKnown,
           unknown: geoUnknown < 0 ? 0 : geoUnknown,
+        },
+
+        revenue: {
+          mrr:            Math.round(mrr),
+          arr:            Math.round(mrr * 12),
+          weekly_revenue: Math.round(weeklyRevenue),
+          breakdown:      revenueBreakdown,
+        },
+        power_users: powerUsers,
+        scrape_health: scrapeHealth,
+        retention: {
+          dau: Number(rs.dau) || 0,
+          wau: Number(rs.wau) || 0,
+          mau: Number(rs.mau) || 0,
+          dau_by_day: dauByDay,
+        },
+        funnel: {
+          signups:   Number(funnel.signups)   || 0,
+          activated: Number(funnel.activated) || 0,
+          paid:      Number(funnel.paid)      || 0,
         },
       },
     })

@@ -11,6 +11,9 @@ export interface GeoResult {
   country:     string | null
   countryCode: string | null
   city:        string | null
+  region:      string | null
+  lat:         number | null
+  lon:         number | null
 }
 
 const cache = new Map<string, GeoResult>()
@@ -34,18 +37,21 @@ export async function lookupIp(ip: string | null | undefined): Promise<GeoResult
 
   try {
     const r = await fetch(
-      `http://ip-api.com/json/${ip}?fields=status,country,countryCode,city`,
+      `http://ip-api.com/json/${ip}?fields=status,country,countryCode,city,regionName,lat,lon`,
       { signal: AbortSignal.timeout(3500) },
     )
     const j: any = await r.json()
     if (j?.status !== "success") {
-      cache.set(ip, { country: null, countryCode: null, city: null })
+      cache.set(ip, { country: null, countryCode: null, city: null, region: null, lat: null, lon: null })
       return null
     }
     const result: GeoResult = {
       country:     j.country     ?? null,
       countryCode: j.countryCode ?? null,
       city:        j.city        ?? null,
+      region:      j.regionName  ?? null,
+      lat:         typeof j.lat === "number" ? j.lat : null,
+      lon:         typeof j.lon === "number" ? j.lon : null,
     }
     cache.set(ip, result)
     return result
@@ -71,7 +77,7 @@ export async function lookupBatch(ips: string[]): Promise<Map<string, GeoResult>
     const chunk = toFetch.slice(i, i + 100)
     try {
       const r = await fetch(
-        "http://ip-api.com/batch?fields=status,query,country,countryCode,city",
+        "http://ip-api.com/batch?fields=status,query,country,countryCode,city,regionName,lat,lon",
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -84,7 +90,7 @@ export async function lookupBatch(ips: string[]): Promise<Map<string, GeoResult>
         const ip = row?.query
         if (!ip) continue
         if (row.status !== "success") {
-          const empty = { country: null, countryCode: null, city: null }
+          const empty: GeoResult = { country: null, countryCode: null, city: null, region: null, lat: null, lon: null }
           cache.set(ip, empty)
           out.set(ip, empty)
           continue
@@ -93,6 +99,9 @@ export async function lookupBatch(ips: string[]): Promise<Map<string, GeoResult>
           country:     row.country     ?? null,
           countryCode: row.countryCode ?? null,
           city:        row.city        ?? null,
+          region:      row.regionName  ?? null,
+          lat:         typeof row.lat === "number" ? row.lat : null,
+          lon:         typeof row.lon === "number" ? row.lon : null,
         }
         cache.set(ip, res)
         out.set(ip, res)

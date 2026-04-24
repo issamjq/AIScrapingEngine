@@ -164,12 +164,13 @@ allowedUsersRouter.post("/signup", signupLimiter as any, async (req: AuthRequest
 
     const { rows } = await query(
       `INSERT INTO allowed_users
-         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip, signup_country, signup_country_code, signup_city, last_seen_at, last_seen_ip)
-       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), $10)
+         (email, name, role, is_active, subscription, plan_code, billing_interval, trial_ends_at, billing_renews_at, firebase_uid, signup_ip, signup_country, signup_country_code, signup_city, signup_region, signup_lat, signup_lon, last_seen_at, last_seen_ip)
+       VALUES ($1, $2, $3, true, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), $10)
        RETURNING *`,
       [email.toLowerCase().trim(), name || null, role, subscription, effectivePlanCode, billingInterval,
        effectiveTrial, billingRenewsAt, uid || null, clientIp,
-       geo?.country ?? null, geo?.countryCode ?? null, geo?.city ?? null]
+       geo?.country ?? null, geo?.countryCode ?? null, geo?.city ?? null,
+       geo?.region ?? null, geo?.lat ?? null, geo?.lon ?? null]
     )
 
     // Seed the 8 default UAE stores for this new user

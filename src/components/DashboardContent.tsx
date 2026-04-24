@@ -3,12 +3,17 @@
  * Shows real platform metrics: users, searches, scrapes, credits, charts.
  */
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, lazy, Suspense } from "react"
+
+// Lazy: three.js + react-globe.gl only pulled in for the 2 admins who see this dashboard.
+const LiveGlobe = lazy(() => import("./LiveGlobe"))
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card"
 import { Badge } from "./ui/badge"
 import {
   Users, Search, Database, Zap, TrendingUp, ShoppingBag,
   Globe, Activity, Clock, RefreshCw, Radio, MapPin,
+  DollarSign, Trophy, ShieldAlert, Repeat, Filter,
+  CheckCircle2, AlertTriangle, XCircle,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { PageSkeleton } from "./PageSkeleton"
@@ -54,9 +59,52 @@ interface AdminStats {
     live_30m:   number
     active_24h: number
     online: { email: string; role: string; plan_code: string | null; signup_country: string | null; signup_country_code: string | null; last_seen_at: string }[]
+    points: { email: string; role: string; country: string | null; country_code: string | null; city: string | null; lat: number; lng: number; last_seen_at: string; status: "live" | "recent" }[]
   }
   users_by_country: { country: string; code: string | null; count: number }[]
   geo_summary: { known: number; unknown: number }
+  revenue: {
+    mrr:            number
+    arr:            number
+    weekly_revenue: number
+    breakdown: { plan: string; interval: string; count: number; mrr: number }[]
+  }
+  power_users: { email: string; role: string | null; plan_code: string | null; country_code: string | null; country: string | null; credits_used: number; tx_count: number }[]
+  scrape_health: { retailer: string; total: number; success: number; failed: number; last_scrape: string | null }[]
+  retention: {
+    dau: number
+    wau: number
+    mau: number
+    dau_by_day: { date: string; dau: number }[]
+  }
+  funnel: { signups: number; activated: number; paid: number }
+}
+
+// Defaults used when the backend hasn't deployed yet (Vercel is faster than
+// Render) — keeps the dashboard from crashing during the deploy window.
+const EMPTY_STATS_DEFAULTS = {
+  live_users:       { live_5m: 0, live_30m: 0, active_24h: 0, online: [], points: [] },
+  users_by_country: [],
+  geo_summary:      { known: 0, unknown: 0 },
+  revenue:          { mrr: 0, arr: 0, weekly_revenue: 0, breakdown: [] },
+  power_users:      [],
+  scrape_health:    [],
+  retention:        { dau: 0, wau: 0, mau: 0, dau_by_day: [] },
+  funnel:           { signups: 0, activated: 0, paid: 0 },
+  activity_feed:    [],
+  action_counts:    [],
+  top_queries:      [],
+  users_by_plan:    [],
+  recent_signups:   [],
+  creator_intel:    { total_products: 0, last_24h: 0, by_marketplace: [] },
+  charts:           { users_by_day: [], searches_by_day: [], scrapes_by_day: [], credits_by_day: [] },
+}
+
+function fmtMoney(n: number): string {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 10_000)    return `$${Math.round(n / 1_000)}k`
+  if (n >= 1_000)     return `$${(n / 1_000).toFixed(1)}k`
+  return `$${Math.round(n).toLocaleString()}`
 }
 
 // Emoji flag from ISO-3166-1 alpha-2 country code (e.g. "AE" → 🇦🇪)
@@ -152,6 +200,30 @@ function detailSummary(action: string, details: any): string {
   }
 }
 
+// ─── Funnel step ──────────────────────────────────────────────────────────────
+
+function FunnelStep({
+  label, value, barPct, color, subtitle,
+}: {
+  label: string; value: number; barPct: number; color: string; subtitle: string
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-medium">{label}</span>
+        <span className="text-sm font-bold">{fmt(value)}</span>
+      </div>
+      <div className="relative h-6 bg-muted/40 rounded overflow-hidden">
+        <div
+          className={`absolute left-0 top-0 bottom-0 ${color} rounded transition-all duration-500`}
+          style={{ width: `${Math.max(4, Math.min(100, barPct))}%` }}
+        />
+      </div>
+      <p className="text-[10px] text-muted-foreground mt-1">{subtitle}</p>
+    </div>
+  )
+}
+
 // ─── Stat card ────────────────────────────────────────────────────────────────
 
 function StatCard({
@@ -193,7 +265,21 @@ export function DashboardContent(_: { role?: string }) {
       })
       if (!resp.ok) throw new Error(`${resp.status}`)
       const json = await resp.json()
-      setStats(json.data)
+      // Deep-merge defaults for any field the current backend build hasn't
+      // shipped yet (Vercel deploys before Render — avoid crash during window).
+      const data = json.data ?? {}
+      const merged: AdminStats = {
+        ...EMPTY_STATS_DEFAULTS,
+        ...data,
+        live_users: { ...EMPTY_STATS_DEFAULTS.live_users, ...(data.live_users ?? {}) },
+        geo_summary: { ...EMPTY_STATS_DEFAULTS.geo_summary, ...(data.geo_summary ?? {}) },
+        revenue: { ...EMPTY_STATS_DEFAULTS.revenue, ...(data.revenue ?? {}) },
+        retention: { ...EMPTY_STATS_DEFAULTS.retention, ...(data.retention ?? {}) },
+        funnel: { ...EMPTY_STATS_DEFAULTS.funnel, ...(data.funnel ?? {}) },
+        charts: { ...EMPTY_STATS_DEFAULTS.charts, ...(data.charts ?? {}) },
+        creator_intel: { ...EMPTY_STATS_DEFAULTS.creator_intel, ...(data.creator_intel ?? {}) },
+      } as AdminStats
+      setStats(merged)
       setError(null)
     } catch (e: any) {
       setError(e.message)
@@ -241,8 +327,12 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel } = stats
   const maxCountryCount = Math.max(1, ...users_by_country.map(c => c.count))
+  const maxPowerCredits = Math.max(1, ...power_users.map(u => u.credits_used))
+  const activationRate = funnel.signups > 0 ? (funnel.activated / funnel.signups) * 100 : 0
+  const conversionRate = funnel.activated > 0 ? (funnel.paid / funnel.activated) * 100 : 0
+  const overallConv    = funnel.signups > 0 ? (funnel.paid / funnel.signups) * 100 : 0
 
   // Merge searches + scrapes into one activity chart
   const activityData = mergeDays(charts.searches_by_day, charts.scrapes_by_day, "searches", "scrapes")
@@ -279,46 +369,143 @@ export function DashboardContent(_: { role?: string }) {
         </button>
       </div>
 
-      {/* Live Now — hero card with pulsing indicator */}
-      <Card className="relative overflow-hidden border-emerald-200 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/60 to-transparent dark:from-emerald-950/30">
-        <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-emerald-400/10 blur-3xl" />
-        <CardContent className="relative p-5">
-          <div className="flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2.5 w-2.5 shrink-0">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-                </span>
-                <span className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Live Now</span>
+      {/* Live Now + Revenue — hero row */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+
+        {/* Live Now */}
+        <Card className="relative overflow-hidden border-emerald-200 dark:border-emerald-900/50 bg-gradient-to-br from-emerald-50/60 to-transparent dark:from-emerald-950/30">
+          <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-emerald-400/10 blur-3xl" />
+          <CardContent className="relative p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2.5 w-2.5 shrink-0">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                  </span>
+                  <span className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">Live Now</span>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-3xl font-bold">{fmt(live_users.live_5m)}</span>
+                  <span className="text-xs text-muted-foreground">online in last 5m</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {live_users.live_30m} active in 30m · {live_users.active_24h} today
+                </p>
               </div>
-              <div className="mt-1.5 flex items-baseline gap-2">
-                <span className="text-3xl font-bold">{fmt(live_users.live_5m)}</span>
-                <span className="text-xs text-muted-foreground">online in last 5m</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {live_users.live_30m} active in 30m · {live_users.active_24h} today
-              </p>
+              {live_users.online.length > 0 && (
+                <div className="flex -space-x-2">
+                  {live_users.online.slice(0, 6).map((u, i) => (
+                    <div
+                      key={i}
+                      title={`${u.email} · ${u.signup_country ?? "Unknown"} · ${timeAgo(u.last_seen_at)}`}
+                      className="h-8 w-8 rounded-full bg-white dark:bg-slate-900 border-2 border-emerald-400 shadow-sm flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200"
+                    >
+                      {u.email.slice(0, 1).toUpperCase()}
+                    </div>
+                  ))}
+                  {live_users.online.length > 6 && (
+                    <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white dark:border-slate-900 flex items-center justify-center text-[10px] font-semibold text-slate-600 dark:text-slate-300">
+                      +{live_users.online.length - 6}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {live_users.online.length > 0 && (
-              <div className="flex -space-x-2">
-                {live_users.online.slice(0, 6).map((u, i) => (
-                  <div
-                    key={i}
-                    title={`${u.email} · ${u.signup_country ?? "Unknown"} · ${timeAgo(u.last_seen_at)}`}
-                    className="h-8 w-8 rounded-full bg-white dark:bg-slate-900 border-2 border-emerald-400 shadow-sm flex items-center justify-center text-xs font-semibold text-slate-600 dark:text-slate-200"
-                  >
-                    {u.email.slice(0, 1).toUpperCase()}
-                  </div>
+          </CardContent>
+        </Card>
+
+        {/* Revenue / MRR */}
+        <Card className="relative overflow-hidden border-amber-200 dark:border-amber-900/50 bg-gradient-to-br from-amber-50/60 to-transparent dark:from-amber-950/30">
+          <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-amber-400/10 blur-3xl" />
+          <CardContent className="relative p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                  <span className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">Recurring Revenue</span>
+                </div>
+                <div className="mt-1.5 flex items-baseline gap-2">
+                  <span className="text-3xl font-bold">{fmtMoney(revenue.mrr)}</span>
+                  <span className="text-xs text-muted-foreground">MRR</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {fmtMoney(revenue.arr)} ARR · {fmtMoney(revenue.weekly_revenue)}/wk from weekly plans
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-muted-foreground">Paid users</div>
+                <div className="text-2xl font-bold mt-0.5">{fmt(users.paid)}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">
+                  {users.total > 0 ? ((users.paid / users.total) * 100).toFixed(1) : "0"}% of total
+                </div>
+              </div>
+            </div>
+            {revenue.breakdown.length > 0 && (
+              <div className="flex gap-1.5 mt-3 pt-3 border-t border-amber-200/50 dark:border-amber-900/30 flex-wrap">
+                {revenue.breakdown.map((b, i) => (
+                  <Badge key={i} variant="outline" className="text-[10px]">
+                    {b.plan} · {b.interval} · {b.count} · {fmtMoney(b.mrr)}/mo
+                  </Badge>
                 ))}
-                {live_users.online.length > 6 && (
-                  <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-white dark:border-slate-900 flex items-center justify-center text-[10px] font-semibold text-slate-600 dark:text-slate-300">
-                    +{live_users.online.length - 6}
-                  </div>
-                )}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* Live Globe — 3D world view of user presence */}
+      <Card className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-slate-800">
+        {/* Ambient aurora backdrop */}
+        <div className="pointer-events-none absolute inset-0 opacity-60">
+          <div className="absolute top-1/4 left-1/4 h-[420px] w-[420px] rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="absolute bottom-0 right-0 h-[320px] w-[320px] rounded-full bg-violet-500/10 blur-3xl" />
+        </div>
+
+        <CardHeader className="relative flex flex-row items-start justify-between gap-4 pb-2">
+          <div>
+            <CardTitle className="text-base text-white flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+              </span>
+              Live World
+            </CardTitle>
+            <CardDescription className="text-xs text-slate-400">
+              {live_users.live_5m} live now · {live_users.live_30m - live_users.live_5m} recent · auto-rotating
+            </CardDescription>
           </div>
+          <div className="flex items-center gap-3 text-[11px] text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" />
+              Live (≤5m)
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
+              Recent (5–30m)
+            </span>
+          </div>
+        </CardHeader>
+
+        <CardContent className="relative p-0">
+          {live_users.points.length === 0 ? (
+            <div className="h-[480px] flex flex-col items-center justify-center text-slate-500 gap-2">
+              <Globe className="h-10 w-10 opacity-30" />
+              <p className="text-xs">No users online right now</p>
+              <p className="text-[10px] text-slate-600">Dots will appear here the moment someone opens the app</p>
+            </div>
+          ) : (
+            <Suspense
+              fallback={
+                <div className="h-[480px] flex items-center justify-center">
+                  <div className="h-8 w-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-400 animate-spin" />
+                </div>
+              }
+            >
+              <LiveGlobe points={live_users.points} dark />
+            </Suspense>
+          )}
         </CardContent>
       </Card>
 
@@ -634,6 +821,178 @@ export function DashboardContent(_: { role?: string }) {
                 </span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Retention + Funnel row */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
+
+        {/* Retention DAU / WAU / MAU */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Repeat className="h-4 w-4 text-indigo-500" />
+              Retention
+            </CardTitle>
+            <CardDescription className="text-xs">Unique active users over time</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="text-center p-3 rounded-md bg-indigo-50 dark:bg-indigo-950/30">
+                <div className="text-xs text-muted-foreground">DAU</div>
+                <div className="text-xl font-bold mt-0.5">{fmt(retention.dau)}</div>
+                <div className="text-[10px] text-muted-foreground">last 24h</div>
+              </div>
+              <div className="text-center p-3 rounded-md bg-violet-50 dark:bg-violet-950/30">
+                <div className="text-xs text-muted-foreground">WAU</div>
+                <div className="text-xl font-bold mt-0.5">{fmt(retention.wau)}</div>
+                <div className="text-[10px] text-muted-foreground">last 7d</div>
+              </div>
+              <div className="text-center p-3 rounded-md bg-pink-50 dark:bg-pink-950/30">
+                <div className="text-xs text-muted-foreground">MAU</div>
+                <div className="text-xl font-bold mt-0.5">{fmt(retention.mau)}</div>
+                <div className="text-[10px] text-muted-foreground">last 30d</div>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={140}>
+              <AreaChart
+                data={retention.dau_by_day.map(r => ({ date: formatDate(r.date), dau: r.dau }))}
+                margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+              >
+                <defs>
+                  <linearGradient id="gradRet" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.4} />
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip labelStyle={{ fontSize: 11 }} contentStyle={{ fontSize: 11 }} />
+                <Area type="monotone" dataKey="dau" stroke="#6366f1" strokeWidth={2} fill="url(#gradRet)" name="Daily active" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Funnel */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Filter className="h-4 w-4 text-rose-500" />
+              Conversion Funnel
+            </CardTitle>
+            <CardDescription className="text-xs">Signup → first search → paid</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <FunnelStep
+              label="Signups"
+              value={funnel.signups}
+              barPct={100}
+              color="bg-slate-500"
+              subtitle="all-time"
+            />
+            <FunnelStep
+              label="Activated"
+              value={funnel.activated}
+              barPct={activationRate}
+              color="bg-blue-500"
+              subtitle={`${activationRate.toFixed(1)}% of signups`}
+            />
+            <FunnelStep
+              label="Paid"
+              value={funnel.paid}
+              barPct={overallConv}
+              color="bg-emerald-500"
+              subtitle={`${conversionRate.toFixed(1)}% of activated · ${overallConv.toFixed(1)}% overall`}
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Power Users + Scrape Health row */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Power Users Leaderboard */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Trophy className="h-4 w-4 text-amber-500" />
+              Power Users (7d)
+            </CardTitle>
+            <CardDescription className="text-xs">Top credit burners</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {power_users.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No activity yet</p>
+            ) : power_users.map((u, i) => {
+              const pct = (u.credits_used / maxPowerCredits) * 100
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <span className={`text-[10px] font-bold w-5 text-center shrink-0 ${i === 0 ? "text-amber-500" : i < 3 ? "text-slate-500" : "text-muted-foreground"}`}>
+                        {i + 1}
+                      </span>
+                      <span className="text-xs truncate font-medium">{u.email}</span>
+                      {u.country_code && (
+                        <span className="text-xs shrink-0">{flagOf(u.country_code)}</span>
+                      )}
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 shrink-0">{u.role ?? "—"}</Badge>
+                    </div>
+                    <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 shrink-0">{fmt(u.credits_used)}</span>
+                  </div>
+                  <div className="relative h-1 bg-muted/40 rounded overflow-hidden ml-7">
+                    <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-amber-400 to-orange-500 rounded" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Scrape Health Matrix */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4 text-cyan-500" />
+              Scrape Health (24h)
+            </CardTitle>
+            <CardDescription className="text-xs">Success rate per retailer · red if stale or failing</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {scrape_health.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No scrapes in the last 24h</p>
+            ) : scrape_health.map((s, i) => {
+              const successRate = s.total > 0 ? (s.success / s.total) * 100 : 0
+              const stale = s.last_scrape ? (Date.now() - new Date(s.last_scrape).getTime()) > 24 * 3600_000 : true
+              const isHealthy  = successRate >= 90 && !stale
+              const isWarning  = (successRate >= 60 && successRate < 90) || (!stale && s.failed > 0)
+              const isCritical = successRate < 60 || stale
+              const Icon = isCritical ? XCircle : isWarning ? AlertTriangle : CheckCircle2
+              const iconColor = isCritical ? "text-red-500" : isWarning ? "text-amber-500" : "text-emerald-500"
+              return (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    <Icon className={`h-3.5 w-3.5 shrink-0 ${iconColor}`} />
+                    <span className="text-xs font-medium truncate">{s.retailer}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className={`text-xs font-semibold ${isCritical ? "text-red-600" : isWarning ? "text-amber-600" : "text-emerald-600"}`}>
+                      {successRate.toFixed(0)}%
+                    </span>
+                    <Badge variant="outline" className="text-[10px]">{s.success}/{s.total}</Badge>
+                    {s.last_scrape && (
+                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5 whitespace-nowrap">
+                        <Clock className="h-2.5 w-2.5" />
+                        {timeAgo(s.last_scrape)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
       </div>
