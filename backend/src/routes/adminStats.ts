@@ -351,6 +351,257 @@ adminStatsRouter.get("/", async (req, res, next) => {
       ORDER BY date ASC
     `)
 
+    // ── At-risk users ────────────────────────────────────────────────────────
+    // silent_paid: paid users with no activity in 7+ days → churn risk.
+    const { rows: silentPaid } = await query(`
+      SELECT email,
+             plan_code,
+             role,
+             signup_country_code                                  AS country_code,
+             last_seen_at,
+             GREATEST(
+               EXTRACT(EPOCH FROM (NOW() - COALESCE(last_seen_at, created_at)))/86400,
+               0
+             )::int                                               AS days_silent
+        FROM allowed_users
+       WHERE subscription = 'paid'
+         AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '7 days')
+       ORDER BY last_seen_at ASC NULLS FIRST
+       LIMIT 15
+    `)
+
+    // ending_trials: trials ending in ≤3 days → convert or lose.
+    const { rows: endingTrials } = await query(`
+      SELECT email,
+             plan_code,
+             role,
+             signup_country_code                                  AS country_code,
+             trial_ends_at,
+             GREATEST(
+               EXTRACT(EPOCH FROM (trial_ends_at - NOW()))/86400,
+               0
+             )::int                                               AS days_left
+        FROM allowed_users
+       WHERE subscription = 'trial'
+         AND trial_ends_at IS NOT NULL
+         AND trial_ends_at BETWEEN NOW() AND NOW() + INTERVAL '3 days'
+       ORDER BY trial_ends_at ASC
+       LIMIT 15
+    `)
+
+    // credit_exhaustion: users > 80% of monthly quota used → upgrade candidates.
+    const { rows: creditExhaustion } = await query(`
+      SELECT uw.user_email                                        AS email,
+             au.role,
+             au.plan_code,
+             au.signup_country_code                               AS country_code,
+             uw.monthly_limit,
+             uw.credits_used_this_cycle                           AS used,
+             CASE WHEN uw.monthly_limit > 0
+                  THEN ROUND(uw.credits_used_this_cycle::numeric / uw.monthly_limit * 100)::int
+                  ELSE 0 END                                      AS pct_used
+        FROM user_wallet uw
+        JOIN allowed_users au ON au.email = uw.user_email
+       WHERE uw.monthly_limit > 0
+         AND uw.credits_used_this_cycle::numeric / uw.monthly_limit > 0.80
+         AND au.role <> 'dev'
+       ORDER BY pct_used DESC
+       LIMIT 15
+    `)
+
+    // ── Activation latency: median hours signup → first search ───────────────
+    const { rows: activationRows } = await query(`
+      WITH first_action AS (
+        SELECT au.email,
+               au.created_at                                      AS signup_at,
+               MIN(al.created_at)                                 AS first_at
+          FROM allowed_users au
+          JOIN activity_log al ON al.user_email = au.email
+         WHERE al.action IN ('b2c_search','b2b_ai_search','b2b_catalog_discovery')
+           AND au.created_at >= NOW() - INTERVAL '90 days'
+         GROUP BY au.email, au.created_at
+      )
+      SELECT COUNT(*)::int                                                        AS activated,
+             COALESCE(
+               PERCENTILE_CONT(0.5) WITHIN GROUP (
+                 ORDER BY EXTRACT(EPOCH FROM (first_at - signup_at))/3600
+               ), 0
+             )::numeric(10,2)                                                      AS median_hours
+        FROM first_action
+    `)
+    const act = activationRows[0] || { activated: 0, median_hours: 0 }
+
+    // Time-to-first-value histogram
+    const { rows: ttfvBuckets } = await query(`
+      WITH ttfv AS (
+        SELECT EXTRACT(EPOCH FROM (MIN(al.created_at) - au.created_at))/3600 AS hrs
+          FROM allowed_users au
+          JOIN activity_log al ON al.user_email = au.email
+         WHERE al.action IN ('b2c_search','b2b_ai_search','b2b_catalog_discovery')
+           AND au.created_at >= NOW() - INTERVAL '90 days'
+         GROUP BY au.email, au.created_at
+      )
+      SELECT bucket, COUNT(*)::int AS count FROM (
+        SELECT CASE
+          WHEN hrs <= 1   THEN '≤1h'
+          WHEN hrs <= 6   THEN '1–6h'
+          WHEN hrs <= 24  THEN '6–24h'
+          WHEN hrs <= 72  THEN '1–3d'
+          WHEN hrs <= 168 THEN '3–7d'
+          ELSE '7d+'
+        END AS bucket FROM ttfv
+      ) q
+      GROUP BY bucket
+    `)
+    const TTFV_ORDER = ["≤1h","1–6h","6–24h","1–3d","3–7d","7d+"]
+    const ttfvHistogram = TTFV_ORDER.map(b => ({
+      bucket: b,
+      count:  Number(ttfvBuckets.find((r: any) => r.bucket === b)?.count ?? 0),
+    }))
+
+    // ── Stickiness: DAU/MAU and WAU/MAU ──────────────────────────────────────
+    const stickinessDauMau = Number(rs.mau) > 0 ? (Number(rs.dau) / Number(rs.mau)) * 100 : 0
+    const stickinessWauMau = Number(rs.mau) > 0 ? (Number(rs.wau) / Number(rs.mau)) * 100 : 0
+
+    // ── Feature adoption: % of 30d active users who used each action ─────────
+    const { rows: featureAdoption } = await query(`
+      WITH au30 AS (
+        SELECT DISTINCT user_email
+          FROM activity_log
+         WHERE created_at >= NOW() - INTERVAL '30 days'
+      )
+      SELECT action,
+             COUNT(DISTINCT user_email)::int AS users,
+             ROUND(100.0 * COUNT(DISTINCT user_email) / NULLIF((SELECT COUNT(*) FROM au30), 0), 1)::numeric(5,1) AS pct
+        FROM activity_log
+       WHERE created_at >= NOW() - INTERVAL '30 days'
+         AND user_email IN (SELECT user_email FROM au30)
+       GROUP BY action
+       ORDER BY users DESC
+       LIMIT 15
+    `)
+
+    // ── Cohort retention: weeks 0–3 by signup week ───────────────────────────
+    const { rows: cohortRows } = await query(`
+      WITH cohorts AS (
+        SELECT DATE_TRUNC('week', created_at)::date AS cohort_week, email, created_at
+          FROM allowed_users
+         WHERE created_at >= NOW() - INTERVAL '8 weeks'
+      ),
+      acts AS (
+        SELECT c.cohort_week,
+               c.email,
+               FLOOR(EXTRACT(EPOCH FROM (al.created_at - c.created_at)) / (7*86400))::int AS week_n
+          FROM cohorts c
+          JOIN activity_log al ON al.user_email = c.email
+      )
+      SELECT c.cohort_week                                                              AS week,
+             COUNT(DISTINCT c.email)::int                                                AS size,
+             COUNT(DISTINCT a.email) FILTER (WHERE a.week_n = 0)::int                   AS w0,
+             COUNT(DISTINCT a.email) FILTER (WHERE a.week_n = 1)::int                   AS w1,
+             COUNT(DISTINCT a.email) FILTER (WHERE a.week_n = 2)::int                   AS w2,
+             COUNT(DISTINCT a.email) FILTER (WHERE a.week_n = 3)::int                   AS w3
+        FROM cohorts c
+   LEFT JOIN acts a ON a.cohort_week = c.cohort_week AND a.email = c.email
+       GROUP BY c.cohort_week
+       ORDER BY c.cohort_week DESC
+       LIMIT 8
+    `)
+
+    // ── Trial abuse: same IP / same Firebase UID across multiple signups ─────
+    const { rows: abuseByIp } = await query(`
+      SELECT signup_ip                    AS ip,
+             signup_country_code          AS country_code,
+             COUNT(*)::int                AS accounts,
+             ARRAY_AGG(email ORDER BY created_at DESC) AS emails,
+             MAX(created_at)              AS last_signup
+        FROM allowed_users
+       WHERE signup_ip IS NOT NULL
+         AND signup_ip <> 'unknown'
+         AND created_at >= NOW() - INTERVAL '60 days'
+       GROUP BY signup_ip, signup_country_code
+      HAVING COUNT(*) > 1
+       ORDER BY COUNT(*) DESC, MAX(created_at) DESC
+       LIMIT 10
+    `)
+
+    // ── Biggest price moves last 7 days (across all tracked products) ────────
+    const { rows: priceMoves } = await query(`
+      WITH deltas AS (
+        SELECT p.internal_name                           AS product,
+               p.brand                                    AS brand,
+               c.name                                     AS retailer,
+               MIN(ps.price)                              AS low,
+               MAX(ps.price)                              AS high,
+               MAX(ps.currency)                           AS currency,
+               (MAX(ps.price) - MIN(ps.price))            AS delta,
+               COUNT(*)                                   AS samples
+          FROM price_snapshots ps
+          JOIN products  p ON p.id = ps.product_id
+          JOIN companies c ON c.id = ps.company_id
+         WHERE ps.checked_at >= NOW() - INTERVAL '7 days'
+           AND ps.scrape_status = 'success'
+           AND ps.price IS NOT NULL AND ps.price > 0
+         GROUP BY p.internal_name, p.brand, c.name
+        HAVING COUNT(*) >= 2 AND MAX(ps.price) > MIN(ps.price)
+      )
+      SELECT product, brand, retailer, currency,
+             low::numeric(12,2)   AS low,
+             high::numeric(12,2)  AS high,
+             delta::numeric(12,2) AS delta,
+             ROUND((delta / NULLIF(high, 0) * 100)::numeric, 1)::numeric(5,1) AS delta_pct,
+             samples::int         AS samples
+        FROM deltas
+       ORDER BY delta_pct DESC
+       LIMIT 10
+    `)
+
+    // ── Anthropic API spend estimate (derived from activity_log counts) ──────
+    // Rough USD estimate per call. Dial these in as you get real invoices.
+    const COST_PER_CALL: Record<string, number> = {
+      b2c_search:            0.025,   // Haiku web search + Vision on 3–6 pages
+      b2c_unlock:            0.006,   // Vision on a single page per unlock
+      b2b_ai_search:         0.015,
+      b2b_catalog_discovery: 0.010,   // Claude matching per result page
+      scrape_tiktok:         0.050,   // one big web_search + extraction
+      scrape_iherb:          0.030,   // Vision screenshot
+      scrape_banggood:       0.030,
+    }
+    const actionKeys = Object.keys(COST_PER_CALL)
+    const { rows: spendRows } = await query(
+      `SELECT action, COUNT(*)::int AS count, DATE(created_at) AS date
+         FROM activity_log
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+          AND action = ANY($1)
+        GROUP BY action, DATE(created_at)
+        ORDER BY date ASC`,
+      [actionKeys],
+    )
+    let spend7 = 0, spend30 = 0
+    const spendByDay: Record<string, number> = {}
+    const spendByAction: Record<string, { calls: number; cost: number }> = {}
+    const sevenDaysAgo = Date.now() - 7 * 86400_000
+    for (const row of spendRows) {
+      const cost = Number(row.count) * (COST_PER_CALL[row.action] ?? 0)
+      spend30 += cost
+      if (new Date(row.date).getTime() >= sevenDaysAgo) spend7 += cost
+      const d = row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10)
+      spendByDay[d] = (spendByDay[d] ?? 0) + cost
+      spendByAction[row.action] = spendByAction[row.action]
+        ? { calls: spendByAction[row.action].calls + Number(row.count), cost: spendByAction[row.action].cost + cost }
+        : { calls: Number(row.count), cost }
+    }
+    const anthropicSpend = {
+      last_7d:  Math.round(spend7  * 100) / 100,
+      last_30d: Math.round(spend30 * 100) / 100,
+      by_day:   Object.entries(spendByDay)
+        .map(([date, cost]) => ({ date, cost: Math.round(cost * 100) / 100 }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+      by_action: Object.entries(spendByAction)
+        .map(([action, v]) => ({ action, calls: v.calls, cost: Math.round(v.cost * 100) / 100 }))
+        .sort((a, b) => b.cost - a.cost),
+    }
+
     // ── Funnel: signups → activated (first search) → paid ────────────────────
     const { rows: funnelRow } = await query(`
       WITH first_search AS (
@@ -462,6 +713,53 @@ adminStatsRouter.get("/", async (req, res, next) => {
           activated: Number(funnel.activated) || 0,
           paid:      Number(funnel.paid)      || 0,
         },
+
+        at_risk: {
+          silent_paid:       silentPaid,
+          ending_trials:     endingTrials,
+          credit_exhaustion: creditExhaustion,
+        },
+        activation: {
+          activated:     Number(act.activated)     || 0,
+          median_hours:  Number(act.median_hours)  || 0,
+          histogram:     ttfvHistogram,
+        },
+        stickiness: {
+          dau_over_mau_pct: Math.round(stickinessDauMau * 10) / 10,
+          wau_over_mau_pct: Math.round(stickinessWauMau * 10) / 10,
+        },
+        feature_adoption: featureAdoption.map((r: any) => ({
+          action: r.action,
+          users:  Number(r.users) || 0,
+          pct:    Number(r.pct)   || 0,
+        })),
+        cohort_retention: cohortRows.map((r: any) => ({
+          week:      r.week,
+          size:      Number(r.size) || 0,
+          w0:        Number(r.w0)   || 0,
+          w1:        Number(r.w1)   || 0,
+          w2:        Number(r.w2)   || 0,
+          w3:        Number(r.w3)   || 0,
+        })),
+        trial_abuse: abuseByIp.map((r: any) => ({
+          ip:           r.ip,
+          country_code: r.country_code,
+          accounts:     Number(r.accounts) || 0,
+          emails:       Array.isArray(r.emails) ? r.emails : [],
+          last_signup:  r.last_signup,
+        })),
+        price_moves: priceMoves.map((r: any) => ({
+          product:   r.product,
+          brand:     r.brand,
+          retailer:  r.retailer,
+          currency:  r.currency,
+          low:       Number(r.low)      || 0,
+          high:      Number(r.high)     || 0,
+          delta:     Number(r.delta)    || 0,
+          delta_pct: Number(r.delta_pct)|| 0,
+          samples:   Number(r.samples)  || 0,
+        })),
+        anthropic_spend: anthropicSpend,
       },
     })
   } catch (err) { next(err) }

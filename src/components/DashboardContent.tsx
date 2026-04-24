@@ -13,7 +13,8 @@ import {
   Users, Search, Database, Zap, TrendingUp, ShoppingBag,
   Globe, Activity, Clock, RefreshCw, Radio, MapPin,
   DollarSign, Trophy, ShieldAlert, Repeat, Filter,
-  CheckCircle2, AlertTriangle, XCircle,
+  CheckCircle2, AlertTriangle, XCircle, Hourglass,
+  Flame, Layers, UserX, Fingerprint, ArrowUpRight, ArrowDownRight, Brain,
 } from "lucide-react"
 import { useAuth } from "@/context/AuthContext"
 import { PageSkeleton } from "./PageSkeleton"
@@ -78,6 +79,27 @@ interface AdminStats {
     dau_by_day: { date: string; dau: number }[]
   }
   funnel: { signups: number; activated: number; paid: number }
+  at_risk: {
+    silent_paid:       { email: string; plan_code: string | null; role: string; country_code: string | null; last_seen_at: string | null; days_silent: number }[]
+    ending_trials:     { email: string; plan_code: string | null; role: string; country_code: string | null; trial_ends_at: string; days_left: number }[]
+    credit_exhaustion: { email: string; role: string; plan_code: string | null; country_code: string | null; monthly_limit: number; used: number; pct_used: number }[]
+  }
+  activation: {
+    activated:    number
+    median_hours: number
+    histogram:    { bucket: string; count: number }[]
+  }
+  stickiness: { dau_over_mau_pct: number; wau_over_mau_pct: number }
+  feature_adoption: { action: string; users: number; pct: number }[]
+  cohort_retention: { week: string; size: number; w0: number; w1: number; w2: number; w3: number }[]
+  trial_abuse: { ip: string; country_code: string | null; accounts: number; emails: string[]; last_signup: string }[]
+  price_moves: { product: string; brand: string | null; retailer: string; currency: string; low: number; high: number; delta: number; delta_pct: number; samples: number }[]
+  anthropic_spend: {
+    last_7d:  number
+    last_30d: number
+    by_day:    { date: string; cost: number }[]
+    by_action: { action: string; calls: number; cost: number }[]
+  }
 }
 
 // Defaults used when the backend hasn't deployed yet (Vercel is faster than
@@ -91,6 +113,14 @@ const EMPTY_STATS_DEFAULTS = {
   scrape_health:    [],
   retention:        { dau: 0, wau: 0, mau: 0, dau_by_day: [] },
   funnel:           { signups: 0, activated: 0, paid: 0 },
+  at_risk:          { silent_paid: [], ending_trials: [], credit_exhaustion: [] },
+  activation:       { activated: 0, median_hours: 0, histogram: [] },
+  stickiness:       { dau_over_mau_pct: 0, wau_over_mau_pct: 0 },
+  feature_adoption: [],
+  cohort_retention: [],
+  trial_abuse:      [],
+  price_moves:      [],
+  anthropic_spend:  { last_7d: 0, last_30d: 0, by_day: [], by_action: [] },
   activity_feed:    [],
   action_counts:    [],
   top_queries:      [],
@@ -278,6 +308,10 @@ export function DashboardContent(_: { role?: string }) {
         funnel: { ...EMPTY_STATS_DEFAULTS.funnel, ...(data.funnel ?? {}) },
         charts: { ...EMPTY_STATS_DEFAULTS.charts, ...(data.charts ?? {}) },
         creator_intel: { ...EMPTY_STATS_DEFAULTS.creator_intel, ...(data.creator_intel ?? {}) },
+        at_risk: { ...EMPTY_STATS_DEFAULTS.at_risk, ...(data.at_risk ?? {}) },
+        activation: { ...EMPTY_STATS_DEFAULTS.activation, ...(data.activation ?? {}) },
+        stickiness: { ...EMPTY_STATS_DEFAULTS.stickiness, ...(data.stickiness ?? {}) },
+        anthropic_spend: { ...EMPTY_STATS_DEFAULTS.anthropic_spend, ...(data.anthropic_spend ?? {}) },
       } as AdminStats
       setStats(merged)
       setError(null)
@@ -327,12 +361,16 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel, at_risk, activation, stickiness, feature_adoption, cohort_retention, trial_abuse, price_moves, anthropic_spend } = stats
   const maxCountryCount = Math.max(1, ...users_by_country.map(c => c.count))
   const maxPowerCredits = Math.max(1, ...power_users.map(u => u.credits_used))
   const activationRate = funnel.signups > 0 ? (funnel.activated / funnel.signups) * 100 : 0
   const conversionRate = funnel.activated > 0 ? (funnel.paid / funnel.activated) * 100 : 0
   const overallConv    = funnel.signups > 0 ? (funnel.paid / funnel.signups) * 100 : 0
+  const atRiskTotal    = at_risk.silent_paid.length + at_risk.ending_trials.length + at_risk.credit_exhaustion.length
+  const maxTtfv        = Math.max(1, ...activation.histogram.map(b => b.count))
+  const maxAdoptionPct = Math.max(1, ...feature_adoption.map(f => f.pct))
+  const maxPriceMove   = Math.max(1, ...price_moves.map(p => p.delta_pct))
 
   // Merge searches + scrapes into one activity chart
   const activityData = mergeDays(charts.searches_by_day, charts.scrapes_by_day, "searches", "scrapes")
@@ -835,7 +873,10 @@ export function DashboardContent(_: { role?: string }) {
               <Repeat className="h-4 w-4 text-indigo-500" />
               Retention
             </CardTitle>
-            <CardDescription className="text-xs">Unique active users over time</CardDescription>
+            <CardDescription className="text-xs">
+              Unique active users · stickiness {stickiness.dau_over_mau_pct.toFixed(1)}% (DAU/MAU)
+              {stickiness.dau_over_mau_pct >= 20 ? " — great" : stickiness.dau_over_mau_pct >= 10 ? " — healthy" : stickiness.dau_over_mau_pct > 0 ? " — growing" : ""}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-3 gap-3 mb-4">
@@ -993,6 +1034,368 @@ export function DashboardContent(_: { role?: string }) {
                 </div>
               )
             })}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* At-Risk Users — 3-column triage panel */}
+      <Card className="relative overflow-hidden border-rose-200 dark:border-rose-900/40">
+        <div className="absolute -top-12 -right-12 h-40 w-40 rounded-full bg-rose-400/10 blur-3xl" />
+        <CardHeader className="relative">
+          <CardTitle className="text-base flex items-center gap-2">
+            <UserX className="h-4 w-4 text-rose-500" />
+            At-Risk Users
+            {atRiskTotal > 0 && (
+              <Badge variant="destructive" className="text-[10px] ml-1">{atRiskTotal}</Badge>
+            )}
+          </CardTitle>
+          <CardDescription className="text-xs">Actionable — silent paid · ending trials · credit exhaustion</CardDescription>
+        </CardHeader>
+        <CardContent className="relative">
+          <div className="grid gap-5 grid-cols-1 md:grid-cols-3">
+
+            {/* Silent paid */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-wide">Silent Paid (7d+)</span>
+                <Badge variant="outline" className="text-[10px]">{at_risk.silent_paid.length}</Badge>
+              </div>
+              {at_risk.silent_paid.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">All paid users active — good.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {at_risk.silent_paid.slice(0, 8).map((u, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {u.country_code && <span>{flagOf(u.country_code)}</span>}
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">{u.days_silent}d</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Ending trials */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wide">Trials Ending (≤3d)</span>
+                <Badge variant="outline" className="text-[10px]">{at_risk.ending_trials.length}</Badge>
+              </div>
+              {at_risk.ending_trials.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No trials ending soon.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {at_risk.ending_trials.slice(0, 8).map((u, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {u.country_code && <span>{flagOf(u.country_code)}</span>}
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">{u.days_left}d</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Credit exhaustion */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wide">Over 80% Credits</span>
+                <Badge variant="outline" className="text-[10px]">{at_risk.credit_exhaustion.length}</Badge>
+              </div>
+              {at_risk.credit_exhaustion.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No one near their limit.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {at_risk.credit_exhaustion.slice(0, 8).map((u, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        {u.country_code && <span>{flagOf(u.country_code)}</span>}
+                        <span className="truncate">{u.email}</span>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] shrink-0">{u.pct_used}%</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Activation + Anthropic Spend */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Activation latency + TTFV histogram */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Hourglass className="h-4 w-4 text-cyan-500" />
+              Activation
+            </CardTitle>
+            <CardDescription className="text-xs">Signup → first search · 90-day cohort</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 rounded-md bg-cyan-50 dark:bg-cyan-950/30">
+                <div className="text-xs text-muted-foreground">Median time</div>
+                <div className="text-xl font-bold mt-0.5">
+                  {activation.median_hours < 1
+                    ? `${Math.round(activation.median_hours * 60)}m`
+                    : activation.median_hours < 48
+                      ? `${activation.median_hours.toFixed(1)}h`
+                      : `${(activation.median_hours / 24).toFixed(1)}d`}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {activation.median_hours === 0 ? "No data yet" :
+                   activation.median_hours <= 1 ? "excellent" :
+                   activation.median_hours <= 24 ? "healthy" :
+                   "onboarding needs work"}
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-cyan-50 dark:bg-cyan-950/30">
+                <div className="text-xs text-muted-foreground">Activated</div>
+                <div className="text-xl font-bold mt-0.5">{fmt(activation.activated)}</div>
+                <div className="text-[10px] text-muted-foreground">users in window</div>
+              </div>
+            </div>
+            <div className="text-[10px] text-muted-foreground mb-1">Time-to-first-value</div>
+            <div className="space-y-1.5">
+              {activation.histogram.map((b, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className="text-[10px] text-muted-foreground w-12 shrink-0">{b.bucket}</span>
+                  <div className="flex-1 relative h-4 bg-muted/40 rounded overflow-hidden">
+                    <div
+                      className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-cyan-400 to-teal-500 rounded"
+                      style={{ width: `${(b.count / maxTtfv) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-muted-foreground w-8 text-right shrink-0">{b.count}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Anthropic API Spend */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Brain className="h-4 w-4 text-purple-500" />
+              Anthropic API Spend <span className="text-[10px] text-muted-foreground font-normal">(estimated)</span>
+            </CardTitle>
+            <CardDescription className="text-xs">Cost derived from call counts × avg per-call cost</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="p-3 rounded-md bg-purple-50 dark:bg-purple-950/30">
+                <div className="text-xs text-muted-foreground">Last 7 days</div>
+                <div className="text-xl font-bold mt-0.5">${anthropic_spend.last_7d.toFixed(2)}</div>
+              </div>
+              <div className="p-3 rounded-md bg-purple-50 dark:bg-purple-950/30">
+                <div className="text-xs text-muted-foreground">Last 30 days</div>
+                <div className="text-xl font-bold mt-0.5">${anthropic_spend.last_30d.toFixed(2)}</div>
+              </div>
+            </div>
+            {anthropic_spend.by_action.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No billable calls yet.</p>
+            ) : (
+              <div className="space-y-1.5">
+                <div className="text-[10px] text-muted-foreground">By action (30d)</div>
+                {anthropic_spend.by_action.map((a, i) => {
+                  const info = actionInfo(a.action)
+                  return (
+                    <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${info.color}`} />
+                        <span className="truncate">{info.label}</span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] text-muted-foreground">{fmt(a.calls)} calls</span>
+                        <span className="font-semibold text-purple-600 dark:text-purple-400 min-w-[48px] text-right">${a.cost.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* Feature Adoption + Cohort Retention */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Feature Adoption */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Layers className="h-4 w-4 text-teal-500" />
+              Feature Adoption (30d)
+            </CardTitle>
+            <CardDescription className="text-xs">% of monthly active users who touched each feature</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {feature_adoption.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No activity yet</p>
+            ) : feature_adoption.map((f, i) => {
+              const info = actionInfo(f.action)
+              const widthPct = (f.pct / maxAdoptionPct) * 100
+              return (
+                <div key={i} className="space-y-0.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${info.color}`} />
+                      <span className="text-xs truncate">{info.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] text-muted-foreground">{f.users}u</span>
+                      <span className="text-xs font-semibold text-teal-600 dark:text-teal-400 min-w-[44px] text-right">{f.pct.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  <div className="relative h-1.5 bg-muted/40 rounded overflow-hidden ml-3.5">
+                    <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-teal-400 to-emerald-500 rounded" style={{ width: `${widthPct}%` }} />
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+
+        {/* Cohort Retention */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Repeat className="h-4 w-4 text-violet-500" />
+              Cohort Retention
+            </CardTitle>
+            <CardDescription className="text-xs">% of each signup week still active by week N</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {cohort_retention.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No cohorts yet</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="text-muted-foreground">
+                      <th className="text-left font-medium py-1 pr-2">Cohort</th>
+                      <th className="text-right font-medium py-1 px-1.5">Size</th>
+                      <th className="text-right font-medium py-1 px-1.5">W0</th>
+                      <th className="text-right font-medium py-1 px-1.5">W1</th>
+                      <th className="text-right font-medium py-1 px-1.5">W2</th>
+                      <th className="text-right font-medium py-1 pl-1.5">W3</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cohort_retention.map((r, i) => {
+                      const pct = (v: number) => r.size > 0 ? Math.round((v / r.size) * 100) : 0
+                      const cell = (v: number) => {
+                        const p = pct(v)
+                        const bg = p >= 75 ? "bg-violet-500/60 text-white" :
+                                   p >= 50 ? "bg-violet-500/40 text-white" :
+                                   p >= 25 ? "bg-violet-500/25" :
+                                   p > 0   ? "bg-violet-500/10" :
+                                             "bg-muted/20 text-muted-foreground"
+                        return (
+                          <td className={`text-right px-1.5 py-1 rounded ${bg}`}>
+                            {v > 0 ? `${p}%` : "—"}
+                          </td>
+                        )
+                      }
+                      return (
+                        <tr key={i} className="border-t">
+                          <td className="py-1 pr-2 font-medium">{formatDate(r.week)}</td>
+                          <td className="text-right py-1 px-1.5 text-muted-foreground">{r.size}</td>
+                          {cell(r.w0)}
+                          {cell(r.w1)}
+                          {cell(r.w2)}
+                          {cell(r.w3)}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Biggest Price Moves + Trial Abuse */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Biggest Price Moves */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Flame className="h-4 w-4 text-orange-500" />
+              Biggest Price Moves (7d)
+            </CardTitle>
+            <CardDescription className="text-xs">Products with the largest high-to-low delta this week</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {price_moves.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No price movement detected yet</p>
+            ) : price_moves.map((p, i) => (
+              <div key={i} className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <ArrowDownRight className="h-3 w-3 text-emerald-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium truncate">{p.product}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {p.brand ? `${p.brand} · ` : ""}{p.retailer} · {p.currency} {p.low.toFixed(2)} – {p.high.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <Badge
+                    variant="secondary"
+                    className="text-[10px] shrink-0 bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400"
+                  >
+                    −{p.delta_pct.toFixed(1)}%
+                  </Badge>
+                </div>
+                <div className="relative h-1 bg-muted/40 rounded overflow-hidden ml-5">
+                  <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-orange-400 to-red-500 rounded" style={{ width: `${(p.delta_pct / maxPriceMove) * 100}%` }} />
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        {/* Trial Abuse Clusters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Fingerprint className="h-4 w-4 text-red-500" />
+              Trial Abuse Clusters (60d)
+            </CardTitle>
+            <CardDescription className="text-xs">IPs with multiple signups — potential multi-accounting</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {trial_abuse.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">No suspicious clusters — clean signups.</p>
+            ) : trial_abuse.map((c, i) => (
+              <div key={i} className="border rounded-md p-2 bg-red-50/40 dark:bg-red-950/10">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    {c.country_code && <span>{flagOf(c.country_code)}</span>}
+                    <code className="text-[10px] text-muted-foreground">{c.ip}</code>
+                  </div>
+                  <Badge variant="destructive" className="text-[10px] shrink-0">{c.accounts} accounts</Badge>
+                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  {c.emails.slice(0, 4).join(" · ")}
+                  {c.emails.length > 4 && ` · +${c.emails.length - 4} more`}
+                </div>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>
