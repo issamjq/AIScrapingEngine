@@ -111,6 +111,29 @@ interface AdminStats {
   slow_endpoints: { route: string; method: string; calls: number; avg_ms: number; p50: number; p95: number; p99: number; err_5xx: number }[]
   broadcasts:     { id: number; message: string; variant: string; active: boolean; starts_at: string; ends_at: string | null; created_by: string | null; created_at: string }[]
   utm_breakdown:  { source: string; signups: number; paid: number; conversion_pct: number }[]
+  alerts: { severity: "critical" | "warning" | "info"; message: string; hint?: string }[]
+  system_health: {
+    db_latency_ms:  number
+    db_ok:          boolean
+    last_price_scrape:   string | null
+    last_amazon_scrape:  string | null
+    last_tiktok_scrape:  string | null
+    last_anthropic_call: string | null
+    last_price_scrape_age_sec:   number | null
+    last_amazon_scrape_age_sec:  number | null
+    last_tiktok_scrape_age_sec:  number | null
+    last_anthropic_call_age_sec: number | null
+    errors_24h:        number
+    scrapes_24h:       number
+    scrape_success_24h:number
+    scrape_fail_rate:  number
+  }
+  search_depth: {
+    searches: number; unlocks: number; avg_results: number; avg_duration_s: number
+    unlocks_per_search: number
+  }
+  scrape_status_dist: { status: string; count: number }[]
+  price_source_dist:  { source: string; count: number }[]
 }
 
 // Defaults used when the backend hasn't deployed yet (Vercel is faster than
@@ -139,6 +162,16 @@ const EMPTY_STATS_DEFAULTS = {
   slow_endpoints:   [],
   broadcasts:       [],
   utm_breakdown:    [],
+  alerts:           [],
+  system_health:    {
+    db_latency_ms: 0, db_ok: true,
+    last_price_scrape: null, last_amazon_scrape: null, last_tiktok_scrape: null, last_anthropic_call: null,
+    last_price_scrape_age_sec: null, last_amazon_scrape_age_sec: null, last_tiktok_scrape_age_sec: null, last_anthropic_call_age_sec: null,
+    errors_24h: 0, scrapes_24h: 0, scrape_success_24h: 0, scrape_fail_rate: 0,
+  },
+  search_depth:      { searches: 0, unlocks: 0, avg_results: 0, avg_duration_s: 0, unlocks_per_search: 0 },
+  scrape_status_dist: [],
+  price_source_dist:  [],
   activity_feed:    [],
   action_counts:    [],
   top_queries:      [],
@@ -246,6 +279,23 @@ function detailSummary(action: string, details: any): string {
     case "b2c_unlock":            return details.count ? `${details.count} results` : ""
     default:                      return ""
   }
+}
+
+// ─── Health pill (system health strip) ────────────────────────────────────────
+
+function HealthPill({ label, ok, warn, value }: { label: string; ok: boolean; warn?: boolean; value: string }) {
+  const tone = ok
+    ? "bg-emerald-500"
+    : warn
+      ? "bg-amber-500"
+      : "bg-red-500"
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${tone}`} />
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold">{value}</span>
+    </div>
+  )
 }
 
 // ─── Funnel step ──────────────────────────────────────────────────────────────
@@ -363,6 +413,8 @@ export function DashboardContent(_: { role?: string }) {
         stickiness: { ...EMPTY_STATS_DEFAULTS.stickiness, ...(data.stickiness ?? {}) },
         anthropic_spend: { ...EMPTY_STATS_DEFAULTS.anthropic_spend, ...(data.anthropic_spend ?? {}) },
         error_counts: { ...EMPTY_STATS_DEFAULTS.error_counts, ...(data.error_counts ?? {}) },
+        system_health: { ...EMPTY_STATS_DEFAULTS.system_health, ...(data.system_health ?? {}) },
+        search_depth:  { ...EMPTY_STATS_DEFAULTS.search_depth,  ...(data.search_depth  ?? {}) },
       } as AdminStats
       setStats(merged)
       setError(null)
@@ -412,7 +464,9 @@ export function DashboardContent(_: { role?: string }) {
 
   if (!stats) return null
 
-  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel, at_risk, activation, stickiness, feature_adoption, cohort_retention, trial_abuse, price_moves, anthropic_spend, error_feed, error_counts, admin_audit, rate_limit_hits, slow_endpoints, broadcasts, utm_breakdown } = stats
+  const { users, searches, scrapes, creator_intel, catalog, credits, charts, top_queries, users_by_plan, recent_signups, activity_feed, action_counts, live_users, users_by_country, geo_summary, revenue, power_users, scrape_health, retention, funnel, at_risk, activation, stickiness, feature_adoption, cohort_retention, trial_abuse, price_moves, anthropic_spend, error_feed, error_counts, admin_audit, rate_limit_hits, slow_endpoints, broadcasts, utm_breakdown, alerts, system_health, search_depth, scrape_status_dist, price_source_dist } = stats
+  const totalScrapeStatus = scrape_status_dist.reduce((a, b) => a + b.count, 0)
+  const totalPriceSource  = price_source_dist.reduce((a, b) => a + b.count, 0)
   const maxCountryCount = Math.max(1, ...users_by_country.map(c => c.count))
   const maxPowerCredits = Math.max(1, ...power_users.map(u => u.credits_used))
   const activationRate = funnel.signups > 0 ? (funnel.activated / funnel.signups) * 100 : 0
@@ -561,6 +615,75 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
 
       </div>
+
+      {/* Alerts — anomaly detection strip */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map((a, i) => {
+            const style = a.severity === "critical"
+              ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-900/60 text-red-900 dark:text-red-200"
+              : a.severity === "warning"
+                ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-200"
+                : "bg-sky-50 dark:bg-sky-950/30 border-sky-300 dark:border-sky-900/60 text-sky-900 dark:text-sky-200"
+            const Icon = a.severity === "critical" ? XCircle : a.severity === "warning" ? AlertTriangle : Activity
+            return (
+              <div key={i} className={`border rounded-md px-3 py-2 flex items-start gap-2.5 text-sm ${style}`}>
+                <Icon className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{a.message}</div>
+                  {a.hint && <div className="text-xs opacity-80 mt-0.5">{a.hint}</div>}
+                </div>
+                <Badge variant="outline" className="text-[10px] uppercase">{a.severity}</Badge>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* System Health Strip — at-a-glance green/amber/red */}
+      <Card>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center gap-6 flex-wrap text-xs">
+            <HealthPill
+              label="Database"
+              ok={system_health.db_ok}
+              value={`${system_health.db_latency_ms}ms`}
+            />
+            <HealthPill
+              label="Errors 24h"
+              ok={system_health.errors_24h < 3}
+              warn={system_health.errors_24h >= 3 && system_health.errors_24h < 10}
+              value={`${system_health.errors_24h}`}
+            />
+            <HealthPill
+              label="Scrape success"
+              ok={system_health.scrape_fail_rate < 0.15 || system_health.scrapes_24h < 10}
+              warn={system_health.scrape_fail_rate >= 0.15 && system_health.scrape_fail_rate < 0.30}
+              value={system_health.scrapes_24h > 0
+                ? `${Math.round((1 - system_health.scrape_fail_rate) * 100)}%`
+                : "idle"}
+            />
+            <HealthPill
+              label="Last price scrape"
+              ok={(system_health.last_price_scrape_age_sec ?? Infinity) < 6 * 3600}
+              warn={(system_health.last_price_scrape_age_sec ?? 0) >= 6 * 3600 && (system_health.last_price_scrape_age_sec ?? 0) < 24 * 3600}
+              value={system_health.last_price_scrape ? timeAgo(system_health.last_price_scrape) : "never"}
+            />
+            <HealthPill
+              label="Last Amazon scrape"
+              ok={(system_health.last_amazon_scrape_age_sec ?? Infinity) < 24 * 3600}
+              warn={(system_health.last_amazon_scrape_age_sec ?? 0) >= 24 * 3600 && (system_health.last_amazon_scrape_age_sec ?? 0) < 72 * 3600}
+              value={system_health.last_amazon_scrape ? timeAgo(system_health.last_amazon_scrape) : "never"}
+            />
+            <HealthPill
+              label="Last Claude call"
+              ok={(system_health.last_anthropic_call_age_sec ?? Infinity) < 6 * 3600}
+              warn={(system_health.last_anthropic_call_age_sec ?? 0) >= 6 * 3600 && (system_health.last_anthropic_call_age_sec ?? 0) < 24 * 3600}
+              value={system_health.last_anthropic_call ? timeAgo(system_health.last_anthropic_call) : "never"}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Live Globe — 3D world view of user presence */}
       <Card className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-slate-800">
@@ -1751,6 +1874,114 @@ export function DashboardContent(_: { role?: string }) {
                 <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap">{timeAgo(r.last_hit)}</span>
               </div>
             ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Search Depth + Scrape Confidence */}
+      <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
+
+        {/* Search Depth */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Search className="h-4 w-4 text-emerald-500" />
+              Search Depth (30d)
+            </CardTitle>
+            <CardDescription className="text-xs">How deep users go — unlocks per search · avg results · duration</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div className="p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/30">
+                <div className="text-xs text-muted-foreground">Unlocks / search</div>
+                <div className="text-xl font-bold mt-0.5">{search_depth.unlocks_per_search.toFixed(2)}</div>
+                <div className="text-[10px] text-muted-foreground">
+                  {search_depth.unlocks_per_search >= 1.5 ? "deep engagement" :
+                   search_depth.unlocks_per_search >= 0.5 ? "healthy" : "mostly browsing"}
+                </div>
+              </div>
+              <div className="p-3 rounded-md bg-emerald-50 dark:bg-emerald-950/30">
+                <div className="text-xs text-muted-foreground">Avg results / search</div>
+                <div className="text-xl font-bold mt-0.5">{search_depth.avg_results.toFixed(1)}</div>
+                <div className="text-[10px] text-muted-foreground">per query</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-2 rounded-md border text-center">
+                <div className="text-[10px] text-muted-foreground">Searches</div>
+                <div className="text-base font-bold">{fmt(search_depth.searches)}</div>
+              </div>
+              <div className="p-2 rounded-md border text-center">
+                <div className="text-[10px] text-muted-foreground">Avg duration</div>
+                <div className="text-base font-bold">
+                  {search_depth.avg_duration_s > 0 ? `${search_depth.avg_duration_s}s` : "—"}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Scrape Confidence Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Database className="h-4 w-4 text-lime-500" />
+              Scrape Quality (30d)
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Price-source + scrape-status distribution · quality drift detector
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1.5">Scrape status</div>
+              {scrape_status_dist.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No snapshots in the last 30 days.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {scrape_status_dist.map((s, i) => {
+                    const pct = totalScrapeStatus > 0 ? (s.count / totalScrapeStatus) * 100 : 0
+                    const color = s.status === "success" ? "bg-emerald-500"
+                                : s.status === "failed"  ? "bg-red-500"
+                                : s.status === "blocked" ? "bg-amber-500"
+                                                         : "bg-slate-400"
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between text-xs mb-0.5">
+                          <span>{s.status}</span>
+                          <span className="font-semibold">{pct.toFixed(1)}% · {fmt(s.count)}</span>
+                        </div>
+                        <div className="relative h-1.5 bg-muted/40 rounded overflow-hidden">
+                          <div className={`absolute left-0 top-0 bottom-0 ${color} rounded`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <div className="text-[11px] text-muted-foreground mb-1.5">B2C price source mix</div>
+              {price_source_dist.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">No B2C searches yet.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {price_source_dist.map((p, i) => {
+                    const pct = totalPriceSource > 0 ? (p.count / totalPriceSource) * 100 : 0
+                    return (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs w-24 truncate shrink-0">{p.source || "unknown"}</span>
+                        <div className="flex-1 relative h-1.5 bg-muted/40 rounded overflow-hidden">
+                          <div className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-lime-400 to-emerald-500 rounded" style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-[11px] font-semibold shrink-0 min-w-[40px] text-right">{pct.toFixed(0)}%</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>

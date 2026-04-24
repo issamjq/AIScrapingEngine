@@ -602,6 +602,184 @@ adminStatsRouter.get("/", async (req, res, next) => {
         .sort((a, b) => b.cost - a.cost),
     }
 
+    // ── System health ────────────────────────────────────────────────────────
+    // DB latency: time a trivial round-trip.
+    const dbStart = Date.now()
+    await query(`SELECT 1 AS ok`)
+    const dbLatencyMs = Date.now() - dbStart
+
+    const { rows: healthRows } = await query(`
+      SELECT
+        (SELECT MAX(checked_at) FROM price_snapshots
+          WHERE scrape_status = 'success')                                       AS last_price_scrape,
+        (SELECT MAX(scraped_at) FROM amazon_trending)                            AS last_amazon_scrape,
+        (SELECT MAX(scraped_at) FROM tiktok_products)                            AS last_tiktok_scrape,
+        (SELECT MAX(created_at) FROM activity_log
+          WHERE action = ANY($1::text[]))                                        AS last_anthropic_call,
+        (SELECT COUNT(*)::int FROM error_log
+          WHERE created_at >= NOW() - INTERVAL '24 hours')                       AS errors_24h,
+        (SELECT COUNT(*)::int FROM price_snapshots
+          WHERE checked_at >= NOW() - INTERVAL '24 hours')                       AS scrapes_24h,
+        (SELECT COUNT(*) FILTER (WHERE scrape_status = 'success')::int
+           FROM price_snapshots
+          WHERE checked_at >= NOW() - INTERVAL '24 hours')                       AS scrape_success_24h
+    `, [actionKeys])
+    const hh = healthRows[0] || {}
+
+    const scrapeFailRate24h = hh.scrapes_24h > 0
+      ? 1 - (Number(hh.scrape_success_24h) / Number(hh.scrapes_24h))
+      : 0
+
+    // Normalize "last X ago" into seconds so frontend can render a badge.
+    function ageSec(iso: any): number | null {
+      if (!iso) return null
+      return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+    }
+
+    const system_health = {
+      db_latency_ms: dbLatencyMs,
+      db_ok:         dbLatencyMs < 1500,
+      last_price_scrape:   hh.last_price_scrape   ?? null,
+      last_amazon_scrape:  hh.last_amazon_scrape  ?? null,
+      last_tiktok_scrape:  hh.last_tiktok_scrape  ?? null,
+      last_anthropic_call: hh.last_anthropic_call ?? null,
+      last_price_scrape_age_sec:   ageSec(hh.last_price_scrape),
+      last_amazon_scrape_age_sec:  ageSec(hh.last_amazon_scrape),
+      last_tiktok_scrape_age_sec:  ageSec(hh.last_tiktok_scrape),
+      last_anthropic_call_age_sec: ageSec(hh.last_anthropic_call),
+      errors_24h:        Number(hh.errors_24h)         || 0,
+      scrapes_24h:       Number(hh.scrapes_24h)        || 0,
+      scrape_success_24h:Number(hh.scrape_success_24h) || 0,
+      scrape_fail_rate:  Math.round(scrapeFailRate24h * 1000) / 1000,
+    }
+
+    // ── Anomaly alerts (derived signals) ─────────────────────────────────────
+    // Compare current rate to a 4-week baseline and flag significant swings.
+    const { rows: rateNow } = await query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM allowed_users
+          WHERE created_at >= NOW() - INTERVAL '7 days')                              AS signups_7d,
+        (SELECT COUNT(*)::int FROM allowed_users
+          WHERE created_at >= NOW() - INTERVAL '14 days'
+            AND created_at <  NOW() - INTERVAL '7 days')                              AS signups_prev_7d,
+        (SELECT COALESCE(SUM(ABS(amount)), 0)::int FROM wallet_transactions
+          WHERE type = 'debit'
+            AND created_at >= NOW() - INTERVAL '24 hours')                            AS credits_24h,
+        (SELECT COALESCE(AVG(daily_sum), 0)::int FROM (
+           SELECT DATE(created_at) AS d, SUM(ABS(amount)) AS daily_sum
+             FROM wallet_transactions
+            WHERE type = 'debit'
+              AND created_at >= NOW() - INTERVAL '30 days'
+              AND created_at <  NOW() - INTERVAL '24 hours'
+            GROUP BY DATE(created_at)
+         ) q)                                                                         AS credits_avg_daily_prev
+    `)
+    const rn = rateNow[0] || {}
+
+    const alerts: { severity: "critical" | "warning" | "info"; message: string; hint?: string }[] = []
+
+    if (!system_health.db_ok) {
+      alerts.push({
+        severity: "critical",
+        message: `Database latency ${dbLatencyMs}ms — above 1500ms threshold`,
+        hint: "Check Neon connection pooling / region.",
+      })
+    }
+    if (system_health.errors_24h >= 10) {
+      alerts.push({
+        severity: "critical",
+        message: `${system_health.errors_24h} backend errors in the last 24h`,
+        hint: "Inspect the Error Feed below.",
+      })
+    } else if (system_health.errors_24h >= 3) {
+      alerts.push({
+        severity: "warning",
+        message: `${system_health.errors_24h} backend errors in the last 24h`,
+      })
+    }
+    if (scrapeFailRate24h >= 0.3 && Number(hh.scrapes_24h) >= 10) {
+      alerts.push({
+        severity: "critical",
+        message: `Scrape failure rate ${Math.round(scrapeFailRate24h * 100)}% in last 24h`,
+        hint: "Likely a retailer changed their HTML — check scraperLogs.",
+      })
+    } else if (scrapeFailRate24h >= 0.15 && Number(hh.scrapes_24h) >= 10) {
+      alerts.push({
+        severity: "warning",
+        message: `Scrape failure rate ${Math.round(scrapeFailRate24h * 100)}% in last 24h`,
+      })
+    }
+    if (ageSec(hh.last_price_scrape) !== null && ageSec(hh.last_price_scrape)! > 48 * 3600) {
+      alerts.push({
+        severity: "warning",
+        message: "No successful price scrape in 48+ hours",
+        hint: "Render scheduler may be paused or all retailers are blocking.",
+      })
+    }
+    const signupsNow  = Number(rn.signups_7d)      || 0
+    const signupsPrev = Number(rn.signups_prev_7d) || 0
+    if (signupsPrev >= 5) {
+      const ratio = signupsNow / signupsPrev
+      if (ratio >= 2.5) {
+        alerts.push({ severity: "info", message: `Signups spiked ${Math.round((ratio - 1) * 100)}% vs prior 7d (${signupsNow} vs ${signupsPrev})` })
+      } else if (ratio <= 0.5) {
+        alerts.push({ severity: "warning", message: `Signups down ${Math.round((1 - ratio) * 100)}% vs prior 7d (${signupsNow} vs ${signupsPrev})` })
+      }
+    }
+    const credits24h     = Number(rn.credits_24h) || 0
+    const creditsBaseline = Number(rn.credits_avg_daily_prev) || 0
+    if (creditsBaseline >= 20 && credits24h >= creditsBaseline * 3) {
+      alerts.push({
+        severity: "warning",
+        message: `Credit usage 3× normal (${credits24h} vs avg ${creditsBaseline})`,
+        hint: "Either big growth or an abuse spike — inspect Power Users.",
+      })
+    }
+
+    // ── Search depth (last 30d) ──────────────────────────────────────────────
+    const { rows: searchDepthRows } = await query(`
+      SELECT
+        (SELECT COUNT(*)::int FROM b2c_search_history
+          WHERE searched_at >= NOW() - INTERVAL '30 days')                        AS searches,
+        (SELECT COUNT(*)::int FROM activity_log
+          WHERE action = 'b2c_unlock' AND created_at >= NOW() - INTERVAL '30 days') AS unlocks,
+        (SELECT ROUND(AVG(result_count)::numeric, 1) FROM b2c_search_history
+          WHERE searched_at >= NOW() - INTERVAL '30 days')                        AS avg_results,
+        (SELECT ROUND(AVG(duration_seconds)::numeric, 1) FROM b2c_search_history
+          WHERE searched_at >= NOW() - INTERVAL '30 days' AND duration_seconds IS NOT NULL) AS avg_duration_s
+    `)
+    const sd = searchDepthRows[0] || {}
+    const searchDepth = {
+      searches:      Number(sd.searches)      || 0,
+      unlocks:       Number(sd.unlocks)       || 0,
+      avg_results:   Number(sd.avg_results)   || 0,
+      avg_duration_s:Number(sd.avg_duration_s)|| 0,
+      unlocks_per_search: Number(sd.searches) > 0
+        ? Math.round((Number(sd.unlocks) / Number(sd.searches)) * 100) / 100
+        : 0,
+    }
+
+    // ── Scrape confidence distribution (last 30d) ────────────────────────────
+    const { rows: scrapeStatusDist } = await query(`
+      SELECT scrape_status AS status,
+             COUNT(*)::int AS count
+        FROM price_snapshots
+       WHERE checked_at >= NOW() - INTERVAL '30 days'
+       GROUP BY scrape_status
+       ORDER BY count DESC
+    `)
+    const { rows: priceSourceDist } = await query(`
+      SELECT elem->>'priceSource' AS source,
+             COUNT(*)::int         AS count
+        FROM b2c_search_history s,
+             LATERAL jsonb_array_elements(s.results) elem
+       WHERE s.searched_at >= NOW() - INTERVAL '30 days'
+         AND elem->>'priceSource' IS NOT NULL
+       GROUP BY elem->>'priceSource'
+       ORDER BY count DESC
+       LIMIT 10
+    `)
+
     // ── Error feed (last 50) ─────────────────────────────────────────────────
     const { rows: errorFeed } = await query(`
       SELECT id, level, source, message, path, status, user_email, created_at
@@ -850,6 +1028,12 @@ adminStatsRouter.get("/", async (req, res, next) => {
         slow_endpoints:  slowEndpoints,
         broadcasts:      broadcastList,
         utm_breakdown:   utmBreakdown,
+
+        alerts,
+        system_health,
+        search_depth:    searchDepth,
+        scrape_status_dist: scrapeStatusDist,
+        price_source_dist:  priceSourceDist,
       },
     })
   } catch (err) { next(err) }
