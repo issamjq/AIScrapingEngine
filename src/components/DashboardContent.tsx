@@ -12,6 +12,7 @@ import { UserDetailSheet } from "./UserDetailSheet"
 import { LiveViewDialog }  from "./LiveViewDialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card"
 import { Badge } from "./ui/badge"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs"
 import {
   Users, Search, Database, Zap, TrendingUp, ShoppingBag,
   Globe, Activity, Clock, RefreshCw, Radio, MapPin,
@@ -357,6 +358,7 @@ export function DashboardContent(_: { role?: string }) {
   const [broadcastSaving, setBroadcastSaving] = useState(false)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
   const [liveOpen, setLiveOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "revenue" | "activity" | "ops">("overview")
 
   const isAdmin = ADMIN_EMAILS.has(user?.email ?? "")
 
@@ -497,9 +499,9 @@ export function DashboardContent(_: { role?: string }) {
       {/* Header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Platform Dashboard</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold">User Portal</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Real-time metrics across all users and services
+            Real-time platform metrics across all users and services
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -529,6 +531,57 @@ export function DashboardContent(_: { role?: string }) {
           </button>
         </div>
       </div>
+
+      {/* Alerts — anomaly detection strip (always visible, above tabs) */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.map((a, i) => {
+            const style = a.severity === "critical"
+              ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-900/60 text-red-900 dark:text-red-200"
+              : a.severity === "warning"
+                ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-200"
+                : "bg-sky-50 dark:bg-sky-950/30 border-sky-300 dark:border-sky-900/60 text-sky-900 dark:text-sky-200"
+            const Icon = a.severity === "critical" ? XCircle : a.severity === "warning" ? AlertTriangle : Activity
+            return (
+              <div key={i} className={`border rounded-md px-3 py-2 flex items-start gap-2.5 text-sm ${style}`}>
+                <Icon className="h-4 w-4 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium">{a.message}</div>
+                  {a.hint && <div className="text-xs opacity-80 mt-0.5">{a.hint}</div>}
+                </div>
+                <Badge variant="outline" className="text-[10px] uppercase">{a.severity}</Badge>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* System Health Strip — at-a-glance green/amber/red (always visible, above tabs) */}
+      <Card>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center gap-6 flex-wrap text-xs">
+            <HealthPill label="Database" ok={system_health.db_ok} value={`${system_health.db_latency_ms}ms`} />
+            <HealthPill label="Errors 24h" ok={system_health.errors_24h < 3} warn={system_health.errors_24h >= 3 && system_health.errors_24h < 10} value={`${system_health.errors_24h}`} />
+            <HealthPill label="Scrape success" ok={system_health.scrape_fail_rate < 0.15 || system_health.scrapes_24h < 10} warn={system_health.scrape_fail_rate >= 0.15 && system_health.scrape_fail_rate < 0.30} value={system_health.scrapes_24h > 0 ? `${Math.round((1 - system_health.scrape_fail_rate) * 100)}%` : "idle"} />
+            <HealthPill label="Last price scrape" ok={(system_health.last_price_scrape_age_sec ?? Infinity) < 6 * 3600} warn={(system_health.last_price_scrape_age_sec ?? 0) >= 6 * 3600 && (system_health.last_price_scrape_age_sec ?? 0) < 24 * 3600} value={system_health.last_price_scrape ? timeAgo(system_health.last_price_scrape) : "never"} />
+            <HealthPill label="Last Amazon scrape" ok={(system_health.last_amazon_scrape_age_sec ?? Infinity) < 24 * 3600} warn={(system_health.last_amazon_scrape_age_sec ?? 0) >= 24 * 3600 && (system_health.last_amazon_scrape_age_sec ?? 0) < 72 * 3600} value={system_health.last_amazon_scrape ? timeAgo(system_health.last_amazon_scrape) : "never"} />
+            <HealthPill label="Last Claude call" ok={(system_health.last_anthropic_call_age_sec ?? Infinity) < 6 * 3600} warn={(system_health.last_anthropic_call_age_sec ?? 0) >= 6 * 3600 && (system_health.last_anthropic_call_age_sec ?? 0) < 24 * 3600} value={system_health.last_anthropic_call ? timeAgo(system_health.last_anthropic_call) : "never"} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabs — splits the rest of the dashboard into focused sections */}
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="revenue">Revenue</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+          <TabsTrigger value="ops">Operations</TabsTrigger>
+        </TabsList>
+
+      {/* ─── OVERVIEW TAB ──────────────────────────────────────── */}
+      <TabsContent value="overview" className="space-y-6 mt-6">
 
       {/* Live Now + Revenue — hero row */}
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
@@ -615,75 +668,6 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
 
       </div>
-
-      {/* Alerts — anomaly detection strip */}
-      {alerts.length > 0 && (
-        <div className="space-y-2">
-          {alerts.map((a, i) => {
-            const style = a.severity === "critical"
-              ? "bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-900/60 text-red-900 dark:text-red-200"
-              : a.severity === "warning"
-                ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/60 text-amber-900 dark:text-amber-200"
-                : "bg-sky-50 dark:bg-sky-950/30 border-sky-300 dark:border-sky-900/60 text-sky-900 dark:text-sky-200"
-            const Icon = a.severity === "critical" ? XCircle : a.severity === "warning" ? AlertTriangle : Activity
-            return (
-              <div key={i} className={`border rounded-md px-3 py-2 flex items-start gap-2.5 text-sm ${style}`}>
-                <Icon className="h-4 w-4 shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium">{a.message}</div>
-                  {a.hint && <div className="text-xs opacity-80 mt-0.5">{a.hint}</div>}
-                </div>
-                <Badge variant="outline" className="text-[10px] uppercase">{a.severity}</Badge>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* System Health Strip — at-a-glance green/amber/red */}
-      <Card>
-        <CardContent className="py-3 px-4">
-          <div className="flex items-center gap-6 flex-wrap text-xs">
-            <HealthPill
-              label="Database"
-              ok={system_health.db_ok}
-              value={`${system_health.db_latency_ms}ms`}
-            />
-            <HealthPill
-              label="Errors 24h"
-              ok={system_health.errors_24h < 3}
-              warn={system_health.errors_24h >= 3 && system_health.errors_24h < 10}
-              value={`${system_health.errors_24h}`}
-            />
-            <HealthPill
-              label="Scrape success"
-              ok={system_health.scrape_fail_rate < 0.15 || system_health.scrapes_24h < 10}
-              warn={system_health.scrape_fail_rate >= 0.15 && system_health.scrape_fail_rate < 0.30}
-              value={system_health.scrapes_24h > 0
-                ? `${Math.round((1 - system_health.scrape_fail_rate) * 100)}%`
-                : "idle"}
-            />
-            <HealthPill
-              label="Last price scrape"
-              ok={(system_health.last_price_scrape_age_sec ?? Infinity) < 6 * 3600}
-              warn={(system_health.last_price_scrape_age_sec ?? 0) >= 6 * 3600 && (system_health.last_price_scrape_age_sec ?? 0) < 24 * 3600}
-              value={system_health.last_price_scrape ? timeAgo(system_health.last_price_scrape) : "never"}
-            />
-            <HealthPill
-              label="Last Amazon scrape"
-              ok={(system_health.last_amazon_scrape_age_sec ?? Infinity) < 24 * 3600}
-              warn={(system_health.last_amazon_scrape_age_sec ?? 0) >= 24 * 3600 && (system_health.last_amazon_scrape_age_sec ?? 0) < 72 * 3600}
-              value={system_health.last_amazon_scrape ? timeAgo(system_health.last_amazon_scrape) : "never"}
-            />
-            <HealthPill
-              label="Last Claude call"
-              ok={(system_health.last_anthropic_call_age_sec ?? Infinity) < 6 * 3600}
-              warn={(system_health.last_anthropic_call_age_sec ?? 0) >= 6 * 3600 && (system_health.last_anthropic_call_age_sec ?? 0) < 24 * 3600}
-              value={system_health.last_anthropic_call ? timeAgo(system_health.last_anthropic_call) : "never"}
-            />
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Live Globe — 3D world view of user presence (Shopify-style light) */}
       <Card className="relative overflow-hidden bg-gradient-to-b from-white via-emerald-50/30 to-white dark:from-slate-50 dark:via-emerald-50/40 dark:to-white border-emerald-100">
@@ -810,6 +794,11 @@ export function DashboardContent(_: { role?: string }) {
         />
       </div>
 
+      </TabsContent>
+
+      {/* ─── ACTIVITY TAB ──────────────────────────────────────── */}
+      <TabsContent value="activity" className="space-y-6 mt-6">
+
       {/* Charts row 1: Activity + User Growth */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
@@ -862,6 +851,11 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
+      </TabsContent>
+
+      {/* ─── REVENUE TAB ──────────────────────────────────────── */}
+      <TabsContent value="revenue" className="space-y-6 mt-6">
+
       {/* Charts row 2: Credits + Users by plan */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
@@ -907,6 +901,11 @@ export function DashboardContent(_: { role?: string }) {
           </CardContent>
         </Card>
       </div>
+
+      </TabsContent>
+
+      {/* ─── USERS TAB ──────────────────────────────────────── */}
+      <TabsContent value="users" className="space-y-6 mt-6">
 
       {/* Geo row: Users by Country + Active right now */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
@@ -990,6 +989,11 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
+      </TabsContent>
+
+      {/* ─── back to ACTIVITY for top queries / signups / marketplace ── */}
+      <TabsContent value="activity" className="space-y-6 mt-6">
+
       {/* Bottom row: Top queries + Marketplace breakdown + Recent signups */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
 
@@ -1072,7 +1076,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Retention + Funnel row */}
+      {/* Retention + Funnel row */ /* still in activity tab */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
 
         {/* Retention DAU / WAU / MAU */}
@@ -1160,6 +1164,11 @@ export function DashboardContent(_: { role?: string }) {
           </CardContent>
         </Card>
       </div>
+
+      </TabsContent>
+
+      {/* ─── back to REVENUE — power users ──────────────────── */}
+      <TabsContent value="revenue" className="space-y-6 mt-6">
 
       {/* Power Users + Scrape Health row */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
@@ -1251,6 +1260,11 @@ export function DashboardContent(_: { role?: string }) {
           </CardContent>
         </Card>
       </div>
+
+      </TabsContent>
+
+      {/* ─── USERS — at-risk + activation + cohorts + abuse ── */}
+      <TabsContent value="users" className="space-y-6 mt-6">
 
       {/* At-Risk Users — 3-column triage panel */}
       <Card className="relative overflow-hidden border-rose-200 dark:border-rose-900/40">
@@ -1356,7 +1370,7 @@ export function DashboardContent(_: { role?: string }) {
         </CardContent>
       </Card>
 
-      {/* Activation + Anthropic Spend */}
+      {/* Activation + Anthropic Spend (Activation lives with Users) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Activation latency + TTFV histogram */}
@@ -1457,7 +1471,7 @@ export function DashboardContent(_: { role?: string }) {
 
       </div>
 
-      {/* Feature Adoption + Cohort Retention */}
+      {/* Feature Adoption + Cohort Retention (still in Users) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Feature Adoption */}
@@ -1556,6 +1570,11 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
+      </TabsContent>
+
+      {/* ─── OPS TAB — health, errors, perf, audit, broadcast ── */}
+      <TabsContent value="ops" className="space-y-6 mt-6">
+
       {/* Biggest Price Moves + Trial Abuse */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
@@ -1629,7 +1648,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Broadcast Composer + UTM Attribution */}
+      {/* Broadcast Composer + UTM Attribution (in Ops — admin tools) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Broadcast Composer */}
@@ -1728,7 +1747,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Error Feed + Slow Endpoints */}
+      {/* Error Feed + Slow Endpoints (still in Ops) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Error Feed */}
@@ -1811,7 +1830,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Admin Audit Log + Rate-Limit Hits */}
+      {/* Admin Audit Log + Rate-Limit Hits (still in Ops) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Admin Audit Log */}
@@ -1878,7 +1897,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Search Depth + Scrape Confidence */}
+      {/* Search Depth + Scrape Confidence (still in Ops) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-2">
 
         {/* Search Depth */}
@@ -1986,7 +2005,7 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
       </div>
 
-      {/* Activity Monitoring — full width */}
+      {/* Activity Monitoring — full width (still in Ops) */}
       <div className="grid gap-6 grid-cols-1 lg:grid-cols-3">
 
         {/* Action breakdown (7d) */}
@@ -2046,6 +2065,10 @@ export function DashboardContent(_: { role?: string }) {
         </Card>
 
       </div>
+
+      </TabsContent>
+
+      </Tabs>
 
       {/* User drill-down — opens when any user row is clicked */}
       <UserDetailSheet

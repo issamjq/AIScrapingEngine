@@ -150,7 +150,7 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
               <SidebarGroup>
                 <SidebarGroupContent>
                   <SidebarMenu>
-                    <NavButton item={{ title: "Dashboard", icon: Home, id: "dashboard" }} currentPage={currentPage} onNavigate={onNavigate} />
+                    <NavButton item={{ title: "User Portal", icon: Home, id: "dashboard" }} currentPage={currentPage} onNavigate={onNavigate} />
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>
