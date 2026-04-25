@@ -97,7 +97,10 @@ app.use("/api/creator-intel",        requireAuth, creatorIntelRouter)
 app.use("/api/admin/stats",          requireAuth, adminStatsRouter)
 app.use("/api/admin/user",           requireAuth, adminUserRouter)
 app.use("/api/heartbeat",            requireAuth, heartbeatRouter)
-app.use("/api/broadcasts",           requireAuth, broadcastsRouter)
+// Broadcasts: GET /active is intentionally public (so the landing page can
+// show the banner to anonymous visitors). The admin write/list endpoints
+// inside the router apply requireAuth themselves.
+app.use("/api/broadcasts",           broadcastsRouter)
 
 // 404
 app.use((_req, res) => {

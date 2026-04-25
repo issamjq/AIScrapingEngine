@@ -8,7 +8,7 @@
 
 import { Router } from "express"
 import { query } from "../db"
-import { AuthRequest } from "../middleware/auth"
+import { AuthRequest, requireAuth } from "../middleware/auth"
 import { logAdminAction } from "../services/adminAuditLogger"
 import { getClientIp } from "../services/activityLogger"
 
@@ -20,7 +20,9 @@ function isAdmin(email?: string | null): boolean {
   return !!email && ADMIN_EMAILS.has(email)
 }
 
-// ── Active banner for every logged-in user ────────────────────────────────────
+// ── Active banner — PUBLIC (no auth required) ────────────────────────────────
+// Landing-page visitors and signed-in users both fetch this. We return the
+// minimum payload (no created_by, no created_at) and skip the timing log.
 broadcastsRouter.get("/active", async (_req, res, next) => {
   try {
     const { rows } = await query(
@@ -35,6 +37,10 @@ broadcastsRouter.get("/active", async (_req, res, next) => {
     res.json({ success: true, data: rows[0] ?? null })
   } catch (err) { next(err) }
 })
+
+// All routes below require auth — applied as middleware, so anything that
+// follows this line gets requireAuth automatically.
+broadcastsRouter.use(requireAuth)
 
 // ── Admin-only routes ────────────────────────────────────────────────────────
 broadcastsRouter.get("/", async (req, res, next) => {

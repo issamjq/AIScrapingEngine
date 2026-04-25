@@ -10,21 +10,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Globe from "react-globe.gl"
-import * as THREE from "three"
-
-// Natural-Earth 110m countries — rendered as a dot matrix for the Shopify look.
-// Cached in-process so we only fetch it once per app session.
-const COUNTRIES_URL = "https://unpkg.com/three-globe/example/img/ne_110m_admin_0_countries.geojson"
-let countriesPromise: Promise<any[]> | null = null
-function loadCountries(): Promise<any[]> {
-  if (!countriesPromise) {
-    countriesPromise = fetch(COUNTRIES_URL)
-      .then(r => r.json())
-      .then(j => Array.isArray(j?.features) ? j.features : [])
-      .catch(() => [])
-  }
-  return countriesPromise
-}
 
 export interface LivePoint {
   email:        string
@@ -49,15 +34,6 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
   const containerRef = useRef<HTMLDivElement | null>(null)
   const globeRef     = useRef<any>(null)
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: heightPx ?? (tall ? 720 : 560) })
-  const [countries, setCountries] = useState<any[]>([])
-
-  // Fetch the country outlines once; render them as a dot-matrix on the globe
-  // (Shopify Live View aesthetic).
-  useEffect(() => {
-    let cancelled = false
-    loadCountries().then(c => { if (!cancelled) setCountries(c) })
-    return () => { cancelled = true }
-  }, [])
 
   // Resize-aware width + height (height matters in `tall` mode so the globe
   // fills the fullscreen dialog).
@@ -92,22 +68,10 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
     [points],
   )
 
-  // Shopify-style: continents rendered as teal dots on a near-invisible sphere.
-  // `dark` decides the globe base color (slate for dark cards, pale for light UI).
-  const atmosphereColor = "#34d399"          // brighter emerald for a visible halo
-  const dotColor        = dark ? "#5eead4" : "#10b981" // teal on dark, emerald on light
-  const sphereColor     = dark ? "#0b1220" : "#eef9f4" // the faint base sphere
-
-  // Tinted sphere material — no photo texture, just a solid ball under the dots.
-  const sphereMaterial = useMemo(
-    () => new THREE.MeshPhongMaterial({
-      color:       new THREE.Color(sphereColor),
-      transparent: true,
-      opacity:     dark ? 0.92 : 1,
-      shininess:   8,
-    }),
-    [sphereColor, dark],
-  )
+  const atmosphereColor = "#10b981"       // emerald — matches the live dots
+  const globeImage = dark
+    ? "//unpkg.com/three-globe/example/img/earth-night.jpg"
+    : "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
 
   return (
     <div
@@ -120,22 +84,10 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
         width={dims.w}
         height={dims.h}
         backgroundColor="rgba(0,0,0,0)"
-        // NO photo texture — we render the globe as a dot-matrix below.
-        globeImageUrl={null as any}
-        globeMaterial={sphereMaterial}
-        showGlobe={true}
-        showAtmosphere={true}
+        globeImageUrl={globeImage}
         atmosphereColor={atmosphereColor}
-        atmosphereAltitude={0.18}
+        atmosphereAltitude={0.22}
         showGraticules={false}
-
-        // Shopify-style dot-matrix continents
-        hexPolygonsData={countries}
-        hexPolygonResolution={3}
-        hexPolygonMargin={0.55}
-        hexPolygonUseDots={true}
-        hexPolygonColor={() => dotColor}
-        hexPolygonAltitude={0.005}
 
         // Points — green for live, blue for recent
         pointsData={points}

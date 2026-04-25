@@ -14,6 +14,7 @@ import { FAQSection }           from "./FAQSection"
 import { LandingCTA }           from "./LandingCTA"
 import { LandingFooter }        from "./LandingFooter"
 import { ScrollProgressBar }    from "./ScrollProgressBar"
+import { BroadcastBanner }      from "@/components/BroadcastBanner"
 
 interface Props {
   onNavigateToApp?: (page: string) => void
@@ -61,6 +62,9 @@ export function LandingPage({ onNavigateToApp }: Props) {
       }}
     >
       <ScrollProgressBar />
+
+      {/* Site-wide announcement banner — visible to anonymous visitors too */}
+      <BroadcastBanner />
 
       <LandingNav
         onAction={handleAction}

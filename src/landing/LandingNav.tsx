@@ -47,11 +47,14 @@ export function LandingNav({ onAction, onSignOut, isLoggedIn, userName, userPhot
   const initials = userName ? userName.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase() : "?"
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-      scrolled
-        ? "bg-background/70 backdrop-blur-xl border-b border-black/5 dark:border-white/10 shadow-[0_2px_20px_-8px_rgba(0,0,0,0.1)]"
-        : "bg-transparent"
-    }`}>
+    <header
+      className={`fixed left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled
+          ? "bg-background/70 backdrop-blur-xl border-b border-black/5 dark:border-white/10 shadow-[0_2px_20px_-8px_rgba(0,0,0,0.1)]"
+          : "bg-transparent"
+      }`}
+      style={{ top: "var(--banner-h, 0px)" }}
+    >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
 
         {/* Logo */}

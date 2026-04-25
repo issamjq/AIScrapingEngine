@@ -97,7 +97,10 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex w-full">
+      <div
+        className="min-h-screen flex w-full"
+        style={{ paddingTop: "var(--banner-h, 0px)" }}
+      >
         <Sidebar className="border-r">
 
           {/* Logo */}
