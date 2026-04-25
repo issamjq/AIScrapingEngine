@@ -685,40 +685,40 @@ export function DashboardContent(_: { role?: string }) {
         </CardContent>
       </Card>
 
-      {/* Live Globe — 3D world view of user presence */}
-      <Card className="relative overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 border-slate-800">
-        {/* Ambient aurora backdrop */}
-        <div className="pointer-events-none absolute inset-0 opacity-60">
-          <div className="absolute top-1/4 left-1/4 h-[420px] w-[420px] rounded-full bg-emerald-500/10 blur-3xl" />
-          <div className="absolute bottom-0 right-0 h-[320px] w-[320px] rounded-full bg-violet-500/10 blur-3xl" />
+      {/* Live Globe — 3D world view of user presence (Shopify-style light) */}
+      <Card className="relative overflow-hidden bg-gradient-to-b from-white via-emerald-50/30 to-white dark:from-slate-50 dark:via-emerald-50/40 dark:to-white border-emerald-100">
+        {/* Ambient soft glow */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute top-1/4 left-1/4 h-[420px] w-[420px] rounded-full bg-emerald-300/20 blur-3xl" />
+          <div className="absolute bottom-0 right-0 h-[320px] w-[320px] rounded-full bg-cyan-300/15 blur-3xl" />
         </div>
 
         <CardHeader className="relative flex flex-row items-start justify-between gap-4 pb-2">
           <div>
-            <CardTitle className="text-base text-white flex items-center gap-2">
+            <CardTitle className="text-base text-slate-900 flex items-center gap-2">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
               </span>
               Live World
             </CardTitle>
-            <CardDescription className="text-xs text-slate-400">
+            <CardDescription className="text-xs text-slate-500">
               {live_users.live_5m} live now · {live_users.live_30m - live_users.live_5m} recent · auto-rotating
             </CardDescription>
           </div>
-          <div className="flex items-center gap-3 text-[11px] text-slate-300">
+          <div className="flex items-center gap-3 text-[11px] text-slate-600">
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.9)]" />
+              <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]" />
               Live (≤5m)
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.9)]" />
+              <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
               Recent (5–30m)
             </span>
             <button
               type="button"
               onClick={() => setLiveOpen(true)}
-              className="ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-white/15 bg-white/5 hover:bg-white/10 text-[11px] transition-colors"
+              className="ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-md border border-emerald-200 bg-white hover:bg-emerald-50 text-[11px] text-slate-700 transition-colors"
             >
               Open Live View →
             </button>
@@ -727,20 +727,20 @@ export function DashboardContent(_: { role?: string }) {
 
         <CardContent className="relative p-0">
           {live_users.points.length === 0 ? (
-            <div className="h-[560px] flex flex-col items-center justify-center text-slate-500 gap-2">
+            <div className="h-[560px] flex flex-col items-center justify-center text-slate-400 gap-2">
               <Globe className="h-10 w-10 opacity-30" />
               <p className="text-xs">No users online right now</p>
-              <p className="text-[10px] text-slate-600">Dots will appear here the moment someone opens the app</p>
+              <p className="text-[10px] text-slate-400">Dots will appear here the moment someone opens the app</p>
             </div>
           ) : (
             <Suspense
               fallback={
                 <div className="h-[560px] flex items-center justify-center">
-                  <div className="h-8 w-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-400 animate-spin" />
+                  <div className="h-8 w-8 rounded-full border-2 border-emerald-500/30 border-t-emerald-500 animate-spin" />
                 </div>
               }
             >
-              <LiveGlobe points={live_users.points} dark heightPx={560} />
+              <LiveGlobe points={live_users.points} heightPx={560} />
             </Suspense>
           )}
         </CardContent>

@@ -67,7 +67,7 @@ export function LiveViewDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="p-0 border-0 overflow-hidden bg-gradient-to-b from-slate-950 via-slate-900 to-black text-white"
+        className="p-0 border-0 overflow-hidden bg-gradient-to-br from-white via-emerald-50/40 to-white text-slate-900"
         style={{
           width:    "96vw",
           maxWidth: "96vw",
@@ -80,25 +80,25 @@ export function LiveViewDialog({
         <div className="flex h-full">
 
           {/* ── Left panel — stats ─────────────────────────────── */}
-          <div className="w-[340px] shrink-0 border-r border-white/10 overflow-y-auto">
+          <div className="w-[340px] shrink-0 border-r border-slate-200 overflow-y-auto bg-white/50 backdrop-blur-sm">
 
             {/* Header */}
-            <div className="px-5 pt-5 pb-3 border-b border-white/10">
+            <div className="px-5 pt-5 pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
                 </span>
                 <h2 className="text-base font-semibold">Live View</h2>
-                <Badge className="ml-auto text-[10px] bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/20">
+                <Badge className="ml-auto text-[10px] bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-100">
                   Just now
                 </Badge>
               </div>
             </div>
 
             {/* Visitors right now */}
-            <section className="px-5 py-4 border-b border-white/10">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wide">Visitors right now</div>
+            <section className="px-5 py-4 border-b border-slate-200">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">Visitors right now</div>
               <div className="text-4xl font-bold mt-1 flex items-baseline gap-2">
                 <span>{liveCount}</span>
                 {liveCount > 0 && (
@@ -108,22 +108,22 @@ export function LiveViewDialog({
                   </span>
                 )}
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
+              <div className="text-[11px] text-slate-500 mt-0.5">
                 {recentCount} active in last 30m · {activeToday} today
               </div>
             </section>
 
             {/* Sessions / searches */}
-            <section className="px-5 py-4 border-b border-white/10 grid grid-cols-2 gap-3">
+            <section className="px-5 py-4 border-b border-slate-200 grid grid-cols-2 gap-3">
               <div>
-                <div className="text-[11px] text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
                   <Activity className="h-3 w-3" /> Sessions
                 </div>
                 <div className="text-2xl font-bold mt-0.5">{activeToday}</div>
                 <div className="text-[10px] text-slate-500">today</div>
               </div>
               <div>
-                <div className="text-[11px] text-slate-400 uppercase tracking-wide flex items-center gap-1">
+                <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
                   <SearchIcon className="h-3 w-3" /> Searches
                 </div>
                 <div className="text-2xl font-bold mt-0.5">{searches24h}</div>
@@ -132,27 +132,27 @@ export function LiveViewDialog({
             </section>
 
             {/* Customer behavior — what are live users doing */}
-            <section className="px-5 py-4 border-b border-white/10">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wide">Customer behavior</div>
+            <section className="px-5 py-4 border-b border-slate-200">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium">Customer behavior</div>
               <div className="grid grid-cols-3 gap-3 mt-2">
                 <div>
                   <div className="text-xl font-bold">{liveCount}</div>
-                  <div className="text-[10px] text-slate-400">Live</div>
+                  <div className="text-[10px] text-slate-500">Live</div>
                 </div>
                 <div>
                   <div className="text-xl font-bold">{recentCount}</div>
-                  <div className="text-[10px] text-slate-400">Recent</div>
+                  <div className="text-[10px] text-slate-500">Recent</div>
                 </div>
                 <div>
                   <div className="text-xl font-bold">{activeToday}</div>
-                  <div className="text-[10px] text-slate-400">Today</div>
+                  <div className="text-[10px] text-slate-500">Today</div>
                 </div>
               </div>
             </section>
 
             {/* Sessions by location */}
             <section className="px-5 py-4">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wide flex items-center gap-1 mb-2">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1 mb-2">
                 <MapPin className="h-3 w-3" /> Sessions by location
               </div>
               {byCountry.length === 0 ? (
@@ -169,9 +169,9 @@ export function LiveViewDialog({
                             {c.city && <span className="text-slate-500"> · {c.city}</span>}
                           </span>
                         </div>
-                        <span className="text-slate-300 font-semibold shrink-0">{c.count}</span>
+                        <span className="text-slate-700 font-semibold shrink-0">{c.count}</span>
                       </div>
-                      <div className="relative h-1.5 bg-white/5 rounded overflow-hidden mt-1">
+                      <div className="relative h-1.5 bg-slate-100 rounded overflow-hidden mt-1">
                         <div
                           className="absolute left-0 top-0 bottom-0 bg-gradient-to-r from-emerald-500 to-cyan-400 rounded"
                           style={{ width: `${(c.count / maxCount) * 100}%` }}
@@ -184,8 +184,8 @@ export function LiveViewDialog({
             </section>
 
             {/* Visitors list */}
-            <section className="px-5 py-4 border-t border-white/10">
-              <div className="text-[11px] text-slate-400 uppercase tracking-wide flex items-center gap-1 mb-2">
+            <section className="px-5 py-4 border-t border-slate-200">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1 mb-2">
                 <Users className="h-3 w-3" /> Who's here
               </div>
               {points.length === 0 ? (
@@ -206,20 +206,20 @@ export function LiveViewDialog({
 
           {/* ── Right side — BIG globe ────────────────────────── */}
           <div className="flex-1 relative overflow-hidden">
-            {/* Ambient glow */}
-            <div className="pointer-events-none absolute inset-0 opacity-60">
-              <div className="absolute top-1/4 left-1/3 h-[600px] w-[600px] rounded-full bg-emerald-500/10 blur-3xl" />
-              <div className="absolute bottom-0 right-10 h-[420px] w-[420px] rounded-full bg-violet-500/10 blur-3xl" />
+            {/* Ambient soft glow */}
+            <div className="pointer-events-none absolute inset-0">
+              <div className="absolute top-1/4 left-1/3 h-[600px] w-[600px] rounded-full bg-emerald-300/15 blur-3xl" />
+              <div className="absolute bottom-0 right-10 h-[420px] w-[420px] rounded-full bg-cyan-300/15 blur-3xl" />
             </div>
 
             {/* Legend */}
-            <div className="absolute top-4 right-5 z-10 flex items-center gap-3 text-[11px] text-slate-300">
+            <div className="absolute top-4 right-5 z-10 flex items-center gap-3 text-[11px] text-slate-600 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200">
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)]" />
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
                 Live (≤5m)
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.9)]" />
+                <span className="h-2 w-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" />
                 Recent (5–30m)
               </span>
             </div>
@@ -254,14 +254,14 @@ export function LiveViewDialog({
 }
 
 // Wrapper that sizes the globe to the available height (~80vh) rather than the
-// default 480px the inline card uses.
+// default 480px the inline card uses. Light theme to match the dialog.
 function LiveGlobeBig({ points }: { points: LivePoint[] }) {
   return (
     <div
       className="h-full w-full [&>div]:h-full [&>div]:min-h-0"
       style={{ minHeight: 0 }}
     >
-      <LiveGlobe points={points as any} dark tall />
+      <LiveGlobe points={points as any} tall />
     </div>
   )
 }

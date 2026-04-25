@@ -10,6 +10,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import Globe from "react-globe.gl"
+import * as THREE from "three"
+
+// Country outlines vendored at /public/world-110m.geojson so we don't depend
+// on a CDN that might rename or 404. Loaded once per session and cached.
+let countriesPromise: Promise<any[]> | null = null
+function loadCountries(): Promise<any[]> {
+  if (!countriesPromise) {
+    countriesPromise = fetch("/world-110m.geojson")
+      .then(r => r.json())
+      .then(j => Array.isArray(j?.features) ? j.features : [])
+      .catch(() => [])
+  }
+  return countriesPromise
+}
 
 export interface LivePoint {
   email:        string
@@ -34,6 +48,14 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
   const containerRef = useRef<HTMLDivElement | null>(null)
   const globeRef     = useRef<any>(null)
   const [dims, setDims] = useState<{ w: number; h: number }>({ w: 800, h: heightPx ?? (tall ? 720 : 560) })
+  const [countries, setCountries] = useState<any[]>([])
+
+  // Fetch country outlines once for the dot-matrix rendering.
+  useEffect(() => {
+    let cancelled = false
+    loadCountries().then(c => { if (!cancelled) setCountries(c) })
+    return () => { cancelled = true }
+  }, [])
 
   // Resize-aware width + height (height matters in `tall` mode so the globe
   // fills the fullscreen dialog).
@@ -68,10 +90,23 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
     [points],
   )
 
-  const atmosphereColor = "#10b981"       // emerald — matches the live dots
-  const globeImage = dark
-    ? "//unpkg.com/three-globe/example/img/earth-night.jpg"
-    : "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+  // Shopify Live View aesthetic: pale globe + teal dot continents.
+  // `dark` flips the palette so it sits well on either a light or dark card.
+  const sphereColor     = dark ? "#0f172a" : "#e6f8f1"  // base ball — slate / mint
+  const dotColor        = dark ? "#5eead4" : "#10b981"  // continent dots
+  const atmosphereColor = dark ? "#34d399" : "#10b981"
+
+  // Tinted base sphere — three.js material so the ball isn't raw gray.
+  const sphereMaterial = useMemo(() => {
+    const m = new THREE.MeshPhongMaterial({
+      color:       new THREE.Color(sphereColor),
+      transparent: false,
+      opacity:     1,
+      shininess:   12,
+      specular:    new THREE.Color(dark ? "#1e293b" : "#ffffff"),
+    })
+    return m
+  }, [sphereColor, dark])
 
   return (
     <div
@@ -84,10 +119,25 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
         width={dims.w}
         height={dims.h}
         backgroundColor="rgba(0,0,0,0)"
-        globeImageUrl={globeImage}
+
+        // No photo texture — we paint the surface ourselves and put dots on top.
+        globeImageUrl={null}
+        globeMaterial={sphereMaterial}
+        showGlobe={true}
+        showAtmosphere={true}
         atmosphereColor={atmosphereColor}
-        atmosphereAltitude={0.22}
+        atmosphereAltitude={0.18}
         showGraticules={false}
+
+        // Shopify-style dot-matrix continents
+        hexPolygonsData={countries}
+        hexPolygonGeoJsonGeometry={(d: any) => d.geometry}
+        hexPolygonResolution={3}
+        hexPolygonMargin={0.55}
+        hexPolygonUseDots={true}
+        hexPolygonDotResolution={2}
+        hexPolygonColor={() => dotColor}
+        hexPolygonAltitude={0.005}
 
         // Points — green for live, blue for recent
         pointsData={points}
