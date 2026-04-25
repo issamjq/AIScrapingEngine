@@ -10,7 +10,7 @@
 import { lazy, Suspense, useMemo } from "react"
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog"
 import { Badge } from "./ui/badge"
-import { Activity, MapPin, Search as SearchIcon, Users } from "lucide-react"
+import { Activity, MapPin, Search as SearchIcon, Users, X } from "lucide-react"
 
 const LiveGlobe = lazy(() => import("./LiveGlobe"))
 
@@ -212,8 +212,19 @@ export function LiveViewDialog({
               <div className="absolute bottom-0 right-10 h-[420px] w-[420px] rounded-full bg-cyan-300/15 blur-3xl" />
             </div>
 
-            {/* Legend */}
-            <div className="absolute top-4 right-5 z-10 flex items-center gap-3 text-[11px] text-slate-600 bg-white/70 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200">
+            {/* Explicit, visible close button — sits in the globe pane so the
+                left-panel doesn't get covered, and it's obviously clickable. */}
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              aria-label="Close Live View"
+              className="absolute top-4 right-5 z-20 h-9 w-9 rounded-full bg-white shadow-md border border-slate-200 hover:bg-slate-50 hover:border-slate-300 flex items-center justify-center transition-colors"
+            >
+              <X className="h-4 w-4 text-slate-700" />
+            </button>
+
+            {/* Legend — moved to bottom-right so it doesn't fight the close X */}
+            <div className="absolute bottom-5 right-5 z-10 flex items-center gap-3 text-[11px] text-slate-600 bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-full border border-slate-200 shadow-sm">
               <span className="flex items-center gap-1.5">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
                 Live (≤5m)
