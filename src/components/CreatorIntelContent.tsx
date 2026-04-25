@@ -926,7 +926,8 @@ export function CreatorIntelContent({ role }: Props) {
               <p className="text-[10px] text-gray-400 italic">Data processed by algorithm, for reference only.</p>
             </div>
           ) : (
-            <table className="w-full text-xs border-collapse">
+            <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse min-w-[920px]">
               <thead>
                 <tr className="bg-white border-b border-gray-200 sticky top-0 z-10">
                   <SortHeader col="product_name" label="Product Info" align="left" />
@@ -1081,6 +1082,7 @@ export function CreatorIntelContent({ role }: Props) {
                 })}
               </tbody>
             </table>
+            </div>
           )}
 
           {/* Footer note */}

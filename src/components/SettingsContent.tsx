@@ -599,15 +599,16 @@ export function SettingsContent({ role = "b2b", onNavigate, initialTab }: { role
   }
 
   return (
-    <div className="flex -m-4 sm:-m-6 min-h-[calc(100vh-56px)]">
-      <aside className="w-60 shrink-0 border-r pt-10 pl-8 pr-4 bg-background">
-        <p className="text-2xl font-bold mb-8 px-2">Settings</p>
-        <nav className="space-y-0.5">
+    <div className="flex flex-col md:flex-row -m-4 sm:-m-6 min-h-[calc(100vh-56px)]">
+      {/* Sidebar on desktop / horizontal tab bar on mobile */}
+      <aside className="md:w-60 md:shrink-0 md:border-r md:pt-10 md:pl-8 md:pr-4 bg-background border-b md:border-b-0">
+        <p className="hidden md:block text-2xl font-bold mb-8 px-2">Settings</p>
+        <nav className="flex md:flex-col gap-0.5 md:gap-0.5 px-3 md:px-0 py-3 md:py-0 overflow-x-auto md:overflow-visible">
           {TABS.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               onClick={() => changeTab(id)}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left ${
+              className={`flex items-center gap-2 md:gap-3 px-3 py-2 md:py-2.5 rounded-lg text-xs md:text-sm transition-colors whitespace-nowrap shrink-0 md:w-full md:text-left ${
                 active === id
                   ? "bg-muted font-medium text-foreground"
                   : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
@@ -620,8 +621,8 @@ export function SettingsContent({ role = "b2b", onNavigate, initialTab }: { role
         </nav>
       </aside>
 
-      <main className="flex-1 px-12 py-10 overflow-y-auto">
-        <h1 className="text-2xl font-semibold mb-8 capitalize">{active}</h1>
+      <main className="flex-1 px-4 sm:px-6 md:px-12 py-6 md:py-10 overflow-y-auto">
+        <h1 className="text-xl md:text-2xl font-semibold mb-6 md:mb-8 capitalize">{active}</h1>
         {renderTab()}
       </main>
     </div>

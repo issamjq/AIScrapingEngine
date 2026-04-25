@@ -92,7 +92,7 @@ export function UserDetailSheet({ email, open, onOpenChange }: Props) {
               </SheetDescription>
             </div>
             {data?.profile && (
-              <div className="flex items-center gap-1.5 shrink-0 text-[11px]">
+              <div className="flex items-center gap-1.5 shrink-0 text-[11px] flex-wrap justify-end max-w-[60%]">
                 <Badge variant="outline">{data.profile.role ?? "—"}</Badge>
                 {data.profile.plan_code && <Badge variant="secondary">{data.profile.plan_code}</Badge>}
                 <Badge
@@ -114,7 +114,7 @@ export function UserDetailSheet({ email, open, onOpenChange }: Props) {
         {data && (
           <div className="px-5 py-4">
             {/* Summary strip */}
-            <div className="grid grid-cols-4 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
               <SummaryCell icon={SearchIcon}  label="Searches" value={fmt(data.summary.total_searches)} />
               <SummaryCell icon={Activity}    label="Actions"  value={fmt(data.summary.total_actions)} sub={`${data.summary.actions_7d} in 7d`} />
               <SummaryCell icon={Wallet}      label="Credits used" value={fmt(data.summary.total_credits_used)} />
@@ -122,14 +122,16 @@ export function UserDetailSheet({ email, open, onOpenChange }: Props) {
             </div>
 
             <Tabs defaultValue="profile" className="w-full">
-              <TabsList className="w-full grid grid-cols-6 h-9">
-                <TabsTrigger value="profile"  className="text-xs"><User className="h-3 w-3 mr-1" />Profile</TabsTrigger>
-                <TabsTrigger value="wallet"   className="text-xs"><Wallet className="h-3 w-3 mr-1" />Wallet</TabsTrigger>
-                <TabsTrigger value="activity" className="text-xs"><Activity className="h-3 w-3 mr-1" />Activity</TabsTrigger>
-                <TabsTrigger value="searches" className="text-xs"><SearchIcon className="h-3 w-3 mr-1" />Searches</TabsTrigger>
-                <TabsTrigger value="limits"   className="text-xs"><Siren className="h-3 w-3 mr-1" />Limits</TabsTrigger>
-                <TabsTrigger value="audit"    className="text-xs"><ScrollText className="h-3 w-3 mr-1" />Audit</TabsTrigger>
-              </TabsList>
+              <div className="overflow-x-auto -mx-1 pb-1">
+                <TabsList className="inline-flex sm:grid sm:grid-cols-6 sm:w-full h-9 whitespace-nowrap">
+                  <TabsTrigger value="profile"  className="text-xs"><User className="h-3 w-3 mr-1" />Profile</TabsTrigger>
+                  <TabsTrigger value="wallet"   className="text-xs"><Wallet className="h-3 w-3 mr-1" />Wallet</TabsTrigger>
+                  <TabsTrigger value="activity" className="text-xs"><Activity className="h-3 w-3 mr-1" />Activity</TabsTrigger>
+                  <TabsTrigger value="searches" className="text-xs"><SearchIcon className="h-3 w-3 mr-1" />Searches</TabsTrigger>
+                  <TabsTrigger value="limits"   className="text-xs"><Siren className="h-3 w-3 mr-1" />Limits</TabsTrigger>
+                  <TabsTrigger value="audit"    className="text-xs"><ScrollText className="h-3 w-3 mr-1" />Audit</TabsTrigger>
+                </TabsList>
+              </div>
 
               {/* Profile */}
               <TabsContent value="profile" className="mt-4 space-y-3">

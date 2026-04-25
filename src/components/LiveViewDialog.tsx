@@ -77,10 +77,11 @@ export function LiveViewDialog({
       >
         <DialogTitle className="sr-only">Live View</DialogTitle>
 
-        <div className="flex h-full">
+        {/* On mobile: stack vertically (stats above globe). On md+: side-by-side. */}
+        <div className="flex flex-col md:flex-row h-full">
 
           {/* ── Left panel — stats ─────────────────────────────── */}
-          <div className="w-[340px] shrink-0 border-r border-slate-200 overflow-y-auto bg-white/50 backdrop-blur-sm">
+          <div className="md:w-[340px] md:shrink-0 md:border-r md:border-b-0 border-b border-slate-200 overflow-y-auto bg-white/50 backdrop-blur-sm max-h-[40vh] md:max-h-none">
 
             {/* Header */}
             <div className="px-5 pt-5 pb-3 border-b border-slate-200">

@@ -558,8 +558,8 @@ export function DashboardContent(_: { role?: string }) {
 
       {/* System Health Strip — at-a-glance green/amber/red (always visible, above tabs) */}
       <Card>
-        <CardContent className="py-3 px-4">
-          <div className="flex items-center gap-6 flex-wrap text-xs">
+        <CardContent className="py-3 px-3 sm:px-4">
+          <div className="flex items-center gap-3 sm:gap-6 flex-wrap text-xs">
             <HealthPill label="Database" ok={system_health.db_ok} value={`${system_health.db_latency_ms}ms`} />
             <HealthPill label="Errors 24h" ok={system_health.errors_24h < 3} warn={system_health.errors_24h >= 3 && system_health.errors_24h < 10} value={`${system_health.errors_24h}`} />
             <HealthPill label="Scrape success" ok={system_health.scrape_fail_rate < 0.15 || system_health.scrapes_24h < 10} warn={system_health.scrape_fail_rate >= 0.15 && system_health.scrape_fail_rate < 0.30} value={system_health.scrapes_24h > 0 ? `${Math.round((1 - system_health.scrape_fail_rate) * 100)}%` : "idle"} />
@@ -572,13 +572,15 @@ export function DashboardContent(_: { role?: string }) {
 
       {/* Tabs — splits the rest of the dashboard into focused sections */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
-        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="ops">Operations</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+          <TabsList className="inline-flex sm:grid sm:grid-cols-5 sm:w-full sm:max-w-2xl whitespace-nowrap">
+            <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+            <TabsTrigger value="users"    className="text-xs sm:text-sm">Users</TabsTrigger>
+            <TabsTrigger value="revenue"  className="text-xs sm:text-sm">Revenue</TabsTrigger>
+            <TabsTrigger value="activity" className="text-xs sm:text-sm">Activity</TabsTrigger>
+            <TabsTrigger value="ops"      className="text-xs sm:text-sm">Operations</TabsTrigger>
+          </TabsList>
+        </div>
 
       {/* ─── OVERVIEW TAB ──────────────────────────────────────── */}
       <TabsContent value="overview" className="space-y-6 mt-6">
