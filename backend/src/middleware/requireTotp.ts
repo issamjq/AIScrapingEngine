@@ -24,6 +24,7 @@ const SKIP_PREFIXES = [
   "/api/heartbeat",          // tab-presence ping (cheap, harmless)
   "/api/broadcasts/active",  // public anyway; included for safety
   "/api/allowed-users/me",   // role lookup that determines whether TOTP applies
+  "/api/allowed-users/signup", // brand-new users haven't been written yet → can't have TOTP
 ]
 
 export async function requireTotp(req: AuthRequest, res: Response, next: NextFunction) {
@@ -31,8 +32,11 @@ export async function requireTotp(req: AuthRequest, res: Response, next: NextFun
     const email = req.email
     if (!email) return next()                                      // not authenticated → let auth deal with it
 
-    // Skip whitelisted paths
-    if (SKIP_PREFIXES.some(p => req.path.startsWith(p))) return next()
+    // requireTotp is mounted per-route via app.use("/api/foo", requireTotp, router),
+    // so req.path is RELATIVE to the mount (e.g. "/me", not "/api/allowed-users/me").
+    // We compare against the ORIGINAL URL so the absolute-path skip-list works.
+    const fullPath = (req.originalUrl ?? "").split("?")[0]
+    if (SKIP_PREFIXES.some(p => fullPath.startsWith(p))) return next()
 
     const { rows } = await query(
       `SELECT totp_required, totp_enrolled_at, totp_secret IS NOT NULL AS has_secret

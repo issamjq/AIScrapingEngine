@@ -263,6 +263,13 @@ function AppInner() {
             setShowLanding(false)
             setAppState("denied")
           }
+          // 403 with a TOTP code means the gate is about to render — keep the
+          // app in "loading" so we don't flash AccessDenied. The TotpGate will
+          // take over via its own state, and once verified the user lands here
+          // again with a satisfied session.
+          else if (data.error?.code === "TOTP_REQUIRED" || data.error?.code === "TOTP_NOT_ENROLLED") {
+            setAppState("loading")
+          }
           else setAppState("denied")
         })
         .catch(() => setAppState("error"))

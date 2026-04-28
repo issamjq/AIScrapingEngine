@@ -73,7 +73,9 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
     return () => ro.disconnect()
   }, [tall, heightPx])
 
-  // Auto-rotate + camera framing
+  // Auto-rotate + camera framing. We also pause the rotation while the user
+  // is hovering / dragging so they can actually look at a region without it
+  // sliding away. Drag-to-orbit is the OrbitControls default and stays on.
   useEffect(() => {
     const g = globeRef.current
     if (!g) return
@@ -82,7 +84,27 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
     controls.autoRotateSpeed  = 0.4
     controls.enableZoom       = false   // keep page scroll intact
     controls.enablePan        = false
+    controls.enableRotate     = true    // explicit: drag to orbit
     g.pointOfView({ lat: 25, lng: 40, altitude: 2.4 }, 800)
+  }, [])
+
+  // Hover/drag pause — toggles autoRotate via OrbitControls.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const setRotate = (v: boolean) => {
+      const g = globeRef.current
+      if (!g) return
+      try { g.controls().autoRotate = v } catch { /* not yet ready */ }
+    }
+    const onEnter = () => setRotate(false)
+    const onLeave = () => setRotate(true)
+    el.addEventListener("pointerenter", onEnter)
+    el.addEventListener("pointerleave", onLeave)
+    return () => {
+      el.removeEventListener("pointerenter", onEnter)
+      el.removeEventListener("pointerleave", onLeave)
+    }
   }, [])
 
   const liveOnly = useMemo(
@@ -139,12 +161,15 @@ export default function LiveGlobe({ points, dark = false, tall = false, heightPx
         hexPolygonColor={() => dotColor}
         hexPolygonAltitude={0.005}
 
-        // Points — green for live, blue for recent
+        // Points — green for live, blue for recent.
+        // Altitude is kept low + equal so the markers render as flat dots
+        // instead of tall columns; the pulsing ring under live markers is
+        // what makes them stand out.
         pointsData={points}
         pointLat={(d: any) => d.lat}
         pointLng={(d: any) => d.lng}
-        pointAltitude={(d: any) => d.status === "live" ? 0.08 : 0.03}
-        pointRadius={(d: any) => d.status === "live" ? 0.55 : 0.38}
+        pointAltitude={0.02}
+        pointRadius={(d: any) => d.status === "live" ? 0.45 : 0.38}
         pointColor={(d: any) => d.status === "live" ? "#10b981" : "#3b82f6"}
         pointResolution={12}
         pointLabel={(d: any) => `

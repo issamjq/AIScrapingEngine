@@ -39,6 +39,21 @@ export function LandingPage({ onNavigateToApp }: Props) {
   const blogSlug = hash.startsWith("blog/") ? hash.slice(5) : null
   const onBlogList = hash === "blog"
 
+  // Scroll to in-page section after refresh — the browser's auto-scroll fires
+  // before the React tree paints, so we re-trigger after the marketing home
+  // has actually rendered. Skip blog routes since those are full-page swaps.
+  useEffect(() => {
+    if (blogSlug || onBlogList) return  // blog page handles its own scroll
+    if (!hash) return
+    // Wait one paint so the section element exists and has its final position.
+    const id = hash
+    const t = setTimeout(() => {
+      const el = document.getElementById(id)
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 100)
+    return () => clearTimeout(t)
+  }, [hash, blogSlug, onBlogList])
+
   // Capture UTM + referrer on first visit so signup can attribute the source.
   // Idempotent — only writes if nothing stored yet (preserves original channel).
   useEffect(() => {
