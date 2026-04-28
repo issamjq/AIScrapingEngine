@@ -2,6 +2,16 @@ import { useState, useEffect } from "react"
 import spinnerGif from "@/assets/spinner.gif"
 import { AuthProvider, useAuth } from "./context/AuthContext"
 import { useHeartbeat } from "./lib/useHeartbeat"
+import {
+  installTotpFetchInterceptor,
+  getTotpToken,
+  readCachedStatus,
+  writeCachedStatus,
+  setTotpToken,
+  clearCachedStatus,
+  type TotpStatus,
+} from "./lib/totp"
+import { TotpGate } from "./components/TotpGate"
 import { Toaster } from "./components/ui/sonner"
 import { LandingPage } from "./landing/LandingPage"
 import { DashboardLayout } from "./components/DashboardLayout"
@@ -154,6 +164,50 @@ function AppInner() {
   const [sidebarRefreshKey, setSidebarRefreshKey]       = useState(0)
   const [showLanding, setShowLanding]                   = useState(true)
 
+  // ─── TOTP gate state ──────────────────────────────────────────────────────
+  // Cached so the gate doesn't flash the wrong screen on refresh.
+  const [totpStatus, setTotpStatus] = useState<TotpStatus>(readCachedStatus)
+  const [totpStatusLoaded, setTotpStatusLoaded] = useState(false)
+  const [totpSatisfied, setTotpSatisfied]       = useState<boolean>(() => !!getTotpToken())
+
+  // Install fetch interceptor once. If the backend ever 403s with a TOTP code,
+  // we reset our local satisfied flag so the gate re-renders.
+  useEffect(() => {
+    installTotpFetchInterceptor(() => {
+      setTotpSatisfied(false)
+    })
+  }, [])
+
+  // Fetch live TOTP status whenever auth state changes.
+  useEffect(() => {
+    if (!user) {
+      // Sign-out hygiene: nuke the TOTP session + cached status.
+      setTotpToken(null)
+      clearCachedStatus()
+      setTotpSatisfied(false)
+      setTotpStatusLoaded(false)
+      setTotpStatus(readCachedStatus())
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const token = await user.getIdToken()
+        const r = await fetch(`${API}/api/auth/totp/status`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!r.ok) throw new Error(`${r.status}`)
+        const j = await r.json()
+        if (cancelled) return
+        const st: TotpStatus = j.data ?? { required: false, enrolled: false, enrolled_at: null }
+        setTotpStatus(st)
+        writeCachedStatus(st)
+      } catch { /* keep cached */ }
+      finally { if (!cancelled) setTotpStatusLoaded(true) }
+    })()
+    return () => { cancelled = true }
+  }, [user])
+
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
     const hashPage = window.location.hash.slice(1).split(":")[0]
@@ -248,6 +302,23 @@ function AppInner() {
   // Show landing page for unauthenticated users OR signed-in users who haven't picked a product yet
   if (!user || (appState === "ready" && showLanding)) {
     return <LandingPage onNavigateToApp={(page) => { setShowLanding(false); navigate(page) }} />
+  }
+
+  // TOTP gate — privileged users can't reach any in-app screen until they
+  // enroll Google Authenticator and verify a code. This sits above all other
+  // app states (loading / onboarding / denied / ready) so it always wins.
+  if (user && totpStatusLoaded && totpStatus.required && !totpSatisfied) {
+    return (
+      <TotpGate
+        status={totpStatus}
+        onPass={() => {
+          setTotpSatisfied(true)
+          // Refresh cached status so subsequent loads start in verify mode, not enroll
+          writeCachedStatus({ ...totpStatus, enrolled: true })
+          setTotpStatus(s => ({ ...s, enrolled: true }))
+        }}
+      />
+    )
   }
 
   if (user && appState === "loading") return <AppLoader />
