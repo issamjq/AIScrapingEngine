@@ -6,6 +6,7 @@ import {
   Package,
   Building2,
   Sparkles,
+  FileText,
 } from "lucide-react"
 import {
   Sidebar,
@@ -35,6 +36,7 @@ interface DashboardLayoutProps {
   currentPage:       string
   onNavigate:        (page: string) => void
   userRole?:         string
+  userBlogRole?:     "none" | "author" | "editor"
   userSubscription?: string | null
   onSelectHistory?:  (entry: any) => void
   sidebarRefreshKey?: number
@@ -68,7 +70,7 @@ function NavButton({
   )
 }
 
-export function DashboardLayout({ children, currentPage, onNavigate, userRole, userSubscription, onSelectHistory, sidebarRefreshKey }: DashboardLayoutProps) {
+export function DashboardLayout({ children, currentPage, onNavigate, userRole, userBlogRole = "none", userSubscription, onSelectHistory, sidebarRefreshKey }: DashboardLayoutProps) {
   const { user }  = useAuth()
   const isB2C     = userRole === "b2c"
   // B2C free plan hides Price Activity — pro/trial/weekly/monthly can see it
@@ -151,6 +153,18 @@ export function DashboardLayout({ children, currentPage, onNavigate, userRole, u
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <NavButton item={{ title: "User Portal", icon: Home, id: "dashboard" }} currentPage={currentPage} onNavigate={onNavigate} />
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            )}
+
+            {/* ── Blog admin — only when user has author/editor blog role
+                 (or is dev / owner who get implicit editor power) ── */}
+            {(userBlogRole !== "none" || userRole === "dev" || userRole === "owner") && (
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <NavButton item={{ title: "Blog", icon: FileText, id: "blog-admin" }} currentPage={currentPage} onNavigate={onNavigate} />
                   </SidebarMenu>
                 </SidebarGroupContent>
               </SidebarGroup>

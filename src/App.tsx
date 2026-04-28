@@ -39,6 +39,7 @@ import { ProductsContent }         from "./components/ProductsContent"
 import { CompaniesContent }        from "./components/CompaniesContent"
 import { PlansContent }            from "./components/PlansContent"
 import { CreatorIntelContent }     from "./components/CreatorIntelContent"
+import { BlogAdminContent }        from "./components/BlogAdminContent"
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
@@ -139,6 +140,7 @@ function ConnectionError({ onRetry }: { onRetry: () => void }) {
 const VALID_PAGES = new Set([
   "dashboard", "discovering", "price-board", "tracked-urls",
   "products", "companies", "plans", "settings", "creator-intel",
+  "blog-admin",
 ])
 const B2C_BLOCKED = new Set(["products", "companies"])
 
@@ -158,6 +160,7 @@ function AppInner() {
   const [appState, setAppState] = useState<AppState>("loading")
   const [retryCount, setRetryCount] = useState(0)
   const [userRole, setUserRole]                   = useState<string | null>(null)
+  const [userBlogRole, setUserBlogRole]           = useState<"none" | "author" | "editor">("none")
   const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<any | null>(null)
   const [discoveryResetKey, setDiscoveryResetKey]       = useState(0)
   const [userSubscription, setUserSubscription]         = useState<string | null>(null)
@@ -237,6 +240,7 @@ function AppInner() {
         .then((data) => {
           if (data.success) {
             setUserRole(data.data?.role ?? null)
+            setUserBlogRole((data.data?.blog_role ?? "none") as "none" | "author" | "editor")
             setUserSubscription(data.data?.subscription ?? null)
             // If user clicked a specific product on landing page, navigate there and enter app
             const navTarget = sessionStorage.getItem("spark_nav_target")
@@ -295,7 +299,11 @@ function AppInner() {
     if (currentPage === "dashboard" && user && !ADMIN_EMAILS.has(user.email ?? "")) {
       setCurrentPage("discovering")
     }
-  }, [isB2C, currentPage, user])
+    // Redirect blog-admin away from anyone without permission
+    if (currentPage === "blog-admin" && userBlogRole === "none" && userRole !== "dev" && userRole !== "owner") {
+      setCurrentPage("discovering")
+    }
+  }, [isB2C, currentPage, user, userBlogRole, userRole])
 
   if (loading) return <AppLoader />
 
@@ -353,13 +361,14 @@ function AppInner() {
 
       case "plans":           return <PlansContent role={role} />
       case "creator-intel":   return <CreatorIntelContent role={role} />
+      case "blog-admin":      return <BlogAdminContent role={role} blogRole={userBlogRole} />
 
       default:                return <DashboardContent role={role} />
     }
   }
 
   return (
-    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} userSubscription={userSubscription} onSelectHistory={selectHistory} sidebarRefreshKey={sidebarRefreshKey}>
+    <DashboardLayout currentPage={currentPage} onNavigate={navigate} userRole={userRole ?? "b2b"} userBlogRole={userBlogRole} userSubscription={userSubscription} onSelectHistory={selectHistory} sidebarRefreshKey={sidebarRefreshKey}>
       {renderContent()}
     </DashboardLayout>
   )

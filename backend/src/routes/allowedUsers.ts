@@ -27,7 +27,7 @@ function getClientIp(req: AuthRequest): string {
 
 async function getCallerUser(email: string) {
   const { rows } = await query(
-    `SELECT id, email, name, role, company_name, is_active, subscription,
+    `SELECT id, email, name, role, blog_role, company_name, is_active, subscription,
             trial_ends_at, billing_renews_at, created_at, updated_at
      FROM allowed_users WHERE email = $1 AND is_active = true LIMIT 1`,
     [email]
