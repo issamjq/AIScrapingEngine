@@ -29,6 +29,7 @@ import { suggestionsRouter }        from "./routes/suggestions"
 import { creatorIntelRouter }       from "./routes/creatorIntel"
 import { adminStatsRouter }        from "./routes/adminStats"
 import { adminUserRouter }         from "./routes/adminUser"
+import { superAdminRouter }        from "./routes/superAdmin"
 import { heartbeatRouter }         from "./routes/heartbeat"
 import { totpRouter }              from "./routes/totp"
 import { requireTotp }             from "./middleware/requireTotp"
@@ -98,6 +99,7 @@ app.use("/api/suggestions",          requireAuth, requireTotp, suggestionsRouter
 app.use("/api/creator-intel",        requireAuth, requireTotp, creatorIntelRouter)
 app.use("/api/admin/stats",          requireAuth, requireTotp, adminStatsRouter)
 app.use("/api/admin/user",           requireAuth, requireTotp, adminUserRouter)
+app.use("/api/admin/super",          requireAuth, requireTotp, superAdminRouter)
 app.use("/api/heartbeat",            requireAuth, heartbeatRouter   /* heartbeat is in TOTP skip-list */)
 
 // TOTP enrollment + verification — must be reachable BEFORE TOTP is satisfied,

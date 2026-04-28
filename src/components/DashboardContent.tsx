@@ -10,6 +10,7 @@ const LiveGlobe = lazy(() => import("./LiveGlobe"))
 
 import { UserDetailSheet } from "./UserDetailSheet"
 import { LiveViewDialog }  from "./LiveViewDialog"
+import { SuperAdminTab }   from "./SuperAdminTab"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card"
 import { Badge } from "./ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs"
@@ -358,7 +359,13 @@ export function DashboardContent(_: { role?: string }) {
   const [broadcastSaving, setBroadcastSaving] = useState(false)
   const [selectedUser, setSelectedUser] = useState<string | null>(null)
   const [liveOpen, setLiveOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"overview" | "users" | "revenue" | "activity" | "ops">("overview")
+  const [activeTab, setActiveTab] = useState<"overview" | "users" | "revenue" | "activity" | "ops" | "super">("overview")
+
+  // Super-admin tab (user management) is gated to mhmdkrissaty + issa.mjq —
+  // currently identical to ADMIN_EMAILS but kept as a separate set so we can
+  // grant lesser admin roles dashboard access without giving them user-mgmt.
+  const SUPER_ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "issa.mjq@gmail.com"])
+  const isSuperAdmin = SUPER_ADMIN_EMAILS.has(user?.email ?? "")
 
   const isAdmin = ADMIN_EMAILS.has(user?.email ?? "")
 
@@ -573,12 +580,19 @@ export function DashboardContent(_: { role?: string }) {
       {/* Tabs — splits the rest of the dashboard into focused sections */}
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
         <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
-          <TabsList className="inline-flex sm:grid sm:grid-cols-5 sm:w-full sm:max-w-2xl whitespace-nowrap">
+          <TabsList className={`inline-flex sm:grid ${isSuperAdmin ? "sm:grid-cols-6 sm:max-w-3xl" : "sm:grid-cols-5 sm:max-w-2xl"} sm:w-full whitespace-nowrap`}>
             <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
             <TabsTrigger value="users"    className="text-xs sm:text-sm">Users</TabsTrigger>
             <TabsTrigger value="revenue"  className="text-xs sm:text-sm">Revenue</TabsTrigger>
             <TabsTrigger value="activity" className="text-xs sm:text-sm">Activity</TabsTrigger>
             <TabsTrigger value="ops"      className="text-xs sm:text-sm">Operations</TabsTrigger>
+            {isSuperAdmin && (
+              <TabsTrigger value="super" className="text-xs sm:text-sm gap-1">
+                <span className="text-amber-500">👑</span>
+                <span className="hidden sm:inline">Super Admin</span>
+                <span className="sm:hidden">Super</span>
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -2069,6 +2083,13 @@ export function DashboardContent(_: { role?: string }) {
       </div>
 
       </TabsContent>
+
+      {/* ─── SUPER ADMIN TAB (owner + dev only) ───────────────── */}
+      {isSuperAdmin && (
+        <TabsContent value="super" className="space-y-6 mt-6">
+          <SuperAdminTab />
+        </TabsContent>
+      )}
 
       </Tabs>
 
