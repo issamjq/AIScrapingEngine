@@ -33,6 +33,7 @@ import { superAdminRouter }        from "./routes/superAdmin"
 import { heartbeatRouter }         from "./routes/heartbeat"
 import { totpRouter }              from "./routes/totp"
 import { requireTotp }             from "./middleware/requireTotp"
+import { blogPublicRouter, blogAdminRouter } from "./routes/blog"
 import { broadcastsRouter }        from "./routes/broadcasts"
 import { timingMiddleware }        from "./middleware/timing"
 import { logError }                from "./services/errorLogger"
@@ -80,6 +81,9 @@ app.use("/api/users",    usersRouter)
 app.use("/api/scraping", scrapingRouter)
 app.use("/api/content",  contentRouter)
 
+// Public blog reads — anonymous landing-page visitors.
+app.use("/api/blog",     blogPublicRouter)
+
 // ── RSP / scraping-engine routes (all protected by requireAuth) ──
 app.use("/api/companies",            requireAuth, requireTotp, companiesRouter)
 app.use("/api/products",             requireAuth, requireTotp, productsRouter)
@@ -100,6 +104,7 @@ app.use("/api/creator-intel",        requireAuth, requireTotp, creatorIntelRoute
 app.use("/api/admin/stats",          requireAuth, requireTotp, adminStatsRouter)
 app.use("/api/admin/user",           requireAuth, requireTotp, adminUserRouter)
 app.use("/api/admin/super",          requireAuth, requireTotp, superAdminRouter)
+app.use("/api/blog/admin",           requireAuth, requireTotp, blogAdminRouter)
 app.use("/api/heartbeat",            requireAuth, heartbeatRouter   /* heartbeat is in TOTP skip-list */)
 
 // TOTP enrollment + verification — must be reachable BEFORE TOTP is satisfied,
