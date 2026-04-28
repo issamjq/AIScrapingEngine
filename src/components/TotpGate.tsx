@@ -53,9 +53,15 @@ export function TotpGate({ status, onPass }: Props) {
         </div>
 
         <div className="rounded-xl border bg-white shadow-sm p-5">
-          {mode === "enroll"  && <EnrollSection onDone={onPass} />}
-          {mode === "verify"  && <VerifySection onDone={onPass} switchToBackup={() => setMode("backup")} />}
-          {mode === "backup"  && <BackupSection onDone={onPass} switchToCode={() => setMode("verify")} />}
+          {status.server_configured === false ? (
+            <ServerMisconfigured reason={status.server_config_error ?? "TOTP not configured on the server."} />
+          ) : (
+            <>
+              {mode === "enroll"  && <EnrollSection onDone={onPass} />}
+              {mode === "verify"  && <VerifySection onDone={onPass} switchToBackup={() => setMode("backup")} />}
+              {mode === "backup"  && <BackupSection onDone={onPass} switchToCode={() => setMode("verify")} />}
+            </>
+          )}
         </div>
 
         {/* Footer — escape hatch */}
@@ -345,6 +351,27 @@ function BackupSection({ onDone, switchToCode }: { onDone: () => void; switchToC
       >
         ← Back to authenticator code
       </button>
+    </div>
+  )
+}
+
+function ServerMisconfigured({ reason }: { reason: string }) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-300 p-3 text-amber-900 text-xs">
+        <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+        <div>
+          <div className="font-semibold mb-1">Server not configured for TOTP</div>
+          <div>{reason}</div>
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        This is a one-time setup step the server admin needs to do. Once
+        <code className="mx-1 px-1 py-0.5 bg-slate-100 rounded">TOTP_ENCRYPTION_KEY</code>
+        and
+        <code className="mx-1 px-1 py-0.5 bg-slate-100 rounded">TOTP_SESSION_SECRET</code>
+        are set in the backend env, refresh this page.
+      </p>
     </div>
   )
 }

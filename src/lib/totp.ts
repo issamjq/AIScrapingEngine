@@ -17,12 +17,17 @@ const TOKEN_KEY  = "spark_totp_session"
 const STATUS_KEY = "spark_totp_status_v1"
 
 export interface TotpStatus {
-  required:    boolean
-  enrolled:    boolean
-  enrolled_at: string | null
+  required:            boolean
+  enrolled:            boolean
+  enrolled_at:         string | null
+  server_configured?:  boolean
+  server_config_error?: string | null
 }
 
-export const TOTP_DEFAULTS: TotpStatus = { required: false, enrolled: false, enrolled_at: null }
+export const TOTP_DEFAULTS: TotpStatus = {
+  required: false, enrolled: false, enrolled_at: null,
+  server_configured: true, server_config_error: null,
+}
 
 // ── token store ──────────────────────────────────────────────────────────────
 export function getTotpToken(): string | null {

@@ -22,13 +22,45 @@ import { logActivity } from "../services/activityLogger"
 
 export const totpRouter = Router()
 
+// Configuration health check — used by every write endpoint so we return a
+// crystal-clear error if the env vars aren't set on this server.
+function totpReady(): { ok: true } | { ok: false; reason: string } {
+  const enc = process.env.TOTP_ENCRYPTION_KEY ?? ""
+  const sig = process.env.TOTP_SESSION_SECRET ?? ""
+  if (!enc) return { ok: false, reason: "TOTP_ENCRYPTION_KEY not set on the server. Add it to Render env vars (32-byte base64)." }
+  if (!sig) return { ok: false, reason: "TOTP_SESSION_SECRET not set on the server. Add it to Render env vars (32-byte base64)." }
+  try {
+    if (Buffer.from(enc, "base64").length !== 32) {
+      return { ok: false, reason: "TOTP_ENCRYPTION_KEY decodes to wrong length. Must be a 32-byte base64 value (44 chars including the trailing =)." }
+    }
+  } catch {
+    return { ok: false, reason: "TOTP_ENCRYPTION_KEY is not valid base64." }
+  }
+  return { ok: true }
+}
+
+function configError(res: any, reason: string) {
+  return res.status(503).json({
+    success: false,
+    error: { message: reason, code: "TOTP_NOT_CONFIGURED" },
+  })
+}
+
 // ── status — frontend calls this on every page load to know what to render ──
 totpRouter.get("/status", async (req, res, next) => {
   try {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false })
     const status = await getStatus(email)
-    res.json({ success: true, data: status })
+    const cfg    = totpReady()
+    res.json({
+      success: true,
+      data: {
+        ...status,
+        server_configured: cfg.ok,
+        server_config_error: cfg.ok ? null : cfg.reason,
+      },
+    })
   } catch (err) { next(err) }
 })
 
@@ -38,15 +70,28 @@ totpRouter.post("/enroll", async (req, res, next) => {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false })
 
+    const cfg = totpReady()
+    if (!cfg.ok) return configError(res, cfg.reason)
+
     const status = await getStatus(email)
     if (status.enrolled) {
       return res.status(409).json({
         success: false,
-        error: { message: "TOTP already enrolled. Disable it first if you need to re-enroll.", code: "ALREADY_ENROLLED" },
+        error: { message: "TOTP already enrolled. Ask the owner to reset your TOTP if you need to re-pair.", code: "ALREADY_ENROLLED" },
       })
     }
 
-    const bundle = await generateEnrollment(email)
+    let bundle
+    try {
+      bundle = await generateEnrollment(email)
+    } catch (e: any) {
+      // Surface the real cause to the admin instead of a generic 500.
+      console.error("[TOTP] generateEnrollment failed:", e?.message, e?.stack)
+      return res.status(500).json({
+        success: false,
+        error: { message: `Enrollment failed: ${e?.message ?? "unknown error"}`, code: "ENROLL_FAILED" },
+      })
+    }
 
     // Stash the secret + hashes in a session-scoped pending row keyed by email.
     // We use the totp_secret column itself but DON'T set totp_enrolled_at, so
@@ -80,6 +125,9 @@ totpRouter.post("/verify-enrollment", async (req, res, next) => {
   try {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false })
+
+    const cfg = totpReady()
+    if (!cfg.ok) return configError(res, cfg.reason)
 
     const code   = String(req.body?.code ?? "").trim()
     const hashes = Array.isArray(req.body?.backup_hashes) ? req.body.backup_hashes : []
@@ -122,6 +170,9 @@ totpRouter.post("/verify", async (req, res, next) => {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false })
 
+    const cfg = totpReady()
+    if (!cfg.ok) return configError(res, cfg.reason)
+
     const code = String(req.body?.code ?? "").trim()
     const ok   = await verifyTotp(email, code)
     if (!ok) {
@@ -139,6 +190,9 @@ totpRouter.post("/use-backup", async (req, res, next) => {
   try {
     const email = (req as AuthRequest).email
     if (!email) return res.status(401).json({ success: false })
+
+    const cfg = totpReady()
+    if (!cfg.ok) return configError(res, cfg.reason)
 
     const code = String(req.body?.code ?? "").trim()
     const ok   = await consumeBackupCode(email, code)
