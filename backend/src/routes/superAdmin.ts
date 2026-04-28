@@ -76,7 +76,7 @@ superAdminRouter.get("/users", async (req, res, next) => {
     }
 
     const sql = `
-      SELECT email, name, company_name, role, subscription, plan_code, billing_interval,
+      SELECT email, name, company_name, role, blog_role, subscription, plan_code, billing_interval,
              is_active, signup_country, signup_country_code, signup_city,
              trial_ends_at, billing_renews_at, last_seen_at, totp_required,
              totp_enrolled_at IS NOT NULL AS totp_enrolled,
@@ -151,11 +151,15 @@ superAdminRouter.patch("/users/:email", async (req, res, next) => {
       params.push(req.body.plan_code || null)
       updates.push(`plan_code = $${params.length}`)
     }
+    if (typeof req.body?.blog_role === "string" && ["none","author","editor"].includes(req.body.blog_role)) {
+      params.push(req.body.blog_role)
+      updates.push(`blog_role = $${params.length}`)
+    }
 
     if (updates.length === 0) return res.status(400).json({ error: "no valid updates" })
 
     const { rows } = await query(
-      `UPDATE allowed_users SET ${updates.join(", ")}, updated_at = NOW() WHERE email = $1 RETURNING email, role, subscription, plan_code, is_active, totp_required`,
+      `UPDATE allowed_users SET ${updates.join(", ")}, updated_at = NOW() WHERE email = $1 RETURNING email, role, blog_role, subscription, plan_code, is_active, totp_required`,
       params,
     )
 

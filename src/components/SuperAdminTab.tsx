@@ -25,6 +25,7 @@ interface SuperUser {
   name:                string | null
   company_name:        string | null
   role:                string
+  blog_role:           "none" | "author" | "editor"
   subscription:        string
   plan_code:           string | null
   billing_interval:    string | null
@@ -42,8 +43,9 @@ interface SuperUser {
   created_at:          string
 }
 
-const ROLE_OPTIONS = ["b2b", "b2c", "admin", "dev", "owner"] as const
-const SUB_OPTIONS  = ["free", "trial", "paid"] as const
+const ROLE_OPTIONS      = ["b2b", "b2c", "admin", "dev", "owner"] as const
+const SUB_OPTIONS       = ["free", "trial", "paid"] as const
+const BLOG_ROLE_OPTIONS = ["none", "author", "editor"] as const
 
 function flagOf(code: string | null | undefined): string {
   if (!code || code.length !== 2) return ""
@@ -256,11 +258,12 @@ export function SuperAdminTab() {
       <Card>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-xs min-w-[920px]">
+            <table className="w-full text-xs min-w-[1040px]">
               <thead>
                 <tr className="bg-muted/40 border-b">
                   <th className="text-left  px-3 py-2 font-semibold">User</th>
                   <th className="text-left  px-3 py-2 font-semibold">Role</th>
+                  <th className="text-left  px-3 py-2 font-semibold">Blog</th>
                   <th className="text-left  px-3 py-2 font-semibold">Plan</th>
                   <th className="text-left  px-3 py-2 font-semibold">Country</th>
                   <th className="text-left  px-3 py-2 font-semibold">Last seen</th>
@@ -270,9 +273,9 @@ export function SuperAdminTab() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-muted-foreground"><Loader2 className="h-4 w-4 mx-auto animate-spin" /></td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-muted-foreground"><Loader2 className="h-4 w-4 mx-auto animate-spin" /></td></tr>
                 ) : users.length === 0 ? (
-                  <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No users found</td></tr>
+                  <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">No users found</td></tr>
                 ) : users.map(u => {
                   const { Icon, cls } = roleBadge(u.role)
                   const isMe = u.email.toLowerCase() === myEmail.toLowerCase()
@@ -297,6 +300,23 @@ export function SuperAdminTab() {
                           {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                         {!u.is_active && <span className="block text-[9px] text-red-600 mt-0.5">blocked</span>}
+                      </td>
+                      <td className="px-3 py-2">
+                        {/* Blog role dropdown — none / author / editor.
+                            dev/owner accounts are auto-editor in the backend, but
+                            this column still shows their stored blog_role. */}
+                        <select
+                          value={u.blog_role ?? "none"}
+                          disabled={busy}
+                          onChange={e => patch(u.email, { blog_role: e.target.value })}
+                          className={`text-[11px] rounded border px-1.5 py-0.5 ${
+                            u.blog_role === "editor" ? "bg-amber-100 text-amber-800 border-amber-300"
+                            : u.blog_role === "author" ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-background text-muted-foreground"
+                          }`}
+                        >
+                          {BLOG_ROLE_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
                       </td>
                       <td className="px-3 py-2">
                         <select
