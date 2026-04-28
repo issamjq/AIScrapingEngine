@@ -30,6 +30,8 @@ import { creatorIntelRouter }       from "./routes/creatorIntel"
 import { adminStatsRouter }        from "./routes/adminStats"
 import { adminUserRouter }         from "./routes/adminUser"
 import { heartbeatRouter }         from "./routes/heartbeat"
+import { totpRouter }              from "./routes/totp"
+import { requireTotp }             from "./middleware/requireTotp"
 import { broadcastsRouter }        from "./routes/broadcasts"
 import { timingMiddleware }        from "./middleware/timing"
 import { logError }                from "./services/errorLogger"
@@ -78,25 +80,30 @@ app.use("/api/scraping", scrapingRouter)
 app.use("/api/content",  contentRouter)
 
 // ── RSP / scraping-engine routes (all protected by requireAuth) ──
-app.use("/api/companies",            requireAuth, companiesRouter)
-app.use("/api/products",             requireAuth, productsRouter)
-app.use("/api/product-company-urls", requireAuth, productCompanyUrlsRouter)
-app.use("/api/price-snapshots",      requireAuth, priceSnapshotsRouter)
-app.use("/api/sync-runs",            requireAuth, syncRunsRouter)
-app.use("/api/scraper",              requireAuth, scraperRouter)
-app.use("/api/discovery",            requireAuth, discoveryRouter)
-app.use("/api/stats",                requireAuth, statsRouter)
-app.use("/api/allowed-users",        requireAuth, allowedUsersRouter)
-app.use("/api/plans",                requireAuth, plansRouter)
-app.use("/api/wallet",               requireAuth, walletRouter)
-app.use("/api/currency-rates",       requireAuth, currencyRatesRouter)
-app.use("/api/export",               requireAuth, exportRouter)
-app.use("/api/search",               requireAuth, searchRouter)
-app.use("/api/suggestions",          requireAuth, suggestionsRouter)
-app.use("/api/creator-intel",        requireAuth, creatorIntelRouter)
-app.use("/api/admin/stats",          requireAuth, adminStatsRouter)
-app.use("/api/admin/user",           requireAuth, adminUserRouter)
-app.use("/api/heartbeat",            requireAuth, heartbeatRouter)
+app.use("/api/companies",            requireAuth, requireTotp, companiesRouter)
+app.use("/api/products",             requireAuth, requireTotp, productsRouter)
+app.use("/api/product-company-urls", requireAuth, requireTotp, productCompanyUrlsRouter)
+app.use("/api/price-snapshots",      requireAuth, requireTotp, priceSnapshotsRouter)
+app.use("/api/sync-runs",            requireAuth, requireTotp, syncRunsRouter)
+app.use("/api/scraper",              requireAuth, requireTotp, scraperRouter)
+app.use("/api/discovery",            requireAuth, requireTotp, discoveryRouter)
+app.use("/api/stats",                requireAuth, requireTotp, statsRouter)
+app.use("/api/allowed-users",        requireAuth, requireTotp, allowedUsersRouter)
+app.use("/api/plans",                requireAuth, requireTotp, plansRouter)
+app.use("/api/wallet",               requireAuth, requireTotp, walletRouter)
+app.use("/api/currency-rates",       requireAuth, requireTotp, currencyRatesRouter)
+app.use("/api/export",               requireAuth, requireTotp, exportRouter)
+app.use("/api/search",               requireAuth, requireTotp, searchRouter)
+app.use("/api/suggestions",          requireAuth, requireTotp, suggestionsRouter)
+app.use("/api/creator-intel",        requireAuth, requireTotp, creatorIntelRouter)
+app.use("/api/admin/stats",          requireAuth, requireTotp, adminStatsRouter)
+app.use("/api/admin/user",           requireAuth, requireTotp, adminUserRouter)
+app.use("/api/heartbeat",            requireAuth, heartbeatRouter   /* heartbeat is in TOTP skip-list */)
+
+// TOTP enrollment + verification — must be reachable BEFORE TOTP is satisfied,
+// hence no requireTotp here. The skip-list inside requireTotp also covers
+// /api/auth/totp/* for any other middleware ordering.
+app.use("/api/auth/totp",            requireAuth, totpRouter)
 // Broadcasts: GET /active is intentionally public (so the landing page can
 // show the banner to anonymous visitors). The admin write/list endpoints
 // inside the router apply requireAuth themselves.
