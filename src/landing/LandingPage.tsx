@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useAuth } from "@/context/AuthContext"
 import { LandingNav }           from "./LandingNav"
 import { HeroSection }          from "./HeroSection"
@@ -15,6 +15,8 @@ import { LandingCTA }           from "./LandingCTA"
 import { LandingFooter }        from "./LandingFooter"
 import { ScrollProgressBar }    from "./ScrollProgressBar"
 import { BroadcastBanner }      from "@/components/BroadcastBanner"
+import { BlogSection }          from "./BlogSection"
+import { BlogPostPage }         from "./BlogPostPage"
 
 interface Props {
   onNavigateToApp?: (page: string) => void
@@ -23,6 +25,19 @@ interface Props {
 export function LandingPage({ onNavigateToApp }: Props) {
   const { user, signInWithGoogle, logout } = useAuth()
   const isLoggedIn = !!user
+
+  // ── Hash routing inside the landing page ──
+  // - #blog              → list view  (BlogSection)
+  // - #blog/some-slug    → post view  (BlogPostPage)
+  // - everything else    → marketing home
+  const [hash, setHash] = useState<string>(() => window.location.hash.slice(1))
+  useEffect(() => {
+    const onHash = () => setHash(window.location.hash.slice(1))
+    window.addEventListener("hashchange", onHash)
+    return () => window.removeEventListener("hashchange", onHash)
+  }, [])
+  const blogSlug = hash.startsWith("blog/") ? hash.slice(5) : null
+  const onBlogList = hash === "blog"
 
   // Capture UTM + referrer on first visit so signup can attribute the source.
   // Idempotent — only writes if nothing stored yet (preserves original channel).
@@ -74,7 +89,27 @@ export function LandingPage({ onNavigateToApp }: Props) {
         userPhotoURL={user?.photoURL ?? undefined}
       />
 
-      <HeroSection onAction={handleAction} isLoggedIn={isLoggedIn} />
+      {/* Hash-routing inside landing: blog list, single post, or marketing */}
+      {blogSlug ? (
+        <BlogPostPage
+          slug={blogSlug}
+          onBack={() => { window.location.hash = "blog" }}
+        />
+      ) : onBlogList ? (
+        <BlogSection />
+      ) : (
+        <MarketingHome onAction={handleAction} isLoggedIn={isLoggedIn} />
+      )}
+    </div>
+  )
+}
+
+// ─── Marketing home (extracted so the routing block above stays readable) ───
+
+function MarketingHome({ onAction, isLoggedIn }: { onAction: (target?: string) => void; isLoggedIn: boolean }) {
+  return (
+    <>
+      <HeroSection onAction={onAction} isLoggedIn={isLoggedIn} />
 
       <StatsBar />
 
@@ -142,9 +177,9 @@ export function LandingPage({ onNavigateToApp }: Props) {
 
       <FAQSection />
 
-      <LandingCTA onAction={handleAction} isLoggedIn={isLoggedIn} />
+      <LandingCTA onAction={onAction} isLoggedIn={isLoggedIn} />
 
       <LandingFooter />
-    </div>
+    </>
   )
 }
