@@ -27,7 +27,11 @@ import { query } from "../db"
 const TOTP_ENCRYPTION_KEY = process.env.TOTP_ENCRYPTION_KEY ?? ""
 const TOTP_SESSION_SECRET = process.env.TOTP_SESSION_SECRET ?? ""
 const ISSUER              = "Spark AI"
-export const TOTP_SESSION_TTL_MS = 30 * 60_000  // 30 min rolling
+// 12-hour session — long enough to cover a normal workday so admins aren't
+// re-prompted every refresh. The session still dies when the tab closes
+// (sessionStorage on the frontend), which is the boundary that matters
+// for shared-device safety.
+export const TOTP_SESSION_TTL_MS = 12 * 60 * 60_000
 
 if (!TOTP_ENCRYPTION_KEY || !TOTP_SESSION_SECRET) {
   // Don't crash — but log loudly. Routes will refuse enrollment if these are missing.

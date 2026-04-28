@@ -84,16 +84,28 @@ export function installTotpFetchInterceptor(onTotpFailure: () => void) {
     const resp = await orig(input, init)
 
     // 403 with TOTP code → drop token + ask App.tsx to re-show the gate.
+    // EXCEPTION: skip-list endpoints (/me, /heartbeat, /broadcasts/active,
+    // /signup, /auth/totp/*) should never legitimately return a TOTP error.
+    // If they do, it's a server bug — don't punish the user by clearing
+    // their session and bouncing them back to the gate on every refresh.
     if (resp.status === 403 && typeof url === "string" && url.startsWith(API_BASE)) {
-      try {
-        const clone = resp.clone()
-        const j: any = await clone.json().catch(() => null)
-        const code = j?.error?.code
-        if (code === "TOTP_REQUIRED" || code === "TOTP_NOT_ENROLLED") {
-          setTotpToken(null)
-          onTotpFailure()
-        }
-      } catch { /* ignore body-parse errors */ }
+      const isSkipListPath =
+        url.includes("/api/allowed-users/me")     ||
+        url.includes("/api/allowed-users/signup") ||
+        url.includes("/api/auth/totp")            ||
+        url.includes("/api/heartbeat")            ||
+        url.includes("/api/broadcasts/active")
+      if (!isSkipListPath) {
+        try {
+          const clone = resp.clone()
+          const j: any = await clone.json().catch(() => null)
+          const code = j?.error?.code
+          if (code === "TOTP_REQUIRED" || code === "TOTP_NOT_ENROLLED") {
+            setTotpToken(null)
+            onTotpFailure()
+          }
+        } catch { /* ignore body-parse errors */ }
+      }
     }
 
     return resp
