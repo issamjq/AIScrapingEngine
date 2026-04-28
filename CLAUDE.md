@@ -38,10 +38,13 @@ The project is fully role-aware. Every page component receives a `role` prop (`"
 | Stores | ✅ | ❌ hidden + guarded | ✅ |
 | Credits | deducted | deducted (1–3/search) | bypassed (unlimited) |
 
-### Dev account
-- `karaaliissa@gmail.com` → `role = "dev"`, `subscription = "paid"`, unlimited credits
-- Dev bypasses all credit deductions (backend `UNLIMITED_ROLES = ["dev", "owner"]`)
-- Dev sees all pages including B2B-only ones
+### Privileged accounts (require TOTP / Google Authenticator at login)
+- `mhmdkrissaty@gmail.com` → `role = "owner"` (super-admin) — only account that can manage other users (block, promote, demote, delete)
+- `issa.mjq@gmail.com` → `role = "dev"` — full dev access, also gets the Super Admin tab for testing
+- Dev + owner bypass all credit deductions (backend `UNLIMITED_ROLES = ["dev", "owner"]`)
+- Both see every page in the app
+- `karaaliissa@gmail.com` → demoted to `role = "b2b"` (no longer privileged)
+- Admin-allowlist email set lives in 5 places: `App.tsx`, `DashboardContent.tsx`, `routes/adminStats.ts`, `routes/adminUser.ts`, `routes/broadcasts.ts`. Update all together.
 
 ### Test B2B account
 - `karooorak3@gmail.com` — B2B user with 14 stores seeded in Neon (with logo_url)

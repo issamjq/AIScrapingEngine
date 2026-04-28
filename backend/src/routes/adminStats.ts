@@ -1,7 +1,7 @@
 /**
  * Admin Stats — owner-only endpoint.
  * Returns full platform metrics: users, scrapes, searches, revenue signals, daily activity.
- * Only accessible to mhmdkrissaty@gmail.com and karaaliissa@gmail.com.
+ * Only accessible to mhmdkrissaty@gmail.com and issa.mjq@gmail.com.
  */
 
 import { Router } from "express"
@@ -15,7 +15,7 @@ export const adminStatsRouter = Router()
 
 const ADMIN_EMAILS = new Set([
   "mhmdkrissaty@gmail.com",
-  "karaaliissa@gmail.com",
+  "issa.mjq@gmail.com",
 ])
 
 /**

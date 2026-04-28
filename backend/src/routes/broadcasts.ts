@@ -14,7 +14,7 @@ import { getClientIp } from "../services/activityLogger"
 
 export const broadcastsRouter = Router()
 
-const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "karaaliissa@gmail.com"])
+const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "issa.mjq@gmail.com"])
 
 function isAdmin(email?: string | null): boolean {
   return !!email && ADMIN_EMAILS.has(email)

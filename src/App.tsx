@@ -233,7 +233,7 @@ function AppInner() {
 
   // Redirect B2C users: blocked pages → discovering, dashboard → discovering
   // Redirect non-admins away from dashboard
-  const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "karaaliissa@gmail.com"])
+  const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "issa.mjq@gmail.com"])
   useEffect(() => {
     if (isB2C && (B2C_BLOCKED.has(currentPage) || currentPage === "dashboard")) {
       setCurrentPage("discovering")

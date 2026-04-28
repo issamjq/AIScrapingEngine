@@ -1,5 +1,5 @@
 /**
- * Admin Dashboard — restricted to mhmdkrissaty@gmail.com + karaaliissa@gmail.com.
+ * Admin Dashboard — restricted to mhmdkrissaty@gmail.com + issa.mjq@gmail.com.
  * Shows real platform metrics: users, searches, scrapes, credits, charts.
  */
 
@@ -31,7 +31,7 @@ import {
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:8080"
 
-const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "karaaliissa@gmail.com"])
+const ADMIN_EMAILS = new Set(["mhmdkrissaty@gmail.com", "issa.mjq@gmail.com"])
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

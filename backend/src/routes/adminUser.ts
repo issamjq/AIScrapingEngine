@@ -4,7 +4,7 @@
  * the DB: profile, wallet, credit transactions, activity feed, search history,
  * rate-limit hits, and actions targeting this user in the audit log.
  *
- * Admin-only (mhmdkrissaty@gmail.com / karaaliissa@gmail.com).
+ * Admin-only (mhmdkrissaty@gmail.com / issa.mjq@gmail.com).
  */
 
 import { Router } from "express"
@@ -15,7 +15,7 @@ export const adminUserRouter = Router()
 
 const ADMIN_EMAILS = new Set([
   "mhmdkrissaty@gmail.com",
-  "karaaliissa@gmail.com",
+  "issa.mjq@gmail.com",
 ])
 
 adminUserRouter.get("/:email", async (req, res, next) => {
