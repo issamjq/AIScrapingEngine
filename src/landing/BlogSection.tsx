@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react"
 import { Eye, Loader2 } from "lucide-react"
 import { SharePopover } from "./SharePopover"
+import { onSpaLinkClick } from "@/lib/navigate"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -106,13 +107,14 @@ export function BlogSection() {
 }
 
 function BlogCard({ post }: { post: Post }) {
-  const href = `#blog/${post.slug}`
+  const href    = `/blog/${post.slug}`
+  const onClick = onSpaLinkClick(href)
 
   return (
     <article className="group relative bg-card rounded-xl border border-border overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
 
       {/* Cover image (clickable) */}
-      <a href={href} className="block aspect-[4/3] bg-gradient-to-br from-amber-50 to-orange-100 dark:from-amber-950/40 dark:to-orange-950/30 overflow-hidden">
+      <a href={href} onClick={onClick} className="block aspect-[4/3] bg-gradient-to-br from-amber-50 to-orange-100 dark:from-amber-950/40 dark:to-orange-950/30 overflow-hidden">
         {post.cover_image_url ? (
           <img
             src={post.cover_image_url}
@@ -139,7 +141,7 @@ function BlogCard({ post }: { post: Post }) {
         </div>
 
         {/* Title (clickable) */}
-        <a href={href}>
+        <a href={href} onClick={onClick}>
           <h3 className="text-base sm:text-lg font-semibold tracking-tight leading-snug line-clamp-2 text-foreground group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
             {post.title}
           </h3>
@@ -147,7 +149,7 @@ function BlogCard({ post }: { post: Post }) {
 
         {/* Excerpt */}
         {post.excerpt && (
-          <a href={href}>
+          <a href={href} onClick={onClick}>
             <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">{post.excerpt}</p>
           </a>
         )}

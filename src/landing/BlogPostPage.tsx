@@ -10,6 +10,7 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import DOMPurify from "dompurify"
 import { SharePopover } from "./SharePopover"
+import { navigate } from "@/lib/navigate"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -33,10 +34,9 @@ function fmtDate(iso: string): string {
 
 interface Props {
   slug: string
-  onBack: () => void
 }
 
-export function BlogPostPage({ slug, onBack }: Props) {
+export function BlogPostPage({ slug }: Props) {
   const [post, setPost]   = useState<Post | null>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr]     = useState<string | null>(null)
@@ -78,21 +78,25 @@ export function BlogPostPage({ slug, onBack }: Props) {
     })
   }, [post])
 
-  const shareUrl = post ? `#blog/${post.slug}` : ""
+  const shareUrl = post ? `/blog/${post.slug}` : ""
 
   return (
     <section className="min-h-screen pt-24 pb-24 bg-background">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
 
-        {/* Back button */}
-        <button
-          type="button"
-          onClick={onBack}
-          className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground bg-card hover:bg-muted/60 border border-border hover:border-border/80 rounded-full pl-3 pr-4 py-2 mb-8 transition-colors"
+        {/* Back button — real <a> so middle-click + Cmd-click open the listing in a new tab */}
+        <a
+          href="/blog"
+          onClick={(e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
+            e.preventDefault()
+            navigate("/blog")
+          }}
+          className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground bg-card hover:bg-muted/60 border border-border hover:border-border/80 rounded-full pl-3 pr-4 py-2 mb-8 transition-colors no-underline"
         >
           <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
           Back to blog
-        </button>
+        </a>
 
         {loading && (
           <div className="flex items-center justify-center py-20">

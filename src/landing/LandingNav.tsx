@@ -187,7 +187,7 @@ export function LandingNav({ onAction, onSignOut, isLoggedIn, userName, userPhot
           <a href="#how-it-works" className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
             How it works
           </a>
-          <a href="#blog" className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
+          <a href="/blog" className="px-3 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors">
             Blog
           </a>
         </nav>

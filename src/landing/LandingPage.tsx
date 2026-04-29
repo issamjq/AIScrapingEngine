@@ -26,18 +26,44 @@ export function LandingPage({ onNavigateToApp }: Props) {
   const { user, signInWithGoogle, logout } = useAuth()
   const isLoggedIn = !!user
 
-  // ── Hash routing inside the landing page ──
-  // - #blog              → list view  (BlogSection)
-  // - #blog/some-slug    → post view  (BlogPostPage)
-  // - everything else    → marketing home
-  const [hash, setHash] = useState<string>(() => window.location.hash.slice(1))
+  // ── Routing inside the landing page ──
+  // Public blog uses real URLs so Google can index each post:
+  // - /blog              → list view  (BlogSection)
+  // - /blog/:slug        → post view  (BlogPostPage)
+  // - everything else    → marketing home (in-page hash anchors handle scrolling)
+  //
+  // We track BOTH pathname (popstate) and hash (hashchange) — the former drives
+  // blog routing, the latter drives section scrolling for #how-it-works etc.
+  const [pathname, setPathname] = useState<string>(() => window.location.pathname)
+  const [hash, setHash]         = useState<string>(() => window.location.hash.slice(1))
+
   useEffect(() => {
-    const onHash = () => setHash(window.location.hash.slice(1))
-    window.addEventListener("hashchange", onHash)
-    return () => window.removeEventListener("hashchange", onHash)
+    const onChange = () => {
+      setPathname(window.location.pathname)
+      setHash(window.location.hash.slice(1))
+    }
+    window.addEventListener("popstate",   onChange)
+    window.addEventListener("hashchange", onChange)
+    return () => {
+      window.removeEventListener("popstate",   onChange)
+      window.removeEventListener("hashchange", onChange)
+    }
   }, [])
-  const blogSlug = hash.startsWith("blog/") ? hash.slice(5) : null
-  const onBlogList = hash === "blog"
+
+  // Legacy redirect — anyone landing via the old hash URL (#blog or #blog/foo)
+  // gets quietly upgraded to the real path so future shares + refreshes are clean.
+  useEffect(() => {
+    const h = window.location.hash.slice(1)
+    if (h === "blog" || h.startsWith("blog/")) {
+      const newPath = h === "blog" ? "/blog" : `/blog/${h.slice(5)}`
+      window.history.replaceState({}, "", newPath)
+      setPathname(newPath)
+      setHash("")
+    }
+  }, [])
+
+  const blogSlug   = pathname.startsWith("/blog/") ? pathname.slice(6) : null
+  const onBlogList = pathname === "/blog" || pathname === "/blog/"
 
   // Scroll to in-page section after refresh — the browser's auto-scroll fires
   // before the React tree paints, so we re-trigger after the marketing home
@@ -104,12 +130,9 @@ export function LandingPage({ onNavigateToApp }: Props) {
         userPhotoURL={user?.photoURL ?? undefined}
       />
 
-      {/* Hash-routing inside landing: blog list, single post, or marketing */}
+      {/* Pathname routing inside landing: blog list, single post, or marketing */}
       {blogSlug ? (
-        <BlogPostPage
-          slug={blogSlug}
-          onBack={() => { window.location.hash = "blog" }}
-        />
+        <BlogPostPage slug={blogSlug} />
       ) : onBlogList ? (
         <BlogSection />
       ) : (

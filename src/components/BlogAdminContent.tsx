@@ -232,7 +232,7 @@ export function BlogAdminContent({ role, blogRole }: Props) {
                   <div className="flex items-center gap-1 flex-wrap">
                     {p.status === "published" && (
                       <a
-                        href={`#blog/${p.slug}`}
+                        href={`/blog/${p.slug}`}
                         target="_blank" rel="noreferrer"
                         className="inline-flex items-center gap-1 text-[11px] text-emerald-600 hover:text-emerald-700"
                       >
