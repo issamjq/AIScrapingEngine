@@ -440,12 +440,13 @@ function PostEditor({
             <TiptapEditor value={content} onChange={setContent} placeholder="Start writing..." />
           </Field>
 
-          <Field label="Search engine listing" hint="The URL slug. Auto-generated from title if left empty.">
+          <Field label="Search engine listing" hint="The URL slug — auto-generated from the title if you leave it blank.">
             <input
               value={slug} onChange={e => setSlug(e.target.value)}
               placeholder="auto-from-title"
               className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
             />
+            <SearchEnginePreview title={title} slug={slug} />
           </Field>
         </div>
 
@@ -497,6 +498,43 @@ function Field({ label, hint, required, children }: { label: string; hint?: stri
       </label>
       {children}
       {hint && <p className="text-[10px] text-muted-foreground mt-1">{hint}</p>}
+    </div>
+  )
+}
+
+// ─── Google-style search preview ─────────────────────────────────────────────
+
+function slugifyClient(s: string): string {
+  return String(s)
+    .toLowerCase()
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9\s-]/g, "")
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 160)
+}
+
+function SearchEnginePreview({ title, slug }: { title: string; slug: string }) {
+  const effectiveSlug = (slug.trim() || slugifyClient(title) || "post-slug")
+  const host = (typeof window !== "undefined" ? window.location.host : "spark.ai")
+  const displayTitle = title.trim() || "Your post title"
+
+  return (
+    <div className="mt-3 rounded-md border bg-slate-50/60 p-3.5">
+      <div className="text-[10px] font-medium uppercase tracking-wider text-slate-500 mb-2">
+        Preview · how this looks in Google search
+      </div>
+      <div className="text-[11px] text-slate-500">Spark AI Blog</div>
+      <div className="text-[11px] text-slate-500 truncate mt-0.5">
+        https://{host}
+        <span className="mx-1 opacity-60">›</span>blog
+        <span className="mx-1 opacity-60">›</span>
+        <span className="text-slate-700">{effectiveSlug}</span>
+      </div>
+      <div className="mt-1 text-[15px] font-medium text-[#1a0dab] hover:underline cursor-pointer truncate leading-snug">
+        {displayTitle}
+      </div>
     </div>
   )
 }

@@ -52,16 +52,15 @@ export function SharePopover({ url, title, large }: Props) {
       <PopoverTrigger asChild>
         <button
           type="button"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation() }}
           className={
             large
-              ? "inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full border border-slate-200 hover:border-slate-400 hover:bg-slate-50 transition-colors"
-              : "inline-flex items-center gap-1 text-[11px] text-slate-600 hover:text-amber-600 transition-colors"
+              ? "inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-full border border-slate-200 hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:hover:border-slate-500 dark:hover:bg-slate-800 transition-colors"
+              : "inline-flex items-center gap-1 text-[11px] text-slate-600 hover:text-amber-600 dark:text-slate-300 dark:hover:text-amber-400 transition-colors"
           }
           aria-label="Share post"
         >
           <Share2 className={large ? "h-4 w-4" : "h-3.5 w-3.5"} />
-          <span>{large ? "Share" : "Share"}</span>
+          <span>Share</span>
         </button>
       </PopoverTrigger>
       <PopoverContent

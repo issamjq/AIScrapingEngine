@@ -5,13 +5,13 @@ import Image from "@tiptap/extension-image"
 import Underline from "@tiptap/extension-underline"
 import Placeholder from "@tiptap/extension-placeholder"
 import TextAlign from "@tiptap/extension-text-align"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
   Heading1, Heading2, Heading3, List, ListOrdered, Quote,
   Code, Link as LinkIcon, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight,
-  Undo2, Redo2,
+  Undo2, Redo2, Code2,
 } from "lucide-react"
 
 interface Props {
@@ -21,6 +21,8 @@ interface Props {
 }
 
 export function TiptapEditor({ value, onChange, placeholder }: Props) {
+  const [sourceView, setSourceView] = useState(false)
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -48,14 +50,25 @@ export function TiptapEditor({ value, onChange, placeholder }: Props) {
     },
   })
 
-  // Sync external value changes (e.g. when loading a post for edit)
+  // Sync external value into the editor (when loading a post, or after the
+  // user finishes editing in source view).
   useEffect(() => {
     if (!editor) return
+    if (sourceView) return // source-view textarea owns `value` — don't fight it
     if (value !== editor.getHTML()) {
       editor.commands.setContent(value || "", { emitUpdate: false })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value, editor])
+  }, [value, editor, sourceView])
+
+  function toggleSource() {
+    if (!editor) return
+    if (sourceView) {
+      // Exiting source view → push the (possibly hand-edited) HTML back into Tiptap.
+      editor.commands.setContent(value || "", { emitUpdate: false })
+    }
+    setSourceView(s => !s)
+  }
 
   if (!editor) {
     return (
@@ -67,15 +80,33 @@ export function TiptapEditor({ value, onChange, placeholder }: Props) {
 
   return (
     <div className="rounded-md border bg-background overflow-hidden">
-      <Toolbar editor={editor} />
-      <EditorContent editor={editor} />
+      <Toolbar editor={editor} sourceView={sourceView} onToggleSource={toggleSource} />
+      {sourceView ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          spellCheck={false}
+          className="w-full min-h-[420px] px-4 py-3 font-mono text-xs leading-relaxed bg-slate-50 border-0 focus:outline-none resize-y"
+          placeholder="<p>HTML source goes here...</p>"
+        />
+      ) : (
+        <EditorContent editor={editor} />
+      )}
     </div>
   )
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+function Toolbar({
+  editor, sourceView, onToggleSource,
+}: {
+  editor: Editor
+  sourceView: boolean
+  onToggleSource: () => void
+}) {
   return (
     <div className="border-b bg-muted/30 px-2 py-1.5 flex items-center gap-0.5 flex-wrap">
+      {/* Formatting buttons — inert in source view */}
+      <div className={`flex items-center gap-0.5 flex-wrap flex-1 ${sourceView ? "opacity-40 pointer-events-none" : ""}`}>
       {/* Headings */}
       <ToolbarButton
         active={editor.isActive("heading", { level: 1 })}
@@ -196,6 +227,15 @@ function Toolbar({ editor }: { editor: Editor }) {
         disabled={!editor.can().redo()}
         title="Redo (Ctrl+Shift+Z)"
       ><Redo2 className="h-3.5 w-3.5" /></ToolbarButton>
+      </div>
+
+      {/* Source toggle — always live */}
+      <Divider />
+      <ToolbarButton
+        active={sourceView}
+        onClick={onToggleSource}
+        title={sourceView ? "Back to visual editor" : "View HTML source"}
+      ><Code2 className="h-3.5 w-3.5" /></ToolbarButton>
     </div>
   )
 }

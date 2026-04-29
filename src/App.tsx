@@ -225,21 +225,27 @@ function AppInner() {
     return () => { cancelled = true }
   }, [user, loading])
 
-  // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
+  // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing).
+  // Skip while on the landing page: the landing owns hashes like #blog/:slug, #pricing,
+  // #how-it-works, etc. — none of those map to a VALID_PAGES entry, so blindly rewriting
+  // would clobber them on every navigation and refresh.
   useEffect(() => {
+    if (showLanding) return
     const hashPage = window.location.hash.slice(1).split(":")[0]
     if (hashPage !== currentPage) window.location.hash = currentPage
-  }, [currentPage])
+  }, [currentPage, showLanding])
 
-  // Sync URL hash → state (browser back/forward)
+  // Sync URL hash → state (browser back/forward). Same guard: don't fight the
+  // landing page over its own hashes.
   useEffect(() => {
     function onHashChange() {
+      if (showLanding) return
       const page = getHashPage()
       setCurrentPage(page)
     }
     window.addEventListener("hashchange", onHashChange)
     return () => window.removeEventListener("hashchange", onHashChange)
-  }, [])
+  }, [showLanding])
 
   useEffect(() => {
     if (loading) return

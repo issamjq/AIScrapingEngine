@@ -81,7 +81,7 @@ export function BlogPostPage({ slug, onBack }: Props) {
   const shareUrl = post ? `#blog/${post.slug}` : ""
 
   return (
-    <section className="min-h-screen pt-24 pb-24 bg-white">
+    <section className="min-h-screen pt-24 pb-24 bg-background">
       <div className="max-w-3xl mx-auto px-4 sm:px-6">
 
         {/* Back button */}
@@ -115,10 +115,10 @@ export function BlogPostPage({ slug, onBack }: Props) {
             <header className="mb-8">
               {/* Author + meta strip */}
               <div className="flex items-center gap-3 mb-4">
-                <img src="/spark-logo.gif" alt="" className="h-9 w-9 rounded-full object-contain bg-amber-50 ring-1 ring-amber-200/60 p-1" />
+                <img src="/spark-logo.gif" alt="" className="h-9 w-9 rounded-full object-contain bg-amber-50 ring-1 ring-amber-200/60 dark:bg-amber-950/30 dark:ring-amber-800/50 p-1" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-slate-800">{post.author_name || "Spark"}</div>
-                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                  <div className="text-sm font-semibold text-foreground">{post.author_name || "Spark"}</div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
                     <Calendar className="h-3 w-3" />
                     <time dateTime={post.published_at}>{fmtDate(post.published_at)}</time>
                     <span className="opacity-40">·</span>
@@ -149,15 +149,15 @@ export function BlogPostPage({ slug, onBack }: Props) {
             )}
 
             {/* Body */}
-            <div className="prose prose-slate max-w-none prose-headings:tracking-tight prose-headings:font-bold prose-a:text-amber-600 prose-a:no-underline hover:prose-a:underline prose-img:rounded-lg prose-pre:bg-slate-900 prose-pre:text-slate-100">
+            <div className="prose prose-slate dark:prose-invert max-w-none prose-headings:tracking-tight prose-headings:font-bold prose-a:text-amber-600 dark:prose-a:text-amber-400 prose-a:no-underline hover:prose-a:underline prose-img:rounded-lg prose-pre:bg-slate-900 prose-pre:text-slate-100">
               {post.content_format === "html"
                 ? <div dangerouslySetInnerHTML={{ __html: safeHtml }} />
                 : <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.content}</ReactMarkdown>}
             </div>
 
             {/* Footer: views + share */}
-            <div className="mt-12 pt-6 border-t flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+            <div className="mt-12 pt-6 border-t border-border flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Eye className="h-4 w-4" />
                 {post.view_count} views
               </span>
