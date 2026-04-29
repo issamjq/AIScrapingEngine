@@ -440,14 +440,7 @@ function PostEditor({
             <TiptapEditor value={content} onChange={setContent} placeholder="Start writing..." />
           </Field>
 
-          <Field label="Search engine listing" hint="The URL slug — auto-generated from the title if you leave it blank.">
-            <input
-              value={slug} onChange={e => setSlug(e.target.value)}
-              placeholder="auto-from-title"
-              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-            />
-            <SearchEnginePreview title={title} slug={slug} />
-          </Field>
+          <SearchEnginePreview title={title} slug={slug} />
         </div>
 
         <div className="border-t px-5 py-3 flex items-center justify-between gap-2 bg-background">
