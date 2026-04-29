@@ -9,7 +9,35 @@
 
 A full-stack AI-powered price scraping and market discovery platform. B2B: UAE e-commerce retailers (Amazon AE, Noon, Carrefour, Talabat, Spinneys) track product prices. B2C: consumers search for the best prices globally using AI (like ChatGPT/Google). Uses Claude Vision AI to extract prices from screenshots and Claude web search to find product URLs.
 
-**Current version:** v2.2.9
+**Current version:** v2.2.9 (package.json semver: v1.0.61)
+
+---
+
+## Blog (BUILT — Wix-style WYSIWYG)
+
+Public blog at `#blog` with simplified Wix-clone admin. Author always shows as **"Spark"** publicly (forced in backend, not user-selectable).
+
+### DB columns on `blog_posts`
+- `view_count INTEGER DEFAULT 0` — incremented by `POST /api/blog/posts/:slug/view`
+- `content_format VARCHAR(10) DEFAULT 'html'` — new posts are HTML (Tiptap), 1 legacy post still 'markdown'
+
+### Admin editor — [src/components/BlogAdminContent.tsx](src/components/BlogAdminContent.tsx)
+Stripped to: Title, Cover image URL, Excerpt, Content (Tiptap WYSIWYG), Search engine listing (slug). **No tags, no status dropdown, no author field.** Footer has two buttons: "Save as draft" and "Publish/Update". Loading a legacy markdown post auto-converts to HTML via `marked` so the rich editor displays it cleanly.
+
+### WYSIWYG editor — [src/components/TiptapEditor.tsx](src/components/TiptapEditor.tsx)
+Tiptap (`@tiptap/react` + StarterKit + Underline + Link + Image + TextAlign + Placeholder). Toolbar has: H1/H2/H3, B/I/U/S/inline-code, bullet/numbered/quote, align L/C/R, link, image, undo/redo. Outputs HTML. Used inside the editor sheet.
+
+### Public listing — [src/landing/BlogSection.tsx](src/landing/BlogSection.tsx)
+4-column responsive grid (xl:4 / lg:3 / sm:2). Each card: cover image (4:3) + Spark logo avatar + "Spark" + relative date + read time + title + excerpt + view count + share button. **No tag filter, no featured hero, no comments, no likes.**
+
+### Single post — [src/landing/BlogPostPage.tsx](src/landing/BlogPostPage.tsx)
+Renders HTML content via `DOMPurify.sanitize` (or markdown via ReactMarkdown for legacy posts). On mount: sessionStorage-deduped POST to `/view` so refresh ≠ extra view. Shows Spark avatar + author + date + read time + share button at top.
+
+### Share popover — [src/landing/SharePopover.tsx](src/landing/SharePopover.tsx)
+Radix Popover. Buttons: Facebook, X (inline SVG), LinkedIn, Copy URL. Copy shows checkmark for 1.8s. Two sizes via `large` prop (icon-only on cards, pill button on post page).
+
+### Backend API — [backend/src/routes/blog.ts](backend/src/routes/blog.ts)
+Public reads always return `author_name: "Spark"` and a derived `read_minutes` (from word count, ~200 wpm). New endpoint `POST /api/blog/posts/:slug/view` increments `view_count` (no auth, public). Create/update accept `content_format: "html" | "markdown"` (defaults to `html`).
 
 ---
 

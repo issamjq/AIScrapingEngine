@@ -17,11 +17,11 @@ import { Badge } from "./ui/badge"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "./ui/sheet"
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog"
 import {
-  Plus, Pencil, Trash2, Eye, Search, Loader2, Tag, Calendar,
-  Save, X, AlertTriangle,
+  Plus, Pencil, Trash2, Eye, Search, Loader2, Calendar,
+  Save, X, AlertTriangle, Send,
 } from "lucide-react"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
+import { TiptapEditor } from "./TiptapEditor"
+import { marked } from "marked"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -31,6 +31,7 @@ interface Post {
   title:            string
   excerpt:          string | null
   content?:         string
+  content_format?:  "html" | "markdown"
   cover_image_url:  string | null
   tags:             string[]
   status:           "draft" | "published" | "archived"
@@ -218,9 +219,6 @@ export function BlogAdminContent({ role, blogRole }: Props) {
                     <Badge variant={p.status === "published" ? "default" : p.status === "archived" ? "outline" : "secondary"} className="text-[10px]">
                       {p.status}
                     </Badge>
-                    {p.tags.slice(0, 2).map(t => (
-                      <Badge key={t} variant="outline" className="text-[10px]"><Tag className="h-2.5 w-2.5 mr-0.5" />{t}</Badge>
-                    ))}
                   </div>
                   <CardTitle className="text-base leading-snug line-clamp-2">{p.title}</CardTitle>
                   <CardDescription className="text-xs line-clamp-2 mt-1">{p.excerpt || "—"}</CardDescription>
@@ -327,20 +325,18 @@ function PostEditor({
   const [title, setTitle]     = useState("")
   const [slug, setSlug]       = useState("")
   const [excerpt, setExcerpt] = useState("")
-  const [content, setContent] = useState("")
+  const [content, setContent] = useState("")           // HTML output from Tiptap
   const [coverUrl, setCoverUrl] = useState("")
-  const [tagsStr, setTagsStr] = useState("")
-  const [status, setStatus]   = useState<"draft" | "published">("draft")
-  const [saving, setSaving]   = useState(false)
+  const [currentStatus, setCurrentStatus] = useState<"draft" | "published" | "archived">("draft")
+  const [saving, setSaving]   = useState<null | "draft" | "published">(null)
   const [err, setErr]         = useState<string | null>(null)
-  const [showPreview, setShowPreview] = useState(false)
   const [fullPost, setFullPost] = useState<Post | null>(null)
 
   // Load full post (with content) when editing
   useEffect(() => {
     if (!open) {
       setTitle(""); setSlug(""); setExcerpt(""); setContent("")
-      setCoverUrl(""); setTagsStr(""); setStatus("draft"); setErr(null); setFullPost(null)
+      setCoverUrl(""); setCurrentStatus("draft"); setErr(null); setFullPost(null)
       return
     }
     if (!post || !user) return
@@ -355,18 +351,20 @@ function PostEditor({
         setTitle(p.title)
         setSlug(p.slug)
         setExcerpt(p.excerpt ?? "")
-        setContent(p.content ?? "")
+        // Convert legacy markdown → HTML so the rich editor can show it cleanly.
+        const raw  = p.content ?? ""
+        const html = p.content_format === "markdown" ? marked.parse(raw, { async: false }) as string : raw
+        setContent(html)
         setCoverUrl(p.cover_image_url ?? "")
-        setTagsStr((p.tags ?? []).join(", "))
-        setStatus(p.status === "archived" ? "draft" : p.status)
+        setCurrentStatus(p.status === "archived" ? "draft" : p.status)
       } catch (e: any) { setErr(e.message) }
     })()
   }, [open, post, user])
 
-  async function save() {
+  async function save(targetStatus: "draft" | "published") {
     if (!user) return
     if (!title.trim()) { setErr("Title is required."); return }
-    setSaving(true); setErr(null)
+    setSaving(targetStatus); setErr(null)
     try {
       const token = await user.getIdToken()
       const body = {
@@ -374,9 +372,9 @@ function PostEditor({
         slug:            slug.trim() || undefined,
         excerpt:         excerpt.trim(),
         content,
+        content_format:  "html",
         cover_image_url: coverUrl.trim() || null,
-        tags:            tagsStr.split(",").map(s => s.trim()).filter(Boolean),
-        status,
+        status:          targetStatus,
       }
       const url    = isEdit ? `${API}/api/blog/admin/posts/${post!.id}` : `${API}/api/blog/admin/posts`
       const method = isEdit ? "PATCH" : "POST"
@@ -390,7 +388,7 @@ function PostEditor({
     } catch (e: any) {
       setErr(e.message)
     } finally {
-      setSaving(false)
+      setSaving(null)
     }
   }
 
@@ -398,96 +396,63 @@ function PostEditor({
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent side="right" className="w-full sm:max-w-3xl p-0 flex flex-col">
         <SheetHeader className="border-b px-5 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <SheetTitle className="text-base">
-                {isEdit ? "Edit post" : "New post"}
-              </SheetTitle>
-              <SheetDescription className="text-xs">
-                {isEdit ? `Editing #${fullPost?.id ?? "..."}` : "Draft a new blog post — markdown supported"}
-              </SheetDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setShowPreview(p => !p)}
-                className="text-xs px-2.5 py-1 rounded-md border hover:bg-muted/50"
-              >
-                <Eye className="h-3 w-3 inline mr-1" />
-                {showPreview ? "Edit" : "Preview"}
-              </button>
-            </div>
+          <div className="min-w-0">
+            <SheetTitle className="text-base">
+              {isEdit ? "Edit post" : "New post"}
+            </SheetTitle>
+            <SheetDescription className="text-xs">
+              {isEdit
+                ? `Editing #${fullPost?.id ?? "..."} · current status: ${currentStatus}`
+                : "Draft a new blog post — rich text editor with formatting toolbar"}
+            </SheetDescription>
           </div>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-          {showPreview ? (
-            <article className="prose prose-sm max-w-none">
-              {coverUrl && <img src={coverUrl} alt="" className="w-full rounded-lg mb-4" />}
-              <h1>{title || "(untitled)"}</h1>
-              {excerpt && <p className="text-muted-foreground italic">{excerpt}</p>}
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-            </article>
-          ) : (
-            <>
-              <Field label="Title" required>
-                <input
-                  value={title} onChange={e => setTitle(e.target.value)}
-                  placeholder="A great title"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-              </Field>
-              <Field label="Slug" hint="Auto-generated from title if empty. Lowercase letters, numbers, hyphens.">
-                <input
-                  value={slug} onChange={e => setSlug(e.target.value)}
-                  placeholder="auto-from-title"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-              </Field>
-              <Field label="Excerpt" hint="Shown on the blog list and in social previews. Plain text, ~200 chars.">
-                <textarea
-                  value={excerpt} onChange={e => setExcerpt(e.target.value)}
-                  rows={2} maxLength={800}
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-              </Field>
-              <Field label="Cover image URL" hint="Paste a Cloudinary / Imgur link. Used as the post header + OG image.">
-                <input
-                  value={coverUrl} onChange={e => setCoverUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-              </Field>
-              <Field label="Tags" hint="Comma-separated, max 12.">
-                <input
-                  value={tagsStr} onChange={e => setTagsStr(e.target.value)}
-                  placeholder="ai, scraping, ecommerce"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                />
-              </Field>
-              <Field label="Status">
-                <select
-                  value={status} onChange={e => setStatus(e.target.value as any)}
-                  className="rounded-md border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                </select>
-              </Field>
-              <Field label="Content" hint="Markdown supported (GFM: tables, task lists, strikethrough).">
-                <textarea
-                  value={content} onChange={e => setContent(e.target.value)}
-                  rows={20}
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
-                  placeholder="# Heading&#10;&#10;Your post content here..."
-                />
-              </Field>
-            </>
-          )}
+          <Field label="Title" required>
+            <input
+              value={title} onChange={e => setTitle(e.target.value)}
+              placeholder="A great title"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            />
+          </Field>
+
+          <Field label="Cover image URL" hint="Paste a Cloudinary / Imgur link. Used as the post header + OG image.">
+            <input
+              value={coverUrl} onChange={e => setCoverUrl(e.target.value)}
+              placeholder="https://..."
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            />
+            {coverUrl.trim() && (
+              <img src={coverUrl} alt="" className="mt-2 max-h-32 rounded border object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none" }} />
+            )}
+          </Field>
+
+          <Field label="Excerpt" hint="Shown on the blog list and in social previews. Plain text, ~200 chars.">
+            <textarea
+              value={excerpt} onChange={e => setExcerpt(e.target.value)}
+              rows={2} maxLength={800}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            />
+          </Field>
+
+          <Field label="Content" hint="Use the toolbar to format — headings, bold, lists, links, images.">
+            <TiptapEditor value={content} onChange={setContent} placeholder="Start writing..." />
+          </Field>
+
+          <Field label="Search engine listing" hint="The URL slug. Auto-generated from title if left empty.">
+            <input
+              value={slug} onChange={e => setSlug(e.target.value)}
+              placeholder="auto-from-title"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-500/30"
+            />
+          </Field>
         </div>
 
         <div className="border-t px-5 py-3 flex items-center justify-between gap-2 bg-background">
-          {err ? <span className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{err}</span> : <span />}
+          {err
+            ? <span className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{err}</span>
+            : <span />}
           <div className="flex items-center gap-2">
             <button
               type="button" onClick={onClose}
@@ -497,11 +462,24 @@ function PostEditor({
               Cancel
             </button>
             <button
-              type="button" onClick={save} disabled={saving}
-              className="text-xs px-3 py-1.5 rounded-md text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
+              type="button"
+              onClick={() => save("draft")}
+              disabled={saving !== null}
+              className="text-xs px-3 py-1.5 rounded-md border hover:bg-muted/50 disabled:opacity-50"
             >
               <Save className="h-3 w-3 inline mr-1" />
-              {saving ? "Saving..." : (isEdit ? "Save changes" : "Create post")}
+              {saving === "draft" ? "Saving..." : "Save as draft"}
+            </button>
+            <button
+              type="button"
+              onClick={() => save("published")}
+              disabled={saving !== null}
+              className="text-xs px-3 py-1.5 rounded-md text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-50"
+            >
+              <Send className="h-3 w-3 inline mr-1" />
+              {saving === "published"
+                ? "Publishing..."
+                : (isEdit && currentStatus === "published" ? "Update" : "Publish")}
             </button>
           </div>
         </div>

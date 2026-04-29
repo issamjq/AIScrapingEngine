@@ -1,13 +1,15 @@
 /**
  * BlogPostPage — public single-post view at #blog/:slug.
- * Fetches /api/blog/posts/:slug, renders the markdown content, and provides
- * an "Open app" / "Sign in" CTA at the bottom.
+ * Fetches /api/blog/posts/:slug, renders the (HTML or markdown) content,
+ * triggers a once-per-session view increment, and exposes a share button.
  */
 
-import { useEffect, useState } from "react"
-import { Calendar, ArrowLeft, Loader2 } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { Calendar, ArrowLeft, Loader2, Eye, Clock } from "lucide-react"
 import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
+import DOMPurify from "dompurify"
+import { SharePopover } from "./SharePopover"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -17,11 +19,12 @@ interface Post {
   title:            string
   excerpt:          string | null
   content:          string
+  content_format:   "html" | "markdown"
   cover_image_url:  string | null
-  tags:             string[]
-  author_email:     string
-  author_name:      string | null
+  author_name:      string | null     // backend forces "Spark"
   published_at:     string
+  view_count:       number
+  read_minutes:     number
 }
 
 function fmtDate(iso: string): string {
@@ -34,9 +37,9 @@ interface Props {
 }
 
 export function BlogPostPage({ slug, onBack }: Props) {
-  const [post, setPost] = useState<Post | null>(null)
+  const [post, setPost]   = useState<Post | null>(null)
   const [loading, setLoading] = useState(true)
-  const [err, setErr]   = useState<string | null>(null)
+  const [err, setErr]     = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -53,10 +56,29 @@ export function BlogPostPage({ slug, onBack }: Props) {
         if (!cancelled) setLoading(false)
       }
     })()
-    // Scroll to top on slug change
     try { window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior }) } catch { /* ignore */ }
     return () => { cancelled = true }
   }, [slug])
+
+  // Once-per-session view increment.
+  useEffect(() => {
+    if (!post) return
+    const key = `blog_viewed_${post.slug}`
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, "1")
+    fetch(`${API}/api/blog/posts/${encodeURIComponent(post.slug)}/view`, { method: "POST" })
+      .catch(() => {})
+  }, [post])
+
+  // Sanitize HTML once per content change.
+  const safeHtml = useMemo(() => {
+    if (!post || post.content_format !== "html") return ""
+    return DOMPurify.sanitize(post.content, {
+      ADD_ATTR: ["target", "rel"],
+    })
+  }, [post])
+
+  const shareUrl = post ? `#blog/${post.slug}` : ""
 
   return (
     <section className="min-h-screen pt-24 pb-24 bg-white">
@@ -91,16 +113,22 @@ export function BlogPostPage({ slug, onBack }: Props) {
           <article>
             {/* Header */}
             <header className="mb-8">
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-3">
-                <Calendar className="h-3 w-3" />
-                <time dateTime={post.published_at}>{fmtDate(post.published_at)}</time>
-                {post.author_name && (
-                  <>
-                    <span>·</span>
-                    <span>by {post.author_name}</span>
-                  </>
-                )}
+              {/* Author + meta strip */}
+              <div className="flex items-center gap-3 mb-4">
+                <img src="/spark-logo.gif" alt="" className="h-9 w-9 rounded-full object-contain bg-amber-50 ring-1 ring-amber-200/60 p-1" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold text-slate-800">{post.author_name || "Spark"}</div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5">
+                    <Calendar className="h-3 w-3" />
+                    <time dateTime={post.published_at}>{fmtDate(post.published_at)}</time>
+                    <span className="opacity-40">·</span>
+                    <Clock className="h-3 w-3" />
+                    <span>{post.read_minutes} min read</span>
+                  </div>
+                </div>
+                <SharePopover url={shareUrl} title={post.title} large />
               </div>
+
               <h1 className="text-3xl sm:text-5xl font-bold tracking-tight leading-tight mb-4">
                 {post.title}
               </h1>
@@ -108,15 +136,6 @@ export function BlogPostPage({ slug, onBack }: Props) {
                 <p className="text-lg text-muted-foreground leading-relaxed">
                   {post.excerpt}
                 </p>
-              )}
-              {post.tags.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 mt-6">
-                  {post.tags.map(t => (
-                    <span key={t} className="text-[11px] px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
-                      {t}
-                    </span>
-                  ))}
-                </div>
               )}
             </header>
 
@@ -131,11 +150,22 @@ export function BlogPostPage({ slug, onBack }: Props) {
 
             {/* Body */}
             <div className="prose prose-slate max-w-none prose-headings:tracking-tight prose-headings:font-bold prose-a:text-amber-600 prose-a:no-underline hover:prose-a:underline prose-img:rounded-lg prose-pre:bg-slate-900 prose-pre:text-slate-100">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.content}</ReactMarkdown>
+              {post.content_format === "html"
+                ? <div dangerouslySetInnerHTML={{ __html: safeHtml }} />
+                : <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.content}</ReactMarkdown>}
+            </div>
+
+            {/* Footer: views + share */}
+            <div className="mt-12 pt-6 border-t flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-sm text-slate-600">
+                <Eye className="h-4 w-4" />
+                {post.view_count} views
+              </span>
+              <SharePopover url={shareUrl} title={post.title} large />
             </div>
 
             {/* Footer CTA */}
-            <div className="mt-16 pt-8 border-t">
+            <div className="mt-12">
               <div className="rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 p-8 sm:p-10 text-white text-center">
                 <h2 className="text-2xl sm:text-3xl font-bold mb-2">Ready to try Spark AI?</h2>
                 <p className="text-amber-50 mb-6 max-w-md mx-auto">

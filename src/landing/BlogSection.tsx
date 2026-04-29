@@ -1,11 +1,12 @@
 /**
  * BlogSection — public blog list shown on the landing page at #blog.
- * Renders a header + a responsive 3-column card grid of published posts.
- * Tags act as filters (one tag at a time).
+ * Wix-style 4-column card grid: image, author tag, date, read time, title,
+ * excerpt, view count + share button.
  */
 
-import { useEffect, useMemo, useState } from "react"
-import { Calendar, Tag as TagIcon, ArrowUpRight, Loader2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Eye, Loader2 } from "lucide-react"
+import { SharePopover } from "./SharePopover"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -15,39 +16,43 @@ interface Post {
   title:            string
   excerpt:          string | null
   cover_image_url:  string | null
-  tags:             string[]
-  author_email:     string
-  author_name:      string | null
+  author_name:      string | null     // backend forces "Spark"
   published_at:     string
+  view_count:       number
+  read_minutes:     number
 }
 
-function fmtDate(iso: string): string {
+function fmtRelative(iso: string): string {
+  const then = new Date(iso).getTime()
+  const now  = Date.now()
+  const diff = Math.max(0, now - then)
+  const day  = 86_400_000
+  if (diff < day)        return "Today"
+  if (diff < 2 * day)    return "Yesterday"
+  if (diff < 7 * day)    return `${Math.floor(diff / day)} days ago`
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
 }
 
+function fmtCount(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`
+  return `${(n / 1_000_000).toFixed(1)}M`
+}
+
 export function BlogSection() {
-  const [posts, setPosts] = useState<Post[]>([])
-  const [tags, setTags]   = useState<{ tag: string; count: number }[]>([])
-  const [activeTag, setActiveTag] = useState<string | null>(null)
+  const [posts, setPosts]     = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
-  const [err, setErr]     = useState<string | null>(null)
+  const [err, setErr]         = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true); setErr(null)
     ;(async () => {
       try {
-        const params = new URLSearchParams({ limit: "30" })
-        if (activeTag) params.set("tag", activeTag)
-        const [pr, tr] = await Promise.all([
-          fetch(`${API}/api/blog/posts?${params}`),
-          fetch(`${API}/api/blog/tags`),
-        ])
-        const pj = await pr.json()
-        const tj = await tr.json()
+        const r = await fetch(`${API}/api/blog/posts?limit=40`)
+        const j = await r.json()
         if (cancelled) return
-        setPosts(pj.data?.posts ?? [])
-        setTags(tj.data ?? [])
+        setPosts(j.data?.posts ?? [])
       } catch (e: any) {
         if (!cancelled) setErr(e.message)
       } finally {
@@ -55,10 +60,7 @@ export function BlogSection() {
       }
     })()
     return () => { cancelled = true }
-  }, [activeTag])
-
-  const featured = useMemo(() => posts[0], [posts])
-  const rest     = useMemo(() => posts.slice(1), [posts])
+  }, [])
 
   return (
     <section
@@ -80,34 +82,7 @@ export function BlogSection() {
           </p>
         </div>
 
-        {/* Tag filter */}
-        {tags.length > 0 && (
-          <div className="flex items-center justify-center gap-2 flex-wrap mb-10">
-            <button
-              type="button"
-              onClick={() => setActiveTag(null)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                !activeTag
-                  ? "bg-foreground text-background border-foreground"
-                  : "bg-white text-muted-foreground border-border hover:border-foreground/40"
-              }`}
-            >All</button>
-            {tags.slice(0, 10).map(t => (
-              <button
-                key={t.tag}
-                type="button"
-                onClick={() => setActiveTag(t.tag)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                  activeTag === t.tag
-                    ? "bg-foreground text-background border-foreground"
-                    : "bg-white text-muted-foreground border-border hover:border-foreground/40"
-                }`}
-              >
-                {t.tag} <span className="opacity-60">{t.count}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        <div className="text-xs uppercase tracking-widest text-amber-600/80 font-semibold mb-6">All Posts</div>
 
         {/* States */}
         {loading ? (
@@ -121,85 +96,71 @@ export function BlogSection() {
             No posts published yet. Check back soon.
           </div>
         ) : (
-          <>
-            {/* Featured (first post) */}
-            {featured && (
-              <a
-                href={`#blog/${featured.slug}`}
-                className="group block rounded-2xl overflow-hidden border bg-white shadow-sm hover:shadow-lg transition-shadow mb-10"
-              >
-                <div className="grid md:grid-cols-2 gap-0">
-                  <div className="aspect-[16/10] md:aspect-auto bg-gradient-to-br from-amber-50 to-orange-100 overflow-hidden">
-                    {featured.cover_image_url ? (
-                      <img src={featured.cover_image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-6xl opacity-30">📝</div>
-                    )}
-                  </div>
-                  <div className="p-6 sm:p-8 flex flex-col">
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground mb-3">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 font-medium uppercase tracking-wide">Featured</span>
-                      <Calendar className="h-3 w-3 ml-1" />
-                      <span>{fmtDate(featured.published_at)}</span>
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-bold tracking-tight mb-2 group-hover:text-amber-600 transition-colors">
-                      {featured.title}
-                    </h2>
-                    {featured.excerpt && (
-                      <p className="text-sm text-muted-foreground line-clamp-3 mb-4">{featured.excerpt}</p>
-                    )}
-                    <div className="flex items-center gap-1.5 mb-4 flex-wrap">
-                      {featured.tags.slice(0, 3).map(t => (
-                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
-                          <TagIcon className="h-2.5 w-2.5 inline mr-0.5" />{t}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-auto inline-flex items-center text-sm font-medium text-amber-600 gap-1">
-                      Read article
-                      <ArrowUpRight className="h-4 w-4 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
-                    </div>
-                  </div>
-                </div>
-              </a>
-            )}
-
-            {/* Rest of posts — 3-col grid */}
-            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-              {rest.map(p => (
-                <a
-                  key={p.id}
-                  href={`#blog/${p.slug}`}
-                  className="group block rounded-xl overflow-hidden border bg-white shadow-sm hover:shadow-lg hover:-translate-y-0.5 transition-all"
-                >
-                  <div className="aspect-[16/9] bg-gradient-to-br from-amber-50 to-orange-100 overflow-hidden">
-                    {p.cover_image_url ? (
-                      <img src={p.cover_image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" loading="lazy" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-4xl opacity-30">📝</div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mb-2">
-                      <Calendar className="h-2.5 w-2.5" />
-                      {fmtDate(p.published_at)}
-                    </div>
-                    <h3 className="text-base font-semibold tracking-tight leading-snug mb-2 line-clamp-2 group-hover:text-amber-600 transition-colors">
-                      {p.title}
-                    </h3>
-                    {p.excerpt && <p className="text-xs text-muted-foreground line-clamp-3 mb-3">{p.excerpt}</p>}
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {p.tags.slice(0, 2).map(t => (
-                        <span key={t} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{t}</span>
-                      ))}
-                    </div>
-                  </div>
-                </a>
-              ))}
-            </div>
-          </>
+          <div className="grid gap-6 sm:gap-8 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {posts.map(p => <BlogCard key={p.id} post={p} />)}
+          </div>
         )}
       </div>
     </section>
+  )
+}
+
+function BlogCard({ post }: { post: Post }) {
+  const href = `#blog/${post.slug}`
+
+  return (
+    <article className="group relative bg-white rounded-xl border border-slate-200/80 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300">
+
+      {/* Cover image (clickable) */}
+      <a href={href} className="block aspect-[4/3] bg-gradient-to-br from-amber-50 to-orange-100 overflow-hidden">
+        {post.cover_image_url ? (
+          <img
+            src={post.cover_image_url}
+            alt=""
+            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-5xl opacity-30">📝</div>
+        )}
+      </a>
+
+      <div className="p-5 flex flex-col gap-2.5">
+        {/* Author tag row */}
+        <div className="flex items-center gap-2 text-[11px] text-slate-500">
+          <img src="/spark-logo.gif" alt="" className="h-5 w-5 rounded-full object-contain bg-amber-50 ring-1 ring-amber-200/60 p-0.5" />
+          <span className="font-medium text-slate-700">{post.author_name || "Spark"}</span>
+        </div>
+
+        <div className="flex items-center gap-1 text-[11px] text-slate-500">
+          <span>{fmtRelative(post.published_at)}</span>
+          <span className="opacity-50">·</span>
+          <span>{post.read_minutes} min read</span>
+        </div>
+
+        {/* Title (clickable) */}
+        <a href={href}>
+          <h3 className="text-base sm:text-lg font-semibold tracking-tight leading-snug line-clamp-2 group-hover:text-amber-600 transition-colors">
+            {post.title}
+          </h3>
+        </a>
+
+        {/* Excerpt */}
+        {post.excerpt && (
+          <a href={href}>
+            <p className="text-sm text-slate-600 line-clamp-3 leading-relaxed">{post.excerpt}</p>
+          </a>
+        )}
+
+        {/* Meta row: views + share */}
+        <div className="flex items-center justify-between pt-3 mt-auto border-t border-slate-100">
+          <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+            <Eye className="h-3.5 w-3.5" />
+            {fmtCount(post.view_count ?? 0)}
+          </span>
+          <SharePopover url={href} title={post.title} />
+        </div>
+      </div>
+    </article>
   )
 }

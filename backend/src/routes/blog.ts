@@ -63,6 +63,22 @@ function sanitizeTags(input: any): string[] {
 
 // ─── Public reads ─────────────────────────────────────────────────────────────
 
+// Derived read_minutes (~200 wpm). Strips HTML tags before counting whitespace-split tokens.
+const READ_MINUTES_SQL = `
+  GREATEST(1, CEIL(
+    COALESCE(
+      array_length(
+        regexp_split_to_array(
+          regexp_replace(COALESCE(p.content, ''), '<[^>]+>', ' ', 'g'),
+          '\\s+'
+        ),
+        1
+      ),
+      1
+    ) / 200.0
+  ))::int
+`
+
 blogPublicRouter.get("/posts", async (req, res, next) => {
   try {
     const limit  = Math.min(Number(req.query.limit) || 20, 50)
@@ -78,10 +94,10 @@ blogPublicRouter.get("/posts", async (req, res, next) => {
 
     const sql = `
       SELECT p.id, p.slug, p.title, p.excerpt, p.cover_image_url, p.tags,
-             p.author_email, p.published_at,
-             u.name AS author_name
+             p.author_email, p.published_at, p.view_count,
+             'Spark' AS author_name,
+             ${READ_MINUTES_SQL} AS read_minutes
         FROM blog_posts p
-        LEFT JOIN allowed_users u ON u.email = p.author_email
        WHERE ${where.join(" AND ")}
        ORDER BY p.published_at DESC
        LIMIT ${limit} OFFSET ${offset}
@@ -100,11 +116,12 @@ blogPublicRouter.get("/posts/:slug", async (req, res, next) => {
     const slug = String(req.params.slug ?? "").toLowerCase().trim()
     if (!slug) return res.status(400).json({ error: "slug required" })
     const { rows } = await query(
-      `SELECT p.id, p.slug, p.title, p.excerpt, p.content, p.cover_image_url, p.tags,
+      `SELECT p.id, p.slug, p.title, p.excerpt, p.content, p.content_format,
+              p.cover_image_url, p.tags, p.view_count,
               p.author_email, p.published_at, p.created_at, p.updated_at,
-              u.name AS author_name
+              'Spark' AS author_name,
+              ${READ_MINUTES_SQL} AS read_minutes
          FROM blog_posts p
-         LEFT JOIN allowed_users u ON u.email = p.author_email
         WHERE p.slug = $1
           AND p.status = 'published'
           AND p.published_at IS NOT NULL
@@ -113,6 +130,25 @@ blogPublicRouter.get("/posts/:slug", async (req, res, next) => {
     )
     if (rows.length === 0) return res.status(404).json({ success: false, error: { message: "Post not found" } })
     res.json({ success: true, data: rows[0] })
+  } catch (err) { next(err) }
+})
+
+// Increment view count. No auth — public endpoint. Client dedupes per-session via sessionStorage.
+blogPublicRouter.post("/posts/:slug/view", async (req, res, next) => {
+  try {
+    const slug = String(req.params.slug ?? "").toLowerCase().trim()
+    if (!slug) return res.status(400).json({ error: "slug required" })
+    const { rows } = await query(
+      `UPDATE blog_posts
+          SET view_count = view_count + 1
+        WHERE slug = $1
+          AND status = 'published'
+          AND published_at IS NOT NULL
+       RETURNING view_count`,
+      [slug],
+    )
+    if (rows.length === 0) return res.status(404).json({ success: false, error: { message: "Post not found" } })
+    res.json({ success: true, data: { view_count: rows[0].view_count } })
   } catch (err) { next(err) }
 })
 
@@ -189,13 +225,14 @@ blogAdminRouter.post("/posts", requireBlogRole("author"), async (req, res, next)
     const cover   = req.body?.cover_image_url ? String(req.body.cover_image_url).slice(0, 500) : null
     const tags    = sanitizeTags(req.body?.tags)
     const status  = ["draft","published"].includes(req.body?.status) ? req.body.status : "draft"
+    const format  = ["html","markdown"].includes(req.body?.content_format) ? req.body.content_format : "html"
     const publishedAt = status === "published" ? new Date() : null
 
     const { rows } = await query(
-      `INSERT INTO blog_posts (slug, title, excerpt, content, cover_image_url, tags, status, author_email, published_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO blog_posts (slug, title, excerpt, content, content_format, cover_image_url, tags, status, author_email, published_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [slug, title, excerpt, content, cover, tags, status, email, publishedAt],
+      [slug, title, excerpt, content, format, cover, tags, status, email, publishedAt],
     )
 
     logAdminAction({
@@ -239,6 +276,9 @@ blogAdminRouter.patch("/posts/:id", requireBlogRole("author"), async (req, res, 
     }
     if (typeof req.body?.content === "string") {
       params.push(req.body.content); updates.push(`content = $${params.length}`)
+    }
+    if (typeof req.body?.content_format === "string" && ["html","markdown"].includes(req.body.content_format)) {
+      params.push(req.body.content_format); updates.push(`content_format = $${params.length}`)
     }
     if (req.body?.cover_image_url !== undefined) {
       const v = req.body.cover_image_url ? String(req.body.cover_image_url).slice(0, 500) : null
