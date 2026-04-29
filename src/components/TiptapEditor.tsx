@@ -8,7 +8,7 @@ import TextAlign from "@tiptap/extension-text-align"
 import { useEffect, useState } from "react"
 import {
   Bold, Italic, Underline as UnderlineIcon, Strikethrough,
-  Heading1, Heading2, Heading3, List, ListOrdered, Quote,
+  Heading2, Heading3, List, ListOrdered, Quote,
   Code, Link as LinkIcon, Image as ImageIcon,
   AlignLeft, AlignCenter, AlignRight,
   Undo2, Redo2, Code2,
@@ -107,12 +107,8 @@ function Toolbar({
     <div className="border-b bg-muted/30 px-2 py-1.5 flex items-center gap-0.5 flex-wrap">
       {/* Formatting buttons — inert in source view */}
       <div className={`flex items-center gap-0.5 flex-wrap flex-1 ${sourceView ? "opacity-40 pointer-events-none" : ""}`}>
-      {/* Headings */}
-      <ToolbarButton
-        active={editor.isActive("heading", { level: 1 })}
-        onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-        title="Heading 1"
-      ><Heading1 className="h-3.5 w-3.5" /></ToolbarButton>
+      {/* Headings — H1 is reserved for the post title (rendered above the body),
+          so the body can only use H2 / H3. Two H1s on a page hurts SEO. */}
       <ToolbarButton
         active={editor.isActive("heading", { level: 2 })}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
