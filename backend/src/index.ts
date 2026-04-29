@@ -34,6 +34,7 @@ import { heartbeatRouter }         from "./routes/heartbeat"
 import { totpRouter }              from "./routes/totp"
 import { requireTotp }             from "./middleware/requireTotp"
 import { blogPublicRouter, blogAdminRouter } from "./routes/blog"
+import { sitemapRouter }           from "./routes/sitemap"
 import { broadcastsRouter }        from "./routes/broadcasts"
 import { timingMiddleware }        from "./middleware/timing"
 import { logError }                from "./services/errorLogger"
@@ -74,6 +75,10 @@ app.use("/api/", timingMiddleware)
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", version: "1.0.1", timestamp: new Date().toISOString() })
 })
+
+// Public sitemap.xml — Vercel rewrites /sitemap.xml on the static site to here
+// so search engines can crawl https://<frontend>/sitemap.xml normally.
+app.use("/", sitemapRouter)
 
 // ── Original routes ──────────────────────────────────────────────
 app.use("/api/auth",     authRouter)

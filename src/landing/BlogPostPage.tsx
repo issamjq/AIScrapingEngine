@@ -11,6 +11,7 @@ import remarkGfm from "remark-gfm"
 import DOMPurify from "dompurify"
 import { SharePopover } from "./SharePopover"
 import { navigate } from "@/lib/navigate"
+import { applyBlogPostMeta } from "@/lib/blogMeta"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -68,6 +69,20 @@ export function BlogPostPage({ slug }: Props) {
     sessionStorage.setItem(key, "1")
     fetch(`${API}/api/blog/posts/${encodeURIComponent(post.slug)}/view`, { method: "POST" })
       .catch(() => {})
+  }, [post])
+
+  // SEO meta — title, description, og:*, canonical, JSON-LD BlogPosting.
+  useEffect(() => {
+    if (!post) return
+    const cleanup = applyBlogPostMeta({
+      title:        post.title,
+      description:  post.excerpt || `Read "${post.title}" on the Spark AI Blog.`,
+      url:          `${window.location.origin}/blog/${post.slug}`,
+      imageUrl:     post.cover_image_url,
+      publishedAt:  post.published_at,
+      authorName:   post.author_name,
+    })
+    return cleanup
   }, [post])
 
   // Sanitize HTML once per content change.

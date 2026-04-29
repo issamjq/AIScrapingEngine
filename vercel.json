@@ -4,6 +4,7 @@
   "outputDirectory": "build",
   "installCommand": "npm install",
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "https://aiscrapingengine.onrender.com/sitemap.xml" },
     { "source": "/(.*)", "destination": "/" }
   ],
   "headers": [

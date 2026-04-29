@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 import { Eye, Loader2 } from "lucide-react"
 import { SharePopover } from "./SharePopover"
 import { onSpaLinkClick } from "@/lib/navigate"
+import { applyBlogIndexMeta } from "@/lib/blogMeta"
 
 const API = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
 
@@ -61,6 +62,15 @@ export function BlogSection() {
       }
     })()
     return () => { cancelled = true }
+  }, [])
+
+  // SEO meta for the blog index page.
+  useEffect(() => {
+    return applyBlogIndexMeta({
+      title:       "Spark AI Blog — product updates, market intelligence research, and tactical guides for retailers",
+      description: "Read the latest from Spark AI: how UAE retailers track competitor prices, AI product discovery, market intelligence research and tactical guides.",
+      url:         `${window.location.origin}/blog`,
+    })
   }, [])
 
   return (

@@ -1,0 +1,8 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+
+# Disallow in-app routes (behind auth, no value to crawl)
+Disallow: /api/
+
+Sitemap: https://ai-scraping-engine.vercel.app/sitemap.xml
