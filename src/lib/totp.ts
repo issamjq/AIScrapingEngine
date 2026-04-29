@@ -1,15 +1,18 @@
 /**
- * TOTP client utilities — sessionStorage-backed token + fetch interception.
+ * TOTP client utilities — localStorage-backed token + fetch interception.
  *
  * Architecture:
  * - On app mount we monkey-patch window.fetch ONCE so every request to the
  *   Spark API automatically carries an X-Totp-Session header (when we have
  *   a token). This avoids threading the header through every fetch call.
- * - The session token lives in sessionStorage so it dies when the tab
- *   closes — admins re-verify on next launch. (Don't move to localStorage:
- *   we *want* the gate to bite again on a fresh tab.)
+ * - The session token lives in localStorage so it survives tab close + is
+ *   shared across tabs in the same browser. The server signs it with a 12h
+ *   TTL (TOTP_SESSION_TTL_MS), so the security boundary is enforced server-
+ *   side regardless of how long the client keeps the string around.
  * - On 403 TOTP_REQUIRED / TOTP_NOT_ENROLLED responses we clear the token
  *   so App.tsx will re-render the TotpGate.
+ * - On signout, App.tsx clears the token explicitly. A `storage` event
+ *   listener on the page synchronizes that across other open tabs.
  */
 
 const API_BASE   = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/+$/, "")
@@ -31,29 +34,43 @@ export const TOTP_DEFAULTS: TotpStatus = {
 
 // ── token store ──────────────────────────────────────────────────────────────
 export function getTotpToken(): string | null {
-  try { return sessionStorage.getItem(TOKEN_KEY) } catch { return null }
+  try { return localStorage.getItem(TOKEN_KEY) } catch { return null }
 }
 export function setTotpToken(t: string | null) {
   try {
-    if (t) sessionStorage.setItem(TOKEN_KEY, t)
-    else   sessionStorage.removeItem(TOKEN_KEY)
+    if (t) localStorage.setItem(TOKEN_KEY, t)
+    else   localStorage.removeItem(TOKEN_KEY)
   } catch { /* private mode etc. */ }
 }
 
 // ── status cache (avoids flicker between renders) ─────────────────────────────
 export function readCachedStatus(): TotpStatus {
   try {
-    const raw = sessionStorage.getItem(STATUS_KEY)
+    const raw = localStorage.getItem(STATUS_KEY)
     if (!raw) return TOTP_DEFAULTS
     return { ...TOTP_DEFAULTS, ...JSON.parse(raw) }
   } catch { return TOTP_DEFAULTS }
 }
 export function writeCachedStatus(s: TotpStatus) {
-  try { sessionStorage.setItem(STATUS_KEY, JSON.stringify(s)) }
+  try { localStorage.setItem(STATUS_KEY, JSON.stringify(s)) }
   catch { /* ignore */ }
 }
 export function clearCachedStatus() {
-  try { sessionStorage.removeItem(STATUS_KEY) } catch { /* ignore */ }
+  try { localStorage.removeItem(STATUS_KEY) } catch { /* ignore */ }
+}
+
+// ── cross-tab sync ────────────────────────────────────────────────────────────
+/**
+ * Subscribe to localStorage changes so other tabs react instantly when this
+ * tab signs out (token cleared) or signs in (token written). Returns an
+ * unsubscribe fn.
+ */
+export function subscribeTokenChanges(handler: (token: string | null) => void): () => void {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === TOKEN_KEY || e.key === null) handler(getTotpToken())
+  }
+  window.addEventListener("storage", onStorage)
+  return () => window.removeEventListener("storage", onStorage)
 }
 
 // ── fetch monkey-patch (runs once on app boot) ────────────────────────────────

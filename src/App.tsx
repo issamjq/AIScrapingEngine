@@ -9,6 +9,7 @@ import {
   writeCachedStatus,
   setTotpToken,
   clearCachedStatus,
+  subscribeTokenChanges,
   type TotpStatus,
 } from "./lib/totp"
 import { TotpGate } from "./components/TotpGate"
@@ -178,6 +179,13 @@ function AppInner() {
   useEffect(() => {
     installTotpFetchInterceptor(() => {
       setTotpSatisfied(false)
+    })
+  }, [])
+
+  // Cross-tab sync: when another tab signs in or out, mirror the change here.
+  useEffect(() => {
+    return subscribeTokenChanges((token) => {
+      setTotpSatisfied(!!token)
     })
   }, [])
 
