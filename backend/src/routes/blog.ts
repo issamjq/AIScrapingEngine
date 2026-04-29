@@ -26,6 +26,36 @@ import { getClientIp } from "../services/activityLogger"
 export const blogPublicRouter = Router()
 export const blogAdminRouter  = Router()
 
+// ─── View-count abuse mitigation ─────────────────────────────────────────────
+// In-memory dedup map: any (ip, slug) pair can only bump view_count once per
+// hour. The frontend already dedupes per-session via sessionStorage, but a
+// determined script could rotate sessions and spam the endpoint to inflate
+// numbers — this is the server-side guard.
+//
+// Single-instance memory is fine for our scale (Render = 1 worker). On restart
+// the map is empty, which means at worst an attacker gets one extra bump per
+// post per restart cycle (~weekly). Not worth a DB table.
+
+const VIEW_DEDUP_TTL_MS = 60 * 60_000  // 1 hour
+const VIEW_DEDUP_MAX    = 50_000        // soft cap; sweep when exceeded
+const viewDedup = new Map<string, number>()  // key = `${ip}:${slug}`, value = expiresAt ms
+
+function shouldCountView(ip: string, slug: string): boolean {
+  const key  = `${ip}:${slug}`
+  const now  = Date.now()
+  const seen = viewDedup.get(key)
+  if (seen && seen > now) return false
+  viewDedup.set(key, now + VIEW_DEDUP_TTL_MS)
+
+  // Lazy sweep — only when the map gets large, avoid per-request overhead.
+  if (viewDedup.size > VIEW_DEDUP_MAX) {
+    for (const [k, exp] of viewDedup) {
+      if (exp <= now) viewDedup.delete(k)
+    }
+  }
+  return true
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function slugify(s: string): string {
@@ -133,11 +163,22 @@ blogPublicRouter.get("/posts/:slug", async (req, res, next) => {
   } catch (err) { next(err) }
 })
 
-// Increment view count. No auth — public endpoint. Client dedupes per-session via sessionStorage.
+// Increment view count. No auth — public endpoint.
+// Two layers of dedup so view counts can't be inflated:
+//   1. Client: sessionStorage flag, so a refresh in the same tab doesn't bump.
+//   2. Server: shouldCountView() — same IP can only bump the same slug once
+//      per hour (covers session rotation, multi-tab, basic scripted abuse).
+// We always return 200 so the frontend doesn't error on a deduped request.
 blogPublicRouter.post("/posts/:slug/view", async (req, res, next) => {
   try {
     const slug = String(req.params.slug ?? "").toLowerCase().trim()
     if (!slug) return res.status(400).json({ error: "slug required" })
+
+    const ip = getClientIp(req) || "unknown"
+    if (!shouldCountView(ip, slug)) {
+      return res.json({ success: true, data: { skipped: true } })
+    }
+
     const { rows } = await query(
       `UPDATE blog_posts
           SET view_count = view_count + 1
