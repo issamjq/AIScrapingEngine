@@ -183,8 +183,14 @@ function AppInner() {
 
   // Fetch live TOTP status whenever auth state changes.
   useEffect(() => {
+    // While Firebase is still restoring auth, don't touch any TOTP state —
+    // user briefly flickers null on initial mount before the persisted Google
+    // session resolves. Clearing the token here would nuke a perfectly valid
+    // 12-hour session on every refresh.
+    if (loading) return
+
     if (!user) {
-      // Sign-out hygiene: nuke the TOTP session + cached status.
+      // Now we know auth has settled and the user is actually signed out.
       setTotpToken(null)
       clearCachedStatus()
       setTotpSatisfied(false)
@@ -209,7 +215,7 @@ function AppInner() {
       finally { if (!cancelled) setTotpStatusLoaded(true) }
     })()
     return () => { cancelled = true }
-  }, [user])
+  }, [user, loading])
 
   // Sync state → URL hash (only update if the page part changed — preserve sub-tabs like #settings:billing)
   useEffect(() => {
